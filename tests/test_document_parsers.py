@@ -24,10 +24,19 @@ Totaaloverzicht Rekeningen 2025
 
     assert len(result.facts) == 2
     assert result.facts[0].account_key == "NL00SNSB0000000000"
+    assert result.facts[0].account_label == "SAM & ALEX"
     assert result.facts[0].start_balance == 1600.05
     assert result.facts[0].end_balance == 408.18
     assert result.facts[0].ownership == "joint"
+    assert result.facts[0].interest_received == 0.0
+    assert result.facts[0].actual_return_component == 0.0
+    assert result.facts[0].extra["account_type"] == "payment"
+    assert result.facts[0].extra["interest_source"] == "inferred_zero_non_savings_account"
     assert result.facts[1].account_key == "NL00SNSB0000000000"
+    assert result.facts[1].account_label == "SAM & ALEX (Sparen)"
+    assert result.facts[1].interest_received is None
+    assert result.facts[1].actual_return_component is None
+    assert result.facts[1].extra["account_type"] == "savings"
 
 
 def test_revolut_currency_statement_has_balances_and_flows():

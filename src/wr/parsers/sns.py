@@ -48,6 +48,10 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
             end_balance=end,
             interest_received=received,
             interest_paid=paid,
+            extra={
+                "account_type": _account_type(label),
+                "interest_source": "reported",
+            },
         )
         fact.compute_capital_gain()
         facts.append(fact)
@@ -75,6 +79,10 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
                 end_balance=parse_nl_amount(m.group(3)),
                 interest_paid=parse_nl_amount(m.group(4)),
                 interest_received=parse_nl_amount(m.group(5)),
+                extra={
+                    "account_type": "savings",
+                    "interest_source": "reported",
+                },
             )
             fact.compute_capital_gain()
             facts.append(fact)
@@ -87,8 +95,8 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
     # SAM & ALEX (Sparen)           A. EXAMPLE e/o E.J.M.                              2.000,00                        2.000,00
     # NL00SNSB0000000000              EXAMPLE
     pattern = re.compile(
-        r"^\s*(?P<label>\S.*?)\s{2,}(?P<holders>\S.*?)\s{2,}"
-        r"(?P<start>[\d.]+,\d{2})\s{2,}(?P<end>[\d.]+,\d{2})\s*$\n"
+        r"^[ \t]*(?P<label>\S[^\n]*?)[ \t]{2,}(?P<holders>\S[^\n]*?)[ \t]{2,}"
+        r"(?P<start>[\d.]+,\d{2})[ \t]{2,}(?P<end>[\d.]+,\d{2})[ \t]*$\n"
         r"^\s*(?P<iban>NL\d{2}SNSB\d+)(?:\s+(?P<holder_tail>[^\n]+))?\s*$",
         re.M,
     )
@@ -100,15 +108,27 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
             if part.strip()
         )
         ownership = "joint" if "e/o" in holders_raw.lower() else "unknown"
+        label = m.group("label").strip()
+        account_type = _account_type(label)
+        interest = None if account_type == "savings" else 0.0
         fact = AccountYearFact(
             tax_year=year,
             issuer="sns",
             account_key=iban,
-            account_label=m.group("label").strip(),
+            account_label=label,
             holder_names=[h.strip() for h in re.split(r"\s+e/o\s+", holders_raw)],
             ownership=ownership,
             start_balance=parse_nl_amount(m.group("start")),
             end_balance=parse_nl_amount(m.group("end")),
+            interest_received=interest,
+            extra={
+                "account_type": account_type,
+                "interest_source": (
+                    "not_available_on_total_overview"
+                    if account_type == "savings"
+                    else "inferred_zero_non_savings_account"
+                ),
+            },
         )
         fact.compute_capital_gain()
         facts.append(fact)
@@ -131,6 +151,10 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
             facts.append(fact)
 
     return ParseResult("sns", "totaaloverzicht", year, facts=facts)
+
+
+def _account_type(label: str) -> str:
+    return "savings" if re.search(r"\bSparen\b", label, re.I) else "payment"
 
 
 def _clean_ocr_iban(raw: str) -> str:
