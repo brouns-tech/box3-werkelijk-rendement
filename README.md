@@ -19,6 +19,8 @@ Edit `config.toml` (`import_root`, partner names).
 wr import                 # recursive PDF import + coverage + recommendations
 wr import --root /path
 wr dashboard              # Streamlit UI
+wr export                 # audit ZIP for all years
+wr export --year 2023 --output exports/2023-audit.zip
 ```
 
 ## Notes
@@ -26,4 +28,5 @@ wr dashboard              # Streamlit UI
 - Classification uses PDF **content**, not directory/filename structure.
 - Documents are keyed by content SHA-256 (path-independent dedupe).
 - For full-year fiscal partners, actual return is computed on the **combined** Box 3 estate, then allocated using the **filed** grondslag split.
-- If coverage of declared Box 3 assets is incomplete, recommendations are `INDETERMINATE_MISSING_DATA`.
+- Missing asset returns use a documented 0% assumption and remain visible as coverage warnings.
+- Audit exports contain yearly totals, asset-level capital and returns, source-document provenance, and partner tax results.

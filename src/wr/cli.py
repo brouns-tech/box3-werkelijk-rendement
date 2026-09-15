@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from wr.config import load_config, resolve_db_path
+from wr.export import write_audit_export
 from wr.import_pipeline import recompute, run_import
 
 
@@ -23,6 +24,14 @@ def main(argv: list[str] | None = None) -> int:
 
     p_dash = sub.add_parser("dashboard", help="Launch Streamlit dashboard")
     p_dash.add_argument("--port", type=int, default=8501)
+
+    p_export = sub.add_parser("export", help="Export an auditable ZIP bundle")
+    p_export.add_argument(
+        "--output", default="exports/wr-audit.zip", help="Destination ZIP path"
+    )
+    p_export.add_argument(
+        "--year", type=int, action="append", help="Tax year to include (repeatable)"
+    )
 
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -48,6 +57,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "recompute":
         recompute(db_path)
         print("Recomputed canonical facts, coverage, and recommendations")
+        return 0
+
+    if args.cmd == "export":
+        if not db_path.exists():
+            print(f"Database not found: {db_path}", file=sys.stderr)
+            return 2
+        destination = write_audit_export(db_path, args.output, args.year)
+        print(f"Audit export written to {destination.resolve()}")
         return 0
 
     if args.cmd == "dashboard":

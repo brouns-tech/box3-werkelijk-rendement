@@ -7,6 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from wr.config import load_config, resolve_db_path
+from wr.export import create_audit_export
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -51,6 +52,13 @@ def main() -> None:
         return
 
     year = st.selectbox("Tax year", years, index=0)
+    st.download_button(
+        "Download audit export",
+        data=create_audit_export(conn, [year]),
+        file_name=f"werkelijk-rendement-{year}-audit.zip",
+        mime="application/zip",
+        help="ZIP with yearly totals, asset calculations, source facts, and tax results.",
+    )
 
     col1, col2, col3 = st.columns(3)
     portfolio = conn.execute(
@@ -58,10 +66,10 @@ def main() -> None:
     ).fetchone()
     partnership = conn.execute(
         """
-        SELECT * FROM tax_returns
+        SELECT *
+        FROM tax_returns
         WHERE tax_year = ?
-        ORDER BY full_year_fiscal_partners DESC, grondslag DESC
-        LIMIT 1
+        ORDER BY full_year_fiscal_partners DESC, grondslag DESC LIMIT 1
         """,
         (year,),
     ).fetchone()
@@ -143,8 +151,13 @@ def main() -> None:
     st.subheader("Declared Box 3 assets vs coverage")
     assets = conn.execute(
         """
-        SELECT category, institution, account_id, label,
-               balance_0101, balance_3112, coverage_status
+        SELECT category,
+               institution,
+               account_id,
+               label,
+               balance_0101,
+               balance_3112,
+               coverage_status
         FROM declared_box3_assets
         WHERE tax_year = ?
         ORDER BY category, institution, account_id
@@ -159,11 +172,20 @@ def main() -> None:
     with st.expander("Canonical account facts"):
         facts = conn.execute(
             """
-            SELECT issuer, account_key, account_label, start_balance, end_balance,
-                   deposits, withdrawals, interest_received, dividends_gross,
-                   capital_gain, gain_method
+            SELECT issuer,
+                   account_key,
+                   account_label,
+                   start_balance,
+                   end_balance,
+                   deposits,
+                   withdrawals,
+                   interest_received,
+                   dividends_gross,
+                   capital_gain,
+                   gain_method
             FROM account_year_facts
-            WHERE tax_year = ? AND is_canonical = 1
+            WHERE tax_year = ?
+              AND is_canonical = 1
             ORDER BY issuer, account_key
             """,
             (year,),
