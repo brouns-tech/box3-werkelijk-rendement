@@ -162,7 +162,9 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     return CoverageResult(
         tax_year=year,
         coverage_status=coverage,
-        known_combined_actual_return=known_return if used_facts else None,
+        # With a declared inventory, unmatched assets use the documented 0%
+        # assumption. Without an inventory, completeness is unknowable.
+        known_combined_actual_return=known_return if used_facts or declared else None,
         start_balance=start,
         end_balance=end,
         deposits=deposits,

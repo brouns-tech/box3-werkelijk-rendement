@@ -1,0 +1,59 @@
+from wr.classify import classify
+from wr.parsers.revolut import parse_revolut
+from wr.parsers.sns import parse_sns
+
+
+def test_degiro_terms_are_not_a_year_statement():
+    text = "DEGIRO voorwaarden voor uw portefeuille en het jaarlijkse jaaroverzicht"
+
+    assert classify(text) is None
+
+
+def test_sns_total_overview_parses_wrapped_holder_names():
+    text = """
+Totaaloverzicht Rekeningen 2025
+ Rekening                        Rekeninghouder                    Saldo per 01-01-2025 (€)        Saldo per 31-12-2025 (€)
+ SAM & ALEX                    S. EXAMPLE e/o T.S.N.                             1.000,00                          900,00
+ NL00SNSB0000000000              EXAMPLE
+ SAM & ALEX (Sparen)           A. EXAMPLE e/o E.J.M.                              2.000,00                             0,00
+ NL00SNSB0000000000              EXAMPLE
+"""
+
+    result = parse_sns(text, 2025, "totaaloverzicht")
+
+    assert len(result.facts) == 2
+    assert result.facts[0].account_key == "NL00SNSB0000000000"
+    assert result.facts[0].start_balance == 1600.05
+    assert result.facts[0].end_balance == 408.18
+    assert result.facts[0].ownership == "joint"
+    assert result.facts[1].account_key == "NL00SNSB0000000000"
+
+
+def test_revolut_currency_statement_has_balances_and_flows():
+    text = """
+EUR Statement
+Revolut Bank UAB (Netherlands Branch)
+IBAN NL00REVO0000000000
+Account transactions from January 1, 2025 to December 31, 2025
+Balance summary
+Account (Current Account) €1,000.00 €250.00 €400.00 €1,150.00
+"""
+
+    classification = classify(text)
+    result = parse_revolut(text, None, "account_statement")
+
+    assert classification is not None
+    assert classification.issuer == "revolut"
+    assert result.tax_year == 2025
+    assert len(result.facts) == 1
+    fact = result.facts[0]
+    assert fact.account_key == "NL00REVO0000000000"
+    assert fact.start_balance == 8644.91
+    assert fact.end_balance == 16678.17
+    assert fact.deposits == 346249.07
+    assert fact.withdrawals == 338215.81
+    assert abs(fact.capital_gain) < 0.01
+
+    usd = parse_revolut(text.replace("EUR Statement", "USD Statement"), 2025, "account_statement")
+    assert usd.facts[0].account_key == "NL00REVO0000000000:USD"
+    assert usd.facts[0].currency == "USD"

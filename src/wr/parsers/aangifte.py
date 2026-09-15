@@ -21,7 +21,14 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         text,
         re.I,
     )
-    full_year = partner_line is not None or bool(
+    portal_full_year = bool(
+        re.search(
+            rf"Stond u heel\s+{year}\s+ingeschreven op hetzelfde adres[^?]*\?\s+Ja\b",
+            text,
+            re.I,
+        )
+    )
+    full_year = partner_line is not None or portal_full_year or bool(
         re.search(rf"heel\s+{year}\s+fiscale partners", text, re.I)
     )
 
@@ -31,6 +38,10 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
     m = re.search(r"Partner\s*\nNaam\s+([^\n]+)", text)
     if m:
         partner_b = m.group(1).strip()
+    if partner_b is None:
+        m = re.search(r"Naam (?:echtgenoot|partner)\s+([A-Z][A-Z .'-]+?)\s*$", text, re.M)
+        if m:
+            partner_b = m.group(1).strip()
     m = re.search(r"Naam\s+(T\.S\.N\.\s*EXAMPLE|E\.J\.M\.\s*EXAMPLE|[^\n]+)\n", text)
     if filer:
         partner_a = filer
@@ -55,8 +66,9 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
 
     # Prefer explicit lines under rendementsgrondslag
     m = re.search(
-        r"Waarde van bezittingen\s+([\d.]+)\s+([\d.]+)",
+        r"^Waarde van bezittingen[^\S\n]+([\d.]+)[^\S\n]+([\d.]+)[^\S\n]*$",
         text,
+        re.M,
     )
     if m:
         bezittingen_0101 = parse_nl_amount(m.group(1))
@@ -75,6 +87,15 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         pass
 
     grondslag = _single_amount(text, r"Grondslag sparen en beleggen\s+([\d.]+)")
+
+    portal_allocation = re.search(
+        r"Grondslag voordeel uit sparen en beleggen\s+"
+        r"€?\s*([\d.]+)\s+€?\s*([\d.]+)\s+€?\s*([\d.]+)",
+        text,
+        re.I,
+    )
+    if portal_allocation:
+        grondslag = parse_nl_amount(portal_allocation.group(1))
 
     # Allocation — order of names varies by filer
     grondslag_parts = re.findall(
@@ -107,6 +128,12 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
             grondslag_b = val
             name_b = name
 
+    if portal_allocation:
+        grondslag_a = parse_nl_amount(portal_allocation.group(2))
+        grondslag_b = parse_nl_amount(portal_allocation.group(3))
+        name_a = filer or partner_a
+        name_b = partner_b
+
     # If filer is EXAMPLE, first/second based on matching
     if grondslag_a is None and len(grondslag_parts) >= 1:
         # Fallback: larger of remaining
@@ -133,6 +160,9 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
     voordeel = _single_amount(
         text, r"Voordeel uit sparen en beleggen\s+([\d.]+)"
     )
+    joint_fictitious = _single_amount(
+        text, rf"Uw gezamenlijk fictief rendement over\s+{year}\s+€?\s*([\d.]+)"
+    )
     # Box 3 tax for filer
     box3_tax = None
     m = re.search(r"Box 3 belasting:.*?([\d.]+)\s*$", text, re.M)
@@ -148,6 +178,10 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         allocation_status = "incomplete"
 
     assets = _parse_assets(text, year)
+    if bezittingen_0101 is None and assets:
+        bezittingen_0101 = sum(a.balance_0101 or 0.0 for a in assets)
+    if bezittingen_3112 is None and assets and all(a.balance_3112 is not None for a in assets):
+        bezittingen_3112 = sum(a.balance_3112 or 0.0 for a in assets)
 
     tr = TaxReturnData(
         tax_year=year,
@@ -170,6 +204,12 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         allocation_status=allocation_status,
     )
 
+    if joint_fictitious is not None:
+        if tr.allocation_a is not None:
+            tr.voordeel_a = joint_fictitious * tr.allocation_a
+        if tr.allocation_b is not None:
+            tr.voordeel_b = joint_fictitious * tr.allocation_b
+
     # If we only have filer's voordeel, store it on the matching partner slot
     if voordeel is not None:
         if _name_matches(filer or "", tr.partner_a_name or ""):
@@ -188,7 +228,7 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
 
 
 def _parse_assets(text: str, year: int) -> list[DeclaredBox3Asset]:
-    assets: list[DeclaredBox3Asset] = []
+    assets: list[DeclaredBox3Asset] = _parse_portal_assets(text, year)
 
     # Dutch bank rows: Bank ... Rekeningnummer ... amounts
     # Rabobank Rabo SpaarRekening             NL34.RABO.1131.1183.83               203.629          60.777
@@ -284,6 +324,83 @@ def _parse_assets(text: str, year: int) -> list[DeclaredBox3Asset]:
     return _dedupe_assets(assets)
 
 
+def _parse_portal_assets(text: str, year: int) -> list[DeclaredBox3Asset]:
+    """Parse Belastingdienst portal blocks that report the 1 January value."""
+    assets: list[DeclaredBox3Asset] = []
+    blocks = re.compile(
+        r"^(?P<kind>Bankrekening|Belegging):\s*(?P<header>[^\n]+?):\s*"
+        r"€\s*(?P<amount>[\d.]+)\s*$\n"
+        r"(?P<body>.*?)(?=^(?:Bankrekening|Belegging):|\Z)",
+        re.I | re.M | re.S,
+    )
+    for match in blocks.finditer(text):
+        kind = match.group("kind").lower()
+        header = match.group("header").strip()
+        body = match.group("body")
+        business_answer = re.search(
+            r"Was (?:het|deze).*?zakelijk(?:e)?\s+(?:rekening|belegging)\?\s+(Ja|Nee)\b",
+            body,
+            re.I | re.S,
+        )
+        if business_answer and business_answer.group(1).lower() == "ja":
+            continue
+
+        balance = parse_nl_amount(match.group("amount"))
+        if kind == "bankrekening":
+            iban_match = re.search(
+                r"IBAN \(rekeningnummer\)\s+(.+?)(?=\n\s*Saldo op)",
+                body,
+                re.I | re.S,
+            )
+            if not iban_match:
+                continue
+            account_id = normalize_iban(iban_match.group(1))
+            if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{10,30}", account_id):
+                continue
+            label_match = re.search(r"Naam bankrekening\s+([^\n]+)", body, re.I)
+            label = label_match.group(1).strip() if label_match else header
+            institution = _bank_institution(label, account_id)
+            category = "bank_nl" if account_id.startswith("NL") else "bank_foreign"
+        else:
+            number_match = re.search(r"^\s*Nummer\s+([^\n]+)", body, re.I | re.M)
+            if not number_match:
+                continue
+            account_id = normalize_account_id(number_match.group(1))
+            description_match = re.search(r"^\s*Omschrijving\s+([^\n]+)", body, re.I | re.M)
+            description = description_match.group(1).strip() if description_match else header
+            institution = "DEGIRO" if "degiro" in f"{header} {description}".lower() else description.split()[0]
+            label = f"{institution} Beleggingsrekening {account_id}"
+            category = "investments"
+
+        assets.append(
+            DeclaredBox3Asset(
+                tax_year=year,
+                category=category,
+                institution=institution,
+                account_id=account_id,
+                label=label,
+                balance_0101=balance,
+            )
+        )
+    return assets
+
+
+def _bank_institution(label: str, iban: str) -> str:
+    bank_code = iban[4:8] if iban.startswith("NL") and len(iban) >= 8 else ""
+    by_code = {
+        "INGB": "ING",
+        "KNAB": "Knab",
+        "RABO": "Rabobank",
+        "REVO": "Revolut",
+        "SNSB": "SNS",
+    }
+    if bank_code in by_code:
+        return by_code[bank_code]
+    if iban.startswith("IT") and "banca progetto" in label.lower():
+        return "Raisin"
+    return label.split()[0]
+
+
 def _dedupe_assets(assets: list[DeclaredBox3Asset]) -> list[DeclaredBox3Asset]:
     seen: set[str] = set()
     out: list[DeclaredBox3Asset] = []
@@ -302,6 +419,9 @@ def _filer_name(text: str) -> str | None:
         text,
         re.I | re.M,
     )
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"^Persoonlijke gegevens van\s+([A-Z][A-Z .'-]+?)\s*$", text, re.M)
     if m:
         return m.group(1).strip()
     m = re.search(r"Naam\s+(T\.S\.N\.\s*EXAMPLE|E\.J\.M\.\s*EXAMPLE)", text)

@@ -97,12 +97,21 @@ def _results_for_year(
 
     voordeel_by_name: dict[str, float] = {}
     tax_by_name: dict[str, float] = {}
-    for r in returns:
-        name = r["filer_name"] or ""
+    # Read the selected primary return first and use other copies only to fill
+    # missing partner values. This prevents an older/draft duplicate from
+    # silently overwriting the chosen return.
+    ordered_returns = [primary, *(r for r in returns if r["id"] != primary["id"])]
+    for r in ordered_returns:
+        name = r["partner_a_name"] or r["filer_name"] or ""
         if r["voordeel_a"] is not None:
-            voordeel_by_name[name] = r["voordeel_a"]
+            voordeel_by_name.setdefault(name, r["voordeel_a"])
         if r["box3_tax_a"] is not None:
-            tax_by_name[name] = r["box3_tax_a"]
+            tax_by_name.setdefault(name, r["box3_tax_a"])
+        name_b = r["partner_b_name"] or ""
+        if name_b and r["voordeel_b"] is not None:
+            voordeel_by_name.setdefault(name_b, r["voordeel_b"])
+        if name_b and r["box3_tax_b"] is not None:
+            tax_by_name.setdefault(name_b, r["box3_tax_b"])
 
     full_year = bool(primary["full_year_fiscal_partners"])
     if not full_year:
@@ -173,21 +182,25 @@ def _results_for_year(
                 return v
         return None
 
-    incomplete = coverage != CoverageStatus.COMPLETE.value
     results = []
     for slot, name, ratio in (("a", name_a, alloc_a), ("b", name_b, alloc_b)):
         fict = lookup_voordeel(name)
         filed_tax = lookup_tax(name)
         allocated = None if known_actual is None or ratio is None else known_actual * ratio
-        if incomplete:
+        if coverage == CoverageStatus.UNKNOWN.value:
             rec = Recommendation.INDETERMINATE_MISSING_DATA.value
-            notes = f"Partial coverage. Missing: {missing or 'unknown'}"
+            notes = f"Unknown coverage. Missing: {missing or 'unknown'}"
             tax_actual = None
         else:
             cmp = compare_partner(year, allocated, fict, filed_tax)
             rec = cmp.recommendation
             notes = cmp.notes
             tax_actual = cmp.estimated_tax_actual
+            if coverage == CoverageStatus.PARTIAL.value:
+                notes += (
+                    "; WARNING: assumed 0% return for missing assets. "
+                    f"Missing: {missing or 'unknown'}"
+                )
 
         rate = BOX3_RATE_BY_YEAR.get(year)
         tax_fict = filed_tax

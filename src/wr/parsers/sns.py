@@ -87,14 +87,18 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
     # SAM & ALEX (Sparen)           A. EXAMPLE e/o E.J.M.                              2.000,00                        2.000,00
     # NL00SNSB0000000000              EXAMPLE
     pattern = re.compile(
-        r"(?P<label>[^\n]+?)\s+(?P<holders>[A-Z][^\n]*?)\s+"
-        r"(?P<start>[\d.]+,\d{2})\s+(?P<end>[\d.]+,\d{2})\n"
-        r"(?P<iban>NL\d{2}SNSB\d+)\s+",
+        r"^\s*(?P<label>\S.*?)\s{2,}(?P<holders>\S.*?)\s{2,}"
+        r"(?P<start>[\d.]+,\d{2})\s{2,}(?P<end>[\d.]+,\d{2})\s*$\n"
+        r"^\s*(?P<iban>NL\d{2}SNSB\d+)(?:\s+(?P<holder_tail>[^\n]+))?\s*$",
         re.M,
     )
     for m in pattern.finditer(text):
         iban = normalize_iban(m.group("iban"))
-        holders_raw = m.group("holders")
+        holders_raw = " ".join(
+            part.strip()
+            for part in (m.group("holders"), m.group("holder_tail") or "")
+            if part.strip()
+        )
         ownership = "joint" if "e/o" in holders_raw.lower() else "unknown"
         fact = AccountYearFact(
             tax_year=year,

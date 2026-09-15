@@ -78,9 +78,8 @@ def _is_aangifte(low: str) -> bool:
 def _is_degiro_jaaroverzicht(low: str) -> bool:
     return (
         ("degiro" in low or "flatexdegiro" in low)
-        and ("jaaroverzicht" in low or "portefeuilleoverzicht per" in low)
         and (
-            "portefeuille" in low
+            "portefeuilleoverzicht per" in low
             or "totales portefeuillewaarde" in low
             or "totale portefeuillewaarde" in low
         )
@@ -145,7 +144,9 @@ def _is_revolut_account_statement(low: str) -> bool:
     if "fiscaal rapport aangifte" in low:
         return False
     return "revolut" in low and (
-        "account statement" in low or "statement of account" in low
+        "account statement" in low
+        or "statement of account" in low
+        or bool(re.search(r"\b(?:eur|usd|gbp) statement\b", low))
     )
 
 
@@ -164,6 +165,7 @@ def guess_tax_year(text: str, doc_type: str | None = None) -> int | None:
         r"01-01-(20\d{2})",
         r"1/1/(20\d{2})",
         r"Period\s+Jan\s+1,\s+(20\d{2})",
+        r"transactions from\s+\w+\s+\d{1,2},\s+(20\d{2})",
     ]
     for pat in patterns:
         m = re.search(pat, text, re.I)

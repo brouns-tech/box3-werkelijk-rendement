@@ -117,6 +117,34 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
     facts: list[AccountYearFact] = []
     iban_m = re.search(r"(NL\d{2}REVO\d+)", text, re.I)
     account_key = normalize_iban(iban_m.group(1)) if iban_m else f"revolut-stmt-{year}"
+    currency_match = re.search(r"^\s*(EUR|USD|GBP) Statement\s*$", text, re.I | re.M)
+    currency = currency_match.group(1).upper() if currency_match else "EUR"
+    if currency != "EUR":
+        account_key = f"{account_key}:{currency}"
+
+    summary = re.search(
+        r"Account \(Current Account\)\s+[€$£]?\s*([\d,]+\.\d{2})\s+"
+        r"[€$£]?\s*([\d,]+\.\d{2})\s+[€$£]?\s*([\d,]+\.\d{2})\s+"
+        r"[€$£]?\s*([\d,]+\.\d{2})",
+        text,
+        re.I,
+    )
+    if summary:
+        fact = AccountYearFact(
+            tax_year=year,
+            issuer="revolut",
+            account_key=account_key,
+            account_label="Revolut Current Account",
+            holder_names=_holders(text),
+            currency=currency,
+            start_balance=parse_en_amount(summary.group(1)),
+            end_balance=parse_en_amount(summary.group(4)),
+            deposits=parse_en_amount(summary.group(3)),
+            withdrawals=parse_en_amount(summary.group(2)),
+        )
+        fact.compute_capital_gain()
+        return ParseResult("revolut", "account_statement", year, facts=[fact])
+
     # Try Dutch or EN balance markers
     start = None
     end = None
@@ -131,6 +159,7 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
         issuer="revolut",
         account_key=account_key,
         account_label="Revolut account statement",
+        currency=currency,
         start_balance=start,
         end_balance=end,
         gain_method="unknown",
