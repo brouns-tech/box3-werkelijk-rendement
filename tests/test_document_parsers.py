@@ -1,4 +1,5 @@
 from wr.classify import classify
+from wr.parsers.degiro import parse_degiro
 from wr.parsers.ing import parse_ing
 from wr.parsers.revolut import parse_revolut
 from wr.parsers.sns import parse_sns
@@ -8,6 +9,32 @@ def test_degiro_terms_are_not_a_year_statement():
     text = "DEGIRO voorwaarden voor uw portefeuille en het jaarlijkse jaaroverzicht"
 
     assert classify(text) is None
+
+
+def test_degiro_2022_spaced_portfolio_totals_and_cash_alias():
+    text = """
+DEGIRO Jaaropgave 2022
+Dhr. ALEX EXAMPLE
+Account: ****mpl
+Portefeuilleoverzicht per 1-1-2022
+Totale portefeuille waarde per 1-1-2022                 50.000,00EUR
+Portefeuilleoverzicht per 31-12-2022
+Totale portefeuille waarde per 31-12-2022               55.000,00EUR
+Totale waarde van stortingen *                          10.000,00 EUR
+Totale waarde van opnames *                                  0,00 EUR
+EUR (DE73101308001020046036)                               100,00 EUR 15,00 EUR
+"""
+
+    fact = parse_degiro(text, 2022).facts[0]
+
+    assert fact.account_key == "tEXAMPLE"
+    assert fact.start_balance == 53173.49
+    assert fact.end_balance == 56447.12
+    assert fact.deposits == 13800.0
+    assert fact.withdrawals == 0.0
+    assert abs(fact.capital_gain - -10526.37) < 0.001
+    assert fact.gain_method == "balance_flow"
+    assert fact.extra["account_aliases"] == ["DE73101308001020046036"]
 
 
 def test_sns_total_overview_parses_wrapped_holder_names():

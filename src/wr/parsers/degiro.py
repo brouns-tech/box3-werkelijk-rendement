@@ -4,7 +4,7 @@ import re
 
 from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
-from wr.pdf import parse_nl_amount
+from wr.pdf import normalize_account_id, parse_nl_amount
 
 
 def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
@@ -26,12 +26,17 @@ def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
     if re.search(r"\bpensioen\b", text, re.I) and re.search(r"Account:\s*\*+", text):
         # If document title area mentions pensioen more than once, treat as pension.
         if len(re.findall(r"pensioen", text, re.I)) >= 1 and re.search(
-            r"lijfrente|opeeuw|pensioenbelegg", text, re.I
+                r"lijfrente|opeeuw|pensioenbelegg", text, re.I
         ):
             is_pensioen = True
 
-    start = _find_amount(text, rf"Totale portefeuillewaarde per 1-1-{year}\s+([\d.]+,\d{{2}})")
-    end = _find_amount(text, rf"Totale portefeuillewaarde per 31-12-{year}\s+([\d.]+,\d{{2}})")
+    start = _find_amount(
+        text, rf"Totale portefeuille\s*waarde per 1-1-{year}\s+([\d.]+,\d{{2}})"
+    )
+    end = _find_amount(
+        text,
+        rf"Totale portefeuille\s*waarde per 31-12-{year}\s+([\d.]+,\d{{2}})",
+    )
 
     deposits = _find_amount(text, r"Totale waarde van stortingen\s*\*?\s+([\d.]+,\d{2})")
     withdrawals = _find_amount(text, r"Totale waarde van opnames\s*\*?\s+([\d.]+,\d{2})")
@@ -72,7 +77,11 @@ def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
         dividends_gross=dividends_gross,
         withholding_tax=withholding,
         logical_group=None if is_pensioen else "flatex_degiro",
-        extra={"box3": False} if is_pensioen else {},
+        extra=(
+            {"box3": False}
+            if is_pensioen
+            else {"account_aliases": _account_aliases(text)}
+        ),
     )
     fact.compute_capital_gain()
     facts.append(fact)
@@ -98,8 +107,8 @@ def _find_amount(text: str, pattern: str) -> float | None:
 def _account_key(text: str) -> str | None:
     # Prefer explicit username if present in document body / filename-like tokens.
     for pat in (
-        r"\b(tEXAMPLE|SAMEXAMPLE|tsnEXAMPLE)\b",
-        r"Account:\s*\*+(\w+)",
+            r"\b(tEXAMPLE|SAMEXAMPLE|tsnEXAMPLE)\b",
+            r"Account:\s*\*+(\w+)",
     ):
         m = re.search(pat, text, re.I)
         if m:
@@ -121,6 +130,18 @@ def _account_key(text: str) -> str | None:
                 return "SAMEXAMPLE"
             return last[:12]
     return None
+
+
+def _account_aliases(text: str) -> list[str]:
+    """Identifiers printed for cash accounts belonging to this portfolio."""
+    return list(
+        dict.fromkeys(
+            normalize_account_id(match)
+            for match in re.findall(
+                r"\b(?:EUR|USD|GBP)\s*\(([A-Z]{2}\d{18,})\)", text, re.I
+            )
+        )
+    )
 
 
 def _holders(text: str) -> list[str]:

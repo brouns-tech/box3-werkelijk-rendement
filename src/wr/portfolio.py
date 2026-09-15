@@ -210,6 +210,12 @@ def _match_facts(asset, facts) -> list:
         if key == target or (target_iban and normalize_iban(f["account_key"]) == target_iban):
             out.append(f)
             continue
+        aliases = _fact_account_aliases(f)
+        if target in aliases or (
+            target_iban and any(normalize_iban(alias) == target_iban for alias in aliases)
+        ):
+            out.append(f)
+            continue
         # DEGIRO username match
         if asset["institution"] and asset["institution"].upper() == "DEGIRO":
             if target in key or key in target:
@@ -234,6 +240,22 @@ def _match_facts(asset, facts) -> list:
         degiro_facts = [f for f in facts if f["issuer"] == "degiro" and _fact_has_actual_return(f)]
         out.extend(degiro_facts)
     return out
+
+
+def _fact_account_aliases(fact) -> set[str]:
+    extra = fact["extra"]
+    if not extra:
+        return set()
+    try:
+        data = json.loads(extra) if isinstance(extra, str) else extra
+    except (TypeError, json.JSONDecodeError):
+        return set()
+    aliases = data.get("account_aliases", []) if isinstance(data, dict) else []
+    return {
+        normalize_account_id(alias)
+        for alias in aliases
+        if isinstance(alias, str) and alias.strip()
+    }
 
 
 def _inst_alias(inst: str, issuer: str) -> bool:
