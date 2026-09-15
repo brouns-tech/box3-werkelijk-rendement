@@ -136,6 +136,10 @@ def main() -> None:
 
     if portfolio:
         st.subheader("Combined balances / flows (from documents)")
+        st.caption(
+            "Gross dividends are included once in actual return. Withholding tax is "
+            "shown separately; any credit or refund is outside this Box 3 comparison."
+        )
         st.write(
             {
                 "start_balance": portfolio["start_balance"],
@@ -143,8 +147,10 @@ def main() -> None:
                 "deposits": portfolio["deposits"],
                 "withdrawals": portfolio["withdrawals"],
                 "interest_received": portfolio["interest_received"],
+                "dividends_gross": portfolio["dividends_gross"],
+                "withholding_tax": portfolio["withholding_tax"],
                 "dividends_net": portfolio["dividends_net"],
-                "capital_gain": portfolio["capital_gain"],
+                "market_value_change": portfolio["capital_gain"],
             }
         )
 
@@ -181,7 +187,7 @@ def main() -> None:
                    withdrawals,
                    interest_received,
                    dividends_gross,
-                   capital_gain,
+                   capital_gain AS market_value_change,
                    gain_method
             FROM account_year_facts
             WHERE tax_year = ?

@@ -96,6 +96,8 @@ CREATE TABLE IF NOT EXISTS yearly_portfolio (
     withdrawals REAL,
     interest_received REAL,
     dividends_net REAL,
+    dividends_gross REAL,
+    withholding_tax REAL,
     capital_gain REAL,
     source_fact_count INTEGER,
     missing_asset_summary TEXT
@@ -135,6 +137,13 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "estimated_tax_savings" not in columns:
         conn.execute("ALTER TABLE partner_tax_results ADD COLUMN estimated_tax_savings REAL")
+    portfolio_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(yearly_portfolio)").fetchall()
+    }
+    if "dividends_gross" not in portfolio_columns:
+        conn.execute("ALTER TABLE yearly_portfolio ADD COLUMN dividends_gross REAL")
+    if "withholding_tax" not in portfolio_columns:
+        conn.execute("ALTER TABLE yearly_portfolio ADD COLUMN withholding_tax REAL")
     conn.commit()
 
 

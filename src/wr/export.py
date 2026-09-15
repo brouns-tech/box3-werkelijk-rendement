@@ -70,7 +70,9 @@ def create_audit_export(
         "calculation_notes": [
             "actual_return follows the same gain-method rules as the portfolio calculation.",
             "Net interest is interest_received minus interest_paid.",
-            "Net dividends are dividends_gross minus withholding_tax.",
+            "Gross dividends are part of actual return; withholding tax is exported separately.",
+            "Net dividends are dividends_gross minus withholding_tax and are shown for cash reconciliation.",
+            "The tax comparison does not estimate credits or refunds for withholding tax.",
             "A source fact matched to multiple declared assets is included once, under the first asset id.",
             "Missing or partial assets contribute 0.00 to return_used and remain visibly warned.",
             "Declared balances and parsed source balances are exported separately; they may differ.",
@@ -154,8 +156,10 @@ def _year_summary(conn: sqlite3.Connection, year: int) -> dict[str, Any]:
         "deposits": _value(portfolio, "deposits"),
         "withdrawals": _value(portfolio, "withdrawals"),
         "net_interest": _value(portfolio, "interest_received"),
+        "dividends_gross": _value(portfolio, "dividends_gross"),
+        "withholding_tax": _value(portfolio, "withholding_tax"),
         "net_dividends": _value(portfolio, "dividends_net"),
-        "capital_gain": _value(portfolio, "capital_gain"),
+        "market_value_change": _value(portfolio, "capital_gain"),
         "actual_return_used": _value(portfolio, "known_combined_actual_return"),
         "source_fact_count": _value(portfolio, "source_fact_count"),
         "missing_asset_summary": _value(portfolio, "missing_asset_summary"),
@@ -263,7 +267,7 @@ def _asset_and_fact_rows(
                 "net_dividends": _optional_net(
                     assigned, "dividends_gross", "withholding_tax"
                 ),
-                "capital_gain": _optional_sum(assigned, "capital_gain"),
+                "market_value_change": _optional_sum(assigned, "capital_gain"),
                 "actual_return_from_sources": known_return if usable else None,
                 "return_used": 0.0 if assumed_zero else known_return,
                 "return_basis": return_basis,
@@ -310,7 +314,7 @@ def _asset_and_fact_rows(
                     "net_dividends": _optional_net(
                         [fact], "dividends_gross", "withholding_tax"
                     ),
-                    "capital_gain": fact["capital_gain"],
+                    "market_value_change": fact["capital_gain"],
                     "actual_return_from_sources": actual_return,
                     "return_used": actual_return or 0.0,
                     "return_basis": "canonical source fact; declared inventory unavailable",

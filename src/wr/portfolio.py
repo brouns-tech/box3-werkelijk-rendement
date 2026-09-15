@@ -20,6 +20,8 @@ class CoverageResult:
     withdrawals: float
     interest_received: float
     dividends_net: float
+    dividends_gross: float
+    withholding_tax: float
     capital_gain: float
     source_fact_count: int
     missing: list[str]
@@ -44,9 +46,10 @@ def rebuild_portfolio(conn: sqlite3.Connection) -> None:
             INSERT INTO yearly_portfolio (
                 tax_year, coverage_status, known_combined_actual_return,
                 start_balance, end_balance, deposits, withdrawals,
-                interest_received, dividends_net, capital_gain,
-                source_fact_count, missing_asset_summary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                interest_received, dividends_net, dividends_gross,
+                withholding_tax, capital_gain, source_fact_count,
+                missing_asset_summary
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(tax_year) DO UPDATE SET
                 coverage_status=excluded.coverage_status,
                 known_combined_actual_return=excluded.known_combined_actual_return,
@@ -56,6 +59,8 @@ def rebuild_portfolio(conn: sqlite3.Connection) -> None:
                 withdrawals=excluded.withdrawals,
                 interest_received=excluded.interest_received,
                 dividends_net=excluded.dividends_net,
+                dividends_gross=excluded.dividends_gross,
+                withholding_tax=excluded.withholding_tax,
                 capital_gain=excluded.capital_gain,
                 source_fact_count=excluded.source_fact_count,
                 missing_asset_summary=excluded.missing_asset_summary
@@ -70,6 +75,8 @@ def rebuild_portfolio(conn: sqlite3.Connection) -> None:
                 result.withdrawals,
                 result.interest_received,
                 result.dividends_net,
+                result.dividends_gross,
+                result.withholding_tax,
                 result.capital_gain,
                 result.source_fact_count,
                 "; ".join(result.missing) if result.missing else None,
@@ -136,7 +143,9 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     deposits = _sum(used_facts, "deposits")
     withdrawals = _sum(used_facts, "withdrawals")
     interest = _sum(used_facts, "interest_received") - _sum(used_facts, "interest_paid")
-    dividends = _sum(used_facts, "dividends_gross") - _sum(used_facts, "withholding_tax")
+    dividends_gross = _sum(used_facts, "dividends_gross")
+    withholding_tax = _sum(used_facts, "withholding_tax")
+    dividends_net = dividends_gross - withholding_tax
     capital = 0.0
     known_return = 0.0
     for f in used_facts:
@@ -170,7 +179,9 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
         deposits=deposits,
         withdrawals=withdrawals,
         interest_received=interest,
-        dividends_net=dividends,
+        dividends_net=dividends_net,
+        dividends_gross=dividends_gross,
+        withholding_tax=withholding_tax,
         capital_gain=capital,
         source_fact_count=len(used_facts),
         missing=missing,
@@ -316,8 +327,6 @@ def _fact_return(fact) -> float | None:
     method = fact["gain_method"] or ""
     if method == "earned_return" and fact["capital_gain"] is not None:
         return fact["capital_gain"]
-    if method == "balance_flow" and fact["capital_gain"] is not None:
-        return fact["capital_gain"]
     if method == "interest_only":
         return (fact["interest_received"] or 0) - (fact["interest_paid"] or 0)
     total = 0.0
@@ -326,12 +335,11 @@ def _fact_return(fact) -> float | None:
         total += (fact["interest_received"] or 0) - (fact["interest_paid"] or 0)
         has = True
     if fact["dividends_gross"] is not None:
-        total += fact["dividends_gross"] - (fact["withholding_tax"] or 0)
+        total += fact["dividends_gross"]
         has = True
     if fact["capital_gain"] is not None and method not in {"interest_only", "balance_delta_incomplete"}:
-        if not has:
-            total += fact["capital_gain"]
-            has = True
+        total += fact["capital_gain"]
+        has = True
     return total if has else None
 
 

@@ -1,8 +1,10 @@
 from wr.classify import classify
+from wr.models import AccountYearFact
 from wr.parsers.degiro import parse_degiro
 from wr.parsers.ing import parse_ing
 from wr.parsers.revolut import parse_revolut
 from wr.parsers.sns import parse_sns
+from wr.portfolio import _fact_return
 
 
 def test_degiro_terms_are_not_a_year_statement():
@@ -35,6 +37,27 @@ EUR (DE73101308001020046036)                               100,00 EUR 15,00 EUR
     assert abs(fact.capital_gain - -10526.37) < 0.001
     assert fact.gain_method == "balance_flow"
     assert fact.extra["account_aliases"] == ["DE73101308001020046036"]
+
+
+def test_balance_flow_separates_gross_dividend_and_market_value_change():
+    fact = AccountYearFact(
+        tax_year=2024,
+        issuer="broker",
+        account_key="account",
+        account_label="Broker account",
+        start_balance=100.0,
+        end_balance=110.0,
+        deposits=0.0,
+        withdrawals=0.0,
+        dividends_gross=5.0,
+        withholding_tax=1.0,
+    )
+
+    fact.compute_capital_gain()
+
+    assert fact.capital_gain == 6.0
+    assert fact.actual_return_component == 11.0
+    assert _fact_return(fact.__dict__) == 11.0
 
 
 def test_sns_total_overview_parses_wrapped_holder_names():

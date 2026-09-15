@@ -69,7 +69,13 @@ class AccountYearFact:
             self.capital_gain = self.end_balance - self.start_balance
             self.gain_method = "balance_delta_incomplete"
             return
-        self.capital_gain = self.end_balance - self.start_balance - deposits + withdrawals
+        balance_flow_return = self.end_balance - self.start_balance - deposits + withdrawals
+        net_interest = (self.interest_received or 0.0) - (self.interest_paid or 0.0)
+        net_dividends = (self.dividends_gross or 0.0) - (self.withholding_tax or 0.0)
+        # The balance movement already contains cash income after withholding.
+        # Keep market value change separate so gross dividends can be included
+        # exactly once in taxable actual return.
+        self.capital_gain = balance_flow_return - net_interest - net_dividends
         self.gain_method = "balance_flow"
 
     @property
@@ -79,8 +85,7 @@ class AccountYearFact:
         if self.interest_received is not None or self.interest_paid is not None:
             parts.append((self.interest_received or 0.0) - (self.interest_paid or 0.0))
         if self.dividends_gross is not None:
-            # Net of withholding for economic return; withholding is separately reclaimable.
-            parts.append(self.dividends_gross - (self.withholding_tax or 0.0))
+            parts.append(self.dividends_gross)
         if self.gain_method == "interest_only":
             # Already counted via interest above.
             pass
@@ -89,15 +94,12 @@ class AccountYearFact:
             "explicit",
             "earned_return",
         ):
-            # For investments, capital_gain is the value change net of flows.
-            # Avoid double-counting interest/dividends if they are already in capital_gain.
+            # For investments, capital_gain is market value change net of flows
+            # and separately reported income.
             if self.gain_method == "earned_return":
                 parts = [self.capital_gain]
-            elif self.interest_received is None and self.dividends_gross is None:
+            else:
                 parts.append(self.capital_gain)
-            elif self.dividends_gross is not None or self.interest_received is not None:
-                # capital_gain from balance_flow already embeds income; use it alone.
-                parts = [self.capital_gain]
         if not parts:
             return None
         return sum(parts)

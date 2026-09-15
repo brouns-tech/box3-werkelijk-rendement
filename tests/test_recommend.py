@@ -28,6 +28,8 @@ def test_init_db_migrates_tax_savings_column():
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(partner_tax_results)")}
     assert "estimated_tax_savings" in columns
+    portfolio_columns = {row[1] for row in conn.execute("PRAGMA table_info(yearly_portfolio)")}
+    assert {"dividends_gross", "withholding_tax"} <= portfolio_columns
 
 
 def test_partial_coverage_compares_with_zero_return_assumption():
