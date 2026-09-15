@@ -174,6 +174,7 @@ class PartnerTaxResult:
     fictitious_return: float | None
     estimated_box3_tax_actual: float | None
     estimated_box3_tax_fictitious: float | None
+    estimated_tax_savings: float | None
     recommendation: str
     coverage_status: str
     notes: str = ""

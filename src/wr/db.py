@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS partner_tax_results (
     fictitious_return REAL,
     estimated_box3_tax_actual REAL,
     estimated_box3_tax_fictitious REAL,
+    estimated_tax_savings REAL,
     recommendation TEXT NOT NULL,
     coverage_status TEXT NOT NULL,
     notes TEXT,
@@ -129,6 +130,11 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(partner_tax_results)").fetchall()
+    }
+    if "estimated_tax_savings" not in columns:
+        conn.execute("ALTER TABLE partner_tax_results ADD COLUMN estimated_tax_savings REAL")
     conn.commit()
 
 

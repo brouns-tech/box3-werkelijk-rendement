@@ -30,8 +30,8 @@ def rebuild_recommendations(conn: sqlite3.Connection) -> None:
                     tax_year, partner, partner_name, allocation_ratio,
                     allocated_actual_return, fictitious_return,
                     estimated_box3_tax_actual, estimated_box3_tax_fictitious,
-                    recommendation, coverage_status, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    estimated_tax_savings, recommendation, coverage_status, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result.tax_year,
@@ -42,6 +42,7 @@ def rebuild_recommendations(conn: sqlite3.Connection) -> None:
                     result.fictitious_return,
                     result.estimated_box3_tax_actual,
                     result.estimated_box3_tax_fictitious,
+                    result.estimated_tax_savings,
                     result.recommendation,
                     result.coverage_status,
                     result.notes,
@@ -76,6 +77,7 @@ def _results_for_year(
                 fictitious_return=None,
                 estimated_box3_tax_actual=None,
                 estimated_box3_tax_fictitious=None,
+                estimated_tax_savings=None,
                 recommendation=Recommendation.NEEDS_MANUAL_RSAMW.value,
                 coverage_status=coverage,
                 notes="No tax return parsed for this year",
@@ -125,6 +127,7 @@ def _results_for_year(
                 fictitious_return=primary["voordeel_a"],
                 estimated_box3_tax_actual=None,
                 estimated_box3_tax_fictitious=primary["box3_tax_a"],
+                estimated_tax_savings=None,
                 recommendation=Recommendation.NEEDS_MANUAL_RSAMW.value,
                 coverage_status=coverage,
                 notes="Not detected as full-year fiscal partners; manual rSAMw required",
@@ -142,6 +145,7 @@ def _results_for_year(
                 fictitious_return=0.0,
                 estimated_box3_tax_actual=0.0,
                 estimated_box3_tax_fictitious=0.0,
+                estimated_tax_savings=0.0,
                 recommendation=Recommendation.NOT_APPLICABLE.value,
                 coverage_status=coverage,
                 notes="Grondslag sparen en beleggen is zero; actual return cannot reduce Box 3 further",
@@ -191,11 +195,13 @@ def _results_for_year(
             rec = Recommendation.INDETERMINATE_MISSING_DATA.value
             notes = f"Unknown coverage. Missing: {missing or 'unknown'}"
             tax_actual = None
+            tax_savings = None
         else:
             cmp = compare_partner(year, allocated, fict, filed_tax)
             rec = cmp.recommendation
             notes = cmp.notes
             tax_actual = cmp.estimated_tax_actual
+            tax_savings = cmp.estimated_tax_savings
             if coverage == CoverageStatus.PARTIAL.value:
                 notes += (
                     "; WARNING: assumed 0% return for missing assets. "
@@ -217,6 +223,7 @@ def _results_for_year(
                 fictitious_return=fict,
                 estimated_box3_tax_actual=tax_actual,
                 estimated_box3_tax_fictitious=tax_fict,
+                estimated_tax_savings=tax_savings,
                 recommendation=rec,
                 coverage_status=coverage,
                 notes=notes,

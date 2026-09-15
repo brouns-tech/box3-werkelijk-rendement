@@ -12,6 +12,24 @@ def _connection() -> sqlite3.Connection:
     return conn
 
 
+def test_init_db_migrates_tax_savings_column():
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        """
+        CREATE TABLE partner_tax_results (
+            tax_year INTEGER NOT NULL,
+            partner TEXT NOT NULL,
+            PRIMARY KEY (tax_year, partner)
+        )
+        """
+    )
+
+    init_db(conn)
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(partner_tax_results)")}
+    assert "estimated_tax_savings" in columns
+
+
 def test_partial_coverage_compares_with_zero_return_assumption():
     conn = _connection()
     conn.execute(
@@ -73,5 +91,7 @@ def test_partial_coverage_compares_with_zero_return_assumption():
     assert results[1].allocated_actual_return == 40.0
     assert results[0].fictitious_return == 200.0
     assert results[1].fictitious_return == 80.0
+    assert abs(results[0].estimated_tax_savings - 50.4) < 0.001
+    assert abs(results[1].estimated_tax_savings - 14.4) < 0.001
     assert all("assumed 0% return for missing assets" in result.notes for result in results)
     assert all(result.coverage_status == "PARTIAL" for result in results)

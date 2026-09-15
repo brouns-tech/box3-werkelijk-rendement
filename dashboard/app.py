@@ -102,6 +102,16 @@ def main() -> None:
         (year,),
     ).fetchall()
     if results:
+        savings = [
+            r["estimated_tax_savings"]
+            for r in results
+            if r["estimated_tax_savings"] is not None
+        ]
+        if savings:
+            st.metric(
+                "Estimated household tax savings vs alternative",
+                f"€ {sum(savings):,.2f}",
+            )
         st.dataframe([dict(r) for r in results], use_container_width=True)
         for r in results:
             badge = r["recommendation"]

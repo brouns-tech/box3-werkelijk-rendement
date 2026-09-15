@@ -22,6 +22,7 @@ BOX3_RATE_BY_YEAR = {
 class CompareOutcome:
     recommendation: str
     estimated_tax_actual: float | None
+    estimated_tax_savings: float | None
     notes: str
 
 
@@ -35,6 +36,7 @@ def compare_partner(
     if allocated_actual is None or fictitious is None:
         return CompareOutcome(
             Recommendation.NEEDS_MANUAL_RSAMW.value,
+            None,
             None,
             "Missing actual or fictitious return figure",
         )
@@ -52,9 +54,12 @@ def compare_partner(
     else:
         rec = Recommendation.FICTITIOUS_BETTER.value
 
+    savings = abs(tax_actual - tax_fict)
+
     era = "OWR/herstel (2017-2024)" if tax_year <= 2024 else "aangifte-era (2025+)"
     notes = (
         f"{era}: allocated actual {allocated_actual:.2f} vs fictitious {fictitious:.2f}; "
-        f"est. tax actual {tax_actual:.2f} vs fictitious {tax_fict:.2f}"
+        f"est. tax actual {tax_actual:.2f} vs fictitious {tax_fict:.2f}; "
+        f"est. savings from recommended option {savings:.2f}"
     )
-    return CompareOutcome(rec, tax_actual, notes)
+    return CompareOutcome(rec, tax_actual, savings, notes)
