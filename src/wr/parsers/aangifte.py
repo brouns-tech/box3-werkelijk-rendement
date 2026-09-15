@@ -21,13 +21,17 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         text,
         re.I,
     )
-    portal_full_year = bool(
+    portal_same_address = bool(
         re.search(
             rf"Stond u heel\s+{year}\s+ingeschreven op hetzelfde adres[^?]*\?\s+Ja\b",
             text,
             re.I,
         )
     )
+    portal_spouses = bool(
+        re.search(rf"Had u in\s+{year}\s+een echtgenoot\?\s+Ja\b", text, re.I)
+    )
+    portal_full_year = portal_same_address and portal_spouses
     full_year = partner_line is not None or portal_full_year or bool(
         re.search(rf"heel\s+{year}\s+fiscale partners", text, re.I)
     )
@@ -86,7 +90,9 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         # stored as positive allowance magnitude
         pass
 
-    grondslag = _single_amount(text, r"Grondslag sparen en beleggen\s+([\d.]+)")
+    grondslag = _single_amount(
+        text, r"Grondslag sparen en beleggen\s+€?\s*([\d.]+)"
+    )
 
     portal_allocation = re.search(
         r"Grondslag voordeel uit sparen en beleggen\s+"
@@ -160,6 +166,11 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
     voordeel = _single_amount(
         text, r"Voordeel uit sparen en beleggen\s+([\d.]+)"
     )
+    portal_voordelen = _unique_amounts(
+        text, r"(?m)^[ \t]*Voordeel uit sparen en beleggen\s+€\s*([\d.]+)"
+    )
+    if voordeel is None and portal_voordelen:
+        voordeel = portal_voordelen[0]
     joint_fictitious = _single_amount(
         text, rf"Uw gezamenlijk fictief rendement over\s+{year}\s+€?\s*([\d.]+)"
     )
@@ -170,6 +181,12 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         m = re.search(r"Totaal box 3 belasting\s+([\d.]+)", text)
     if m:
         box3_tax = parse_nl_amount(m.group(1))
+    portal_box3_taxes = _unique_amounts(
+        text,
+        r"Inkomstenbelasting box 3:\s*\d+%\s+van\s+€\s*[\d.]+\s+€\s*([\d.]+)",
+    )
+    if box3_tax is None and portal_box3_taxes:
+        box3_tax = portal_box3_taxes[0]
 
     allocation_status = "ok"
     if grondslag == 0:
@@ -200,6 +217,7 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         voordeel_a=voordeel if _name_matches(filer or "", name_a or "") else None,
         voordeel_b=None,
         box3_tax_a=box3_tax,
+        box3_tax_b=portal_box3_taxes[1] if full_year and len(portal_box3_taxes) > 1 else None,
         assets=assets,
         allocation_status=allocation_status,
     )
@@ -209,6 +227,8 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
             tr.voordeel_a = joint_fictitious * tr.allocation_a
         if tr.allocation_b is not None:
             tr.voordeel_b = joint_fictitious * tr.allocation_b
+    elif full_year and len(portal_voordelen) > 1:
+        tr.voordeel_b = portal_voordelen[1]
 
     # If we only have filer's voordeel, store it on the matching partner slot
     if voordeel is not None:
@@ -441,6 +461,15 @@ def _name_matches(a: str, b: str) -> bool:
 def _single_amount(text: str, pattern: str) -> float | None:
     m = re.search(pattern, text)
     return parse_nl_amount(m.group(1)) if m else None
+
+
+def _unique_amounts(text: str, pattern: str) -> list[float]:
+    values: list[float] = []
+    for raw in re.findall(pattern, text, re.I):
+        value = parse_nl_amount(raw)
+        if value is not None and value not in values:
+            values.append(value)
+    return values
 
 
 def _amount_after(text: str, label: str) -> float | None:

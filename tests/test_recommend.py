@@ -95,3 +95,44 @@ def test_partial_coverage_compares_with_zero_return_assumption():
     assert abs(results[1].estimated_tax_savings - 14.4) < 0.001
     assert all("assumed 0% return for missing assets" in result.notes for result in results)
     assert all(result.coverage_status == "PARTIAL" for result in results)
+
+
+def test_single_filer_gets_savings_estimate():
+    conn = _connection()
+    conn.execute(
+        """
+        INSERT INTO yearly_portfolio (
+            tax_year, coverage_status, known_combined_actual_return,
+            start_balance, end_balance, deposits, withdrawals,
+            interest_received, dividends_net, capital_gain,
+            source_fact_count, missing_asset_summary
+        ) VALUES (2022, 'PARTIAL', 0, 0, 0, 0, 0, 0, 0, 0, 0, 'Missing investment')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO documents (
+            content_sha256, byte_size, imported_at, parse_status
+        ) VALUES ('single', 1, 'now', 'parsed')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO tax_returns (
+            document_sha256, tax_year, filer_name, full_year_fiscal_partners,
+            partner_a_name, grondslag, grondslag_a, allocation_a,
+            allocation_status, voordeel_a, box3_tax_a
+        ) VALUES (
+            'single', 2022, 'Partner A', 0, 'Partner A',
+            28671, 28671, 1, 'ok', 521, 161
+        )
+        """
+    )
+
+    result = _results_for_year(conn, 2022, {"partner_a": "Partner A"})[0]
+
+    assert result.recommendation == Recommendation.ACTUAL_BETTER.value
+    assert result.estimated_box3_tax_actual == 0.0
+    assert result.estimated_box3_tax_fictitious == 161.0
+    assert result.estimated_tax_savings == 161.0
+    assert "assumed 0% return for missing assets" in result.notes

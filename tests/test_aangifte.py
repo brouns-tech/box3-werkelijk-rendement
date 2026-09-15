@@ -20,6 +20,7 @@ def test_portal_return_parses_partners_allocation_and_nonbusiness_assets():
     text = """
 Aangifte inkomstenbelasting 2025
 Persoonlijke gegevens van T S N EXAMPLE
+Had u in 2025 een echtgenoot?                                  Ja
 Naam echtgenoot                                             E J M EXAMPLE
 Stond u heel 2025 ingeschreven op hetzelfde adres als E J M EXAMPLE?   Ja
 
@@ -60,3 +61,48 @@ Grondslag voordeel uit sparen en beleggen    € 200.000 € 150.000 € 50.000
         "NL90SNSB0000000000",
         "example",
     ]
+
+
+def test_older_portal_return_parses_single_filer_box3_values():
+    text = """
+Aangifte inkomstenbelasting 2022
+Persoonlijke gegevens van T S N EXAMPLE
+Had u in 2022 een echtgenoot?                                  Nee
+Stond u heel 2022 ingeschreven op hetzelfde adres als iemand?  Ja
+Grondslag sparen en beleggen
+                                                               € 28.671
+Voordeel uit sparen en beleggen                                € 521
+Inkomstenbelasting box 3: 31% van € 521                        € 161
+"""
+
+    tax_return = parse_aangifte(text, 2022).tax_return
+
+    assert tax_return is not None
+    assert tax_return.full_year_fiscal_partners is False
+    assert tax_return.grondslag == 28671.0
+    assert tax_return.voordeel_a == 521.0
+    assert tax_return.box3_tax_a == 161.0
+
+
+def test_older_joint_portal_return_parses_both_partner_values():
+    text = """
+Aangifte inkomstenbelasting 2023
+Persoonlijke gegevens van T S N EXAMPLE
+Had u in 2023 een echtgenoot?                                  Ja
+Naam echtgenoot                                                E J M EXAMPLE
+Stond u heel 2023 ingeschreven op hetzelfde adres?             Ja
+Grondslag voordeel uit sparen en beleggen      € 160.000 € 120.000 € 40.000
+Voordeel uit sparen en beleggen                                € 3.000
+Inkomstenbelasting box 3: 32% van € 3.000                      € 1.050
+Voordeel uit sparen en beleggen                                € 159
+Inkomstenbelasting box 3: 32% van € 159                        € 50
+"""
+
+    tax_return = parse_aangifte(text, 2023).tax_return
+
+    assert tax_return is not None
+    assert tax_return.full_year_fiscal_partners is True
+    assert tax_return.voordeel_a == 3283.0
+    assert tax_return.voordeel_b == 159.0
+    assert tax_return.box3_tax_a == 1050.0
+    assert tax_return.box3_tax_b == 50.0

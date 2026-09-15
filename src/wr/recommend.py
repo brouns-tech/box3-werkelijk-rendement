@@ -117,6 +117,35 @@ def _results_for_year(
 
     full_year = bool(primary["full_year_fiscal_partners"])
     if not full_year:
+        fict = primary["voordeel_a"]
+        filed_tax = primary["box3_tax_a"]
+        tax_fict = filed_tax
+        rate = BOX3_RATE_BY_YEAR.get(year)
+        if tax_fict is None and fict is not None and rate is not None:
+            tax_fict = fict * rate
+
+        if primary["grondslag"] is not None and primary["grondslag"] == 0:
+            rec = Recommendation.NOT_APPLICABLE.value
+            tax_actual = 0.0
+            tax_fict = 0.0
+            tax_savings = 0.0
+            notes = "Grondslag sparen en beleggen is zero; actual return cannot reduce Box 3 further"
+        elif coverage == CoverageStatus.UNKNOWN.value:
+            rec = Recommendation.INDETERMINATE_MISSING_DATA.value
+            tax_actual = None
+            tax_savings = None
+            notes = f"Unknown coverage. Missing: {missing or 'unknown'}"
+        else:
+            cmp = compare_partner(year, known_actual, fict, filed_tax)
+            rec = cmp.recommendation
+            tax_actual = cmp.estimated_tax_actual
+            tax_savings = cmp.estimated_tax_savings
+            notes = cmp.notes
+            if coverage == CoverageStatus.PARTIAL.value:
+                notes += (
+                    "; WARNING: assumed 0% return for missing assets. "
+                    f"Missing: {missing or 'unknown'}"
+                )
         return [
             PartnerTaxResult(
                 tax_year=year,
@@ -124,17 +153,17 @@ def _results_for_year(
                 partner_name=primary["filer_name"] or "filer",
                 allocation_ratio=1.0,
                 allocated_actual_return=known_actual,
-                fictitious_return=primary["voordeel_a"],
-                estimated_box3_tax_actual=None,
-                estimated_box3_tax_fictitious=primary["box3_tax_a"],
-                estimated_tax_savings=None,
-                recommendation=Recommendation.NEEDS_MANUAL_RSAMW.value,
+                fictitious_return=fict,
+                estimated_box3_tax_actual=tax_actual,
+                estimated_box3_tax_fictitious=tax_fict,
+                estimated_tax_savings=tax_savings,
+                recommendation=rec,
                 coverage_status=coverage,
-                notes="Not detected as full-year fiscal partners; manual rSAMw required",
+                notes=notes,
             )
         ]
 
-    if primary["allocation_status"] == "ZERO_BASE" or (primary["grondslag"] or 0) == 0:
+    if primary["allocation_status"] == "ZERO_BASE" or primary["grondslag"] == 0:
         return [
             PartnerTaxResult(
                 tax_year=year,
