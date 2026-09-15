@@ -9,10 +9,10 @@ cd ~/Projects/box3-werkelijk-rendement
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+cp config.example.toml config.toml
 ```
 
-Configure `config.toml` (`import_root`, partner names).
-
+Edit `config.toml` (`import_root`, partner names).
 ## Usage
 
 ```bash

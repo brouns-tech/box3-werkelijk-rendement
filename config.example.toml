@@ -1,0 +1,12 @@
+# Copy to config.toml and adjust for your setup:
+#   cp config.example.toml config.toml
+
+import_root = "/path/to/your/finance/documents"
+db_path = "data/wr.sqlite"
+
+[partners]
+# Canonical names used for matching tax returns and account holders
+partner_a = "A. Partner"
+partner_b = "B. Partner"
+partner_a_aliases = ["Partner A", "A Partner"]
+partner_b_aliases = ["Partner B", "B Partner"]

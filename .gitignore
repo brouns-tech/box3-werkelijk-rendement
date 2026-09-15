@@ -12,5 +12,6 @@ data/*.sqlite-*
 .mypy_cache/
 .ruff_cache/
 .streamlit/secrets.toml
+config.toml
 *.log
 .DS_Store
