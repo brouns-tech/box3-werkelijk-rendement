@@ -22,7 +22,8 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
         r"(ING [^\n:]+):\s*([^\n]+)\n"
         r"Saldo op 01-01-(?P<y1>\d{4})\s+(?P<start>[\d.]+,\d{2}|\-[\d.]+,\d{2})\n"
         r"Saldo op 31-12-(?P<y2>\d{4})\s+(?P<end>[\d.]+,\d{2}|\-[\d.]+,\d{2})"
-        r"(?:\nRente, (?:ontvangen|betaald) in \d{4}\s+(?P<interest>[\d.]+,\d{2}))?",
+        r"(?:\nRente, (?P<interest_kind>ontvangen|betaald) in \d{4}\s+"
+        r"(?P<interest>[\d.]+,\d{2}))?",
         re.M,
     )
 
@@ -31,11 +32,22 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
         acct_raw = m.group(2).strip().rstrip("*").strip()
         start = parse_nl_amount(m.group("start"))
         end = parse_nl_amount(m.group("end"))
+        interest_kind = m.group("interest_kind")
         interest = parse_nl_amount(m.group("interest")) if m.group("interest") else None
         paid = None
-        if "Rente, betaald" in m.group(0):
+        interest_source = None
+        if interest_kind == "betaald":
             paid = interest
             interest = None
+            interest_source = "reported_paid"
+        elif interest_kind == "ontvangen":
+            interest_source = "reported_received"
+        elif label.casefold() == "ing betaalrekening":
+            # ING annual overviews omit the interest row for payment accounts
+            # when no interest was received. The complete account block and
+            # balances make this a documented zero rather than missing data.
+            interest = 0.0
+            interest_source = "inferred_zero_from_annual_overview"
 
         account_key = _ing_account_key(acct_raw)
         fact = AccountYearFact(
@@ -50,6 +62,7 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
             interest_paid=paid,
             deposits=None,
             withdrawals=None,
+            extra={"interest_source": interest_source} if interest_source else {},
         )
         fact.compute_capital_gain()
         facts.append(fact)

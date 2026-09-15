@@ -1,4 +1,5 @@
 from wr.classify import classify
+from wr.parsers.ing import parse_ing
 from wr.parsers.revolut import parse_revolut
 from wr.parsers.sns import parse_sns
 
@@ -57,3 +58,29 @@ Account (Current Account) €1,000.00 €250.00 €400.00 €1,150.00
     usd = parse_revolut(text.replace("EUR Statement", "USD Statement"), 2025, "account_statement")
     assert usd.facts[0].account_key == "NL00REVO0000000000:USD"
     assert usd.facts[0].currency == "USD"
+
+
+def test_ing_payment_account_without_interest_line_is_documented_zero():
+    text = """
+ING Jaaroverzicht 2022
+ING Betaalrekening: NL06 INGB 0008 6797 63 Hr A EXAMPLE
+Saldo op 01-01-2022                                            1.000,00
+Saldo op 31-12-2022                                            900,00
+
+ING Oranje Spaarrekening: H 946-44654 Hr A EXAMPLE
+Saldo op 01-01-2022                                                0,00
+Saldo op 31-12-2022                                            5.000,00
+Rente, ontvangen in 2022                                           0,00
+"""
+
+    result = parse_ing(text, 2022)
+
+    assert len(result.facts) == 2
+    payment, savings = result.facts
+    assert payment.account_key == "NL00INGB0000000000"
+    assert payment.interest_received == 0.0
+    assert payment.actual_return_component == 0.0
+    assert payment.gain_method == "interest_only"
+    assert payment.extra["interest_source"] == "inferred_zero_from_annual_overview"
+    assert savings.interest_received == 0.0
+    assert savings.extra["interest_source"] == "reported_received"

@@ -265,7 +265,7 @@ def _balances_close(fact, asset, tol: float = 5.0) -> bool:
 
 
 def _fact_has_actual_return(fact) -> bool:
-    if fact["interest_received"] is not None:
+    if fact["interest_received"] is not None or fact["interest_paid"] is not None:
         return True
     if fact["dividends_gross"] is not None:
         return True
