@@ -16,3 +16,4 @@ exports/
 config.toml
 *.log
 .DS_Store
+.idea/
