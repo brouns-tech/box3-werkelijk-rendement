@@ -113,9 +113,6 @@ def _selected_years(
         FROM yearly_portfolio
         UNION
         SELECT tax_year
-        FROM declared_box3_assets
-        UNION
-        SELECT tax_year
         FROM account_year_facts
         UNION
         SELECT tax_year
@@ -175,15 +172,7 @@ def _year_summary(conn: sqlite3.Connection, year: int) -> dict[str, Any]:
 def _asset_and_fact_rows(
         conn: sqlite3.Connection, year: int
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    assets = conn.execute(
-        """
-        SELECT *
-        FROM declared_box3_assets
-        WHERE tax_year = ?
-        ORDER BY id
-        """,
-        (year,),
-    ).fetchall()
+    assets = []
     facts = conn.execute(
         """
         SELECT f.*, d.first_seen_path, d.doc_type, d.parse_status
@@ -282,7 +271,7 @@ def _asset_and_fact_rows(
             }
         )
 
-    # A year without a parsed tax-return inventory still gets one auditable asset row per fact.
+    # Canonical statement facts are the authoritative Box 3 inventory.
     if not assets:
         for fact in facts:
             fact_id = int(fact["id"])
@@ -293,7 +282,7 @@ def _asset_and_fact_rows(
                 {
                     "tax_year": year,
                     "asset_id": f"fact-{fact_id}",
-                    "category": "source fact (no declared inventory)",
+                    "category": "canonical statement fact",
                     "institution": fact["issuer"],
                     "account_id": fact["account_key"],
                     "label": fact["account_label"],
@@ -317,7 +306,7 @@ def _asset_and_fact_rows(
                     "market_value_change": fact["capital_gain"],
                     "actual_return_from_sources": actual_return,
                     "return_used": actual_return or 0.0,
-                    "return_basis": "canonical source fact; declared inventory unavailable",
+                    "return_basis": "canonical statement fact",
                     "matched_fact_ids": fact_id,
                     "included_fact_ids": fact_id,
                     "source_document_sha256s": fact["document_sha256"],

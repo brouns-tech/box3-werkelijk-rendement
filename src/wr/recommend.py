@@ -30,8 +30,8 @@ def rebuild_recommendations(conn: sqlite3.Connection) -> None:
                     tax_year, partner, partner_name, allocation_ratio,
                     allocated_actual_return, fictitious_return,
                     estimated_box3_tax_actual, estimated_box3_tax_fictitious,
-                    recommendation, coverage_status, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    estimated_tax_savings, recommendation, coverage_status, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result.tax_year,
@@ -42,6 +42,7 @@ def rebuild_recommendations(conn: sqlite3.Connection) -> None:
                     result.fictitious_return,
                     result.estimated_box3_tax_actual,
                     result.estimated_box3_tax_fictitious,
+                    result.estimated_tax_savings,
                     result.recommendation,
                     result.coverage_status,
                     result.notes,
@@ -76,6 +77,7 @@ def _results_for_year(
                 fictitious_return=None,
                 estimated_box3_tax_actual=None,
                 estimated_box3_tax_fictitious=None,
+                estimated_tax_savings=None,
                 recommendation=Recommendation.NEEDS_MANUAL_RSAMW.value,
                 coverage_status=coverage,
                 notes="No tax return parsed for this year",
@@ -117,6 +119,15 @@ def _results_for_year(
             recommendation = comparison.recommendation
             estimated_actual_tax = comparison.estimated_tax_actual
             notes = comparison.notes
+        tax_fictitious = filed_tax
+        rate = BOX3_RATE_BY_YEAR.get(year)
+        if tax_fictitious is None and fictitious is not None and rate is not None:
+            tax_fictitious = fictitious * rate
+        savings = (
+            tax_fictitious - estimated_actual_tax
+            if tax_fictitious is not None and estimated_actual_tax is not None
+            else None
+        )
         return [
             PartnerTaxResult(
                 tax_year=year,
@@ -126,7 +137,8 @@ def _results_for_year(
                 allocated_actual_return=known_actual,
                 fictitious_return=fictitious,
                 estimated_box3_tax_actual=estimated_actual_tax,
-                estimated_box3_tax_fictitious=filed_tax,
+                estimated_box3_tax_fictitious=tax_fictitious,
+                estimated_tax_savings=savings,
                 recommendation=recommendation,
                 coverage_status=coverage,
                 notes=notes,
@@ -144,6 +156,7 @@ def _results_for_year(
                 fictitious_return=0.0,
                 estimated_box3_tax_actual=0.0,
                 estimated_box3_tax_fictitious=0.0,
+                estimated_tax_savings=0.0,
                 recommendation=Recommendation.NOT_APPLICABLE.value,
                 coverage_status=coverage,
                 notes="Grondslag sparen en beleggen is zero; actual return cannot reduce Box 3 further",
@@ -215,6 +228,11 @@ def _results_for_year(
                 fictitious_return=fict,
                 estimated_box3_tax_actual=tax_actual,
                 estimated_box3_tax_fictitious=tax_fict,
+                estimated_tax_savings=(
+                    tax_fict - tax_actual
+                    if tax_fict is not None and tax_actual is not None
+                    else None
+                ),
                 recommendation=rec,
                 coverage_status=coverage,
                 notes=notes,

@@ -157,7 +157,9 @@ def _is_revolut_savings(low: str) -> bool:
 
 def _is_revolut_account_statement(low: str) -> bool:
     return "revolut" in low and (
-        "account statement" in low or "statement of account" in low
+        "account statement" in low
+        or "statement of account" in low
+        or bool(re.search(r"\b(?:eur|usd|gbp) statement\b", low))
     ) and re.search(
         r"(?:transactions|period)\s+from\s+january\s+1.*december\s+31",
         low,
