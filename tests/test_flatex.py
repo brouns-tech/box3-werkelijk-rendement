@@ -25,6 +25,8 @@ def test_parses_flatex_financial_instruments_inventory():
     assert fact.end_balance == 6569.01
     assert fact.extra["cash_balance"] == 27.55
     assert fact.extra["securities_market_value"] == 6541.46
+    assert fact.extra["asset_class"] == "securities_portfolio"
+    assert "securities portfolio" in fact.account_label
     assert fact.extra["position_count"] == 2
 
 
@@ -83,7 +85,7 @@ def test_parses_linked_ing_transfers_from_flatex_account_statement():
     assert fact.extra["opening_statement"] is True
 
 
-def test_parses_cash_sweep_flows_and_closing_balance():
+def test_keeps_cash_sweeps_out_of_external_flows():
     result = parse_flatex(
         "flatexDEGIRO Bank AG\n"
         "Rekeninguittreksel nr: 004/2021\n"
@@ -98,8 +100,13 @@ def test_parses_cash_sweep_flows_and_closing_balance():
 
     fact = result.facts[0]
     assert fact.end_balance == 90.0
-    assert fact.deposits == 100.0
-    assert fact.withdrawals == 20.0
+    assert fact.deposits == 0.0
+    assert fact.withdrawals == 0.0
+    assert fact.extra["cash_sweep_deposits"] == 100.0
+    assert fact.extra["cash_sweep_withdrawals"] == 20.0
+    assert fact.capital_gain == 0.0
+    assert fact.gain_method == "explicit"
+    assert fact.extra["return_assumption"] == "zero_by_product"
     assert fact.extra["statement_number"] == 4
 
 
@@ -140,12 +147,13 @@ def test_derives_return_from_adjacent_inventories_and_linked_flows():
 
     fact = conn.execute(
         """
-        SELECT start_balance, end_balance, deposits, withdrawals, capital_gain, gain_method
+        SELECT start_balance, end_balance, deposits, withdrawals, capital_gain, gain_method, extra
         FROM account_year_facts
         WHERE document_sha256 = 'inventory-2021'
         """
     ).fetchone()
-    assert dict(fact) == {
+    result = dict(fact)
+    assert {key: value for key, value in result.items() if key != "extra"} == {
         "start_balance": 100.0,
         "end_balance": 120.0,
         "deposits": 10.0,
@@ -153,3 +161,34 @@ def test_derives_return_from_adjacent_inventories_and_linked_flows():
         "capital_gain": 15.0,
         "gain_method": "balance_flow",
     }
+
+
+def test_legacy_cash_only_balance_flow_is_cleared():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    conn.execute(
+        """
+        INSERT INTO documents (content_sha256, byte_size, imported_at, parse_status, doc_type)
+        VALUES ('cash-only', 1, '2026-01-01T00:00:00+00:00', 'parsed', 'account_statement')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO account_year_facts (
+            document_sha256, tax_year, issuer, account_key, account_label,
+            start_balance, end_balance, deposits, withdrawals, capital_gain, gain_method
+        ) VALUES ('cash-only', 2021, 'flatex', 'cash-account', 'flatex cash account',
+                  100, 50, 0, 500, 450, 'balance_flow')
+        """
+    )
+
+    canonicalize_facts(conn)
+
+    fact = conn.execute(
+        """
+        SELECT capital_gain, gain_method FROM account_year_facts
+        WHERE document_sha256 = 'cash-only'
+        """
+    ).fetchone()
+    assert dict(fact) == {"capital_gain": None, "gain_method": "unknown"}

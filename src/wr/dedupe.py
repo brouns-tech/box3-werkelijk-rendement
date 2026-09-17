@@ -82,6 +82,19 @@ def _score(row) -> tuple:
 
 def _enrich_flatex_inventory_returns(conn: sqlite3.Connection) -> None:
     linked_account = flatex_linked_account()
+    conn.execute(
+        """
+        UPDATE account_year_facts
+        SET capital_gain = NULL, gain_method = 'unknown'
+        WHERE issuer = 'flatex'
+          AND id IN (
+              SELECT f.id
+              FROM account_year_facts f
+              JOIN documents d ON d.content_sha256 = f.document_sha256
+              WHERE d.doc_type = 'account_statement' AND f.gain_method = 'balance_flow'
+          )
+        """
+    )
     _select_flatex_statement_canonicals(conn)
     inventories = conn.execute(
         """
@@ -126,6 +139,18 @@ def _enrich_flatex_inventory_returns(conn: sqlite3.Connection) -> None:
         end_balance = inventory["end_balance"]
         capital_gain = round(end_balance - start_balance - deposits + withdrawals, 2)
         extra = json.loads(inventory["extra"] or "{}")
+        previous_extra = json.loads(previous["extra"] or "{}") if previous else {}
+        start_securities_value = previous_extra.get("securities_market_value")
+        end_securities_value = extra.get("securities_market_value")
+        extra["portfolio_return_basis"] = (
+            "year-end securities-and-cash valuation adjusted only for external transfers"
+        )
+        extra["securities_market_value_start"] = start_securities_value
+        extra["securities_market_value_end"] = end_securities_value
+        if start_securities_value is not None and end_securities_value is not None:
+            extra["securities_market_value_change"] = round(
+                end_securities_value - start_securities_value, 2
+            )
         extra["return_derived_from"] = {
             "opening_balance": "prior_31_december_inventory" if previous else "opening_account_statement",
             "external_flow_documents": len(flows),
@@ -148,7 +173,6 @@ def _enrich_flatex_inventory_returns(conn: sqlite3.Connection) -> None:
             ),
         )
 
-    _enrich_flatex_statement_returns(conn, inventory_by_year, linked_account)
 
 
 def _select_flatex_statement_canonicals(conn: sqlite3.Connection) -> None:

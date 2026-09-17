@@ -5,7 +5,7 @@ import re
 from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
 from wr.pdf import parse_nl_amount
-from wr.source_rules import flatex_linked_account
+from wr.source_rules import flatex_linked_account, has_zero_return_by_product
 
 
 def parse_flatex(
@@ -89,13 +89,14 @@ def _parse_financial_instruments_statement(text: str) -> ParseResult:
         tax_year=year,
         issuer="flatex",
         account_key=account_key,
-        account_label=f"flatex cash and custody account {account_key}",
+        account_label=f"flatex securities portfolio (cash and custody) {account_key}",
         end_balance=round(cash + securities_value, 2),
         extra={
             "inventory_date": snapshot.group(1),
             "cash_balance": cash,
             "securities_account": depot.group(1) if depot else None,
             "securities_market_value": securities_value,
+            "asset_class": "securities_portfolio",
             "position_count": len(positions),
             "positions": positions,
         },
@@ -158,21 +159,28 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
     )
     sweep_deposits, sweep_withdrawals, sweep_count = _cash_sweep_transfers(text)
     end_balance = _closing_balance(text)
+    account_label = f"flatex cash account {account.group(1)}"
+    zero_return = has_zero_return_by_product("flatex", account_label)
     fact = AccountYearFact(
         tax_year=year,
         issuer="flatex",
         account_key=account.group(1),
-        account_label=f"flatex cash account {account.group(1)}",
+        account_label=account_label,
         start_balance=opening_balance if opening_statement else None,
         end_balance=end_balance,
-        deposits=round(linked_deposits + sweep_deposits, 2),
-        withdrawals=round(linked_withdrawals + sweep_withdrawals, 2),
+        deposits=linked_deposits,
+        withdrawals=linked_withdrawals,
+        capital_gain=0.0 if zero_return else None,
+        gain_method="explicit" if zero_return else "unknown",
         extra={
             "linked_account": linked_account,
             "statement_number": statement_number,
             "linked_transfer_count": linked_count,
             "cash_sweep_count": sweep_count,
+            "cash_sweep_deposits": sweep_deposits,
+            "cash_sweep_withdrawals": sweep_withdrawals,
             "opening_statement": opening_statement,
+            "return_assumption": "zero_by_product",
         },
     )
     return ParseResult("flatex", "account_statement", year, facts=[fact])

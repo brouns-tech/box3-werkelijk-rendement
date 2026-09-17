@@ -5,10 +5,11 @@ from wr.pdf import normalize_iban
 
 
 def has_zero_return_by_product(issuer: str, account_label: str) -> bool:
-    return issuer.lower() == "ing" and any(
-        product in account_label.lower()
-        for product in ("betaalrekening", "creditcardrekening")
-    )
+    label = account_label.lower()
+    return (
+        issuer.lower() == "ing"
+        and any(product in label for product in ("betaalrekening", "creditcardrekening"))
+    ) or (issuer.lower() == "flatex" and label.startswith("flatex cash account"))
 
 
 def flatex_linked_account() -> str | None:
