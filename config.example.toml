@@ -10,3 +10,7 @@ partner_a = "A. Partner"
 partner_b = "B. Partner"
 partner_a_aliases = ["Partner A", "A Partner"]
 partner_b_aliases = ["Partner B", "B Partner"]
+
+[accounts]
+# Optional: only transfers involving this flatex reference account are external flows.
+flatex_linked_account = "NL00BANK0000000000"

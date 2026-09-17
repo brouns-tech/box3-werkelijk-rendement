@@ -25,14 +25,23 @@ def classify(text: str) -> Classification | None:
     if _is_flatex_tax_cert(low):
         return Classification("flatex", "belastingcertificaat")
 
+    if _is_flatex_financial_instruments_statement(low):
+        return Classification("flatex", "financial_instruments_statement")
+
+    if _is_flatex_account_statement(low):
+        return Classification("flatex", "account_statement")
+
     if _is_ing_jaaroverzicht(low):
         return Classification("ing", "jaaroverzicht")
 
-    if _is_sns_jaaroverzicht(low):
-        return Classification("sns", "jaaroverzicht")
+    if _is_rabobank_jaaroverzicht(low):
+        return Classification("rabobank", "jaaroverzicht")
 
     if _is_sns_totaaloverzicht(low):
         return Classification("sns", "totaaloverzicht")
+
+    if _is_sns_jaaroverzicht(low):
+        return Classification("sns", "jaaroverzicht")
 
     if _is_raisin(low):
         return Classification("raisin", "jaaroverzicht")
@@ -46,28 +55,14 @@ def classify(text: str) -> Classification | None:
     if _is_revolut_account_statement(low):
         return Classification("revolut", "account_statement")
 
-    if "flatex" in low and ("saldomelding" in low or "steuerbescheinigung" in low):
-        return Classification("flatex", "other")
-
     return None
 
 
 def _is_aangifte(low: str) -> bool:
-    # Avoid Degiro/bank jaaropgaves that only mention the aangifte in prose.
-    if "portefeuilleoverzicht per" in low or "totale portefeuillewaarde" in low:
-        return False
-    if "fiscaal rapport aangifte inkomstenbelasting" in low:
-        return True
-    if "aangifte inkomstenbelasting" in low and (
-        "grondslag sparen en beleggen" in low
-        or "heffingsvrij vermogen" in low
-        or "voordeel uit sparen en beleggen" in low
-        or "toelichting belastbaar inkomen uit sparen en beleggen" in low
-    ):
-        return True
-    # Belastingdienst portal printouts (often lack Box 3 detail tables)
+    # Belastingdienst portal/print template.
     if (
         "aangifte inkomstenbelasting" in low
+        and "eigen kopie, niet opsturen" in low
         and "burgerservicenummer" in low
         and "formulierenversie" in low
     ):
@@ -78,9 +73,10 @@ def _is_aangifte(low: str) -> bool:
 def _is_degiro_jaaroverzicht(low: str) -> bool:
     return (
         ("degiro" in low or "flatexdegiro" in low)
+        and ("jaaropgave" in low or "jaaroverzicht" in low)
+        and "portefeuilleoverzicht per" in low
         and (
-            "portefeuilleoverzicht per" in low
-            or "totales portefeuillewaarde" in low
+            "totale portefeuille waarde" in low
             or "totale portefeuillewaarde" in low
         )
     )
@@ -90,17 +86,39 @@ def _is_flatex_tax_cert(low: str) -> bool:
     return "steuerbescheinigung" in low and "flatex" in low
 
 
+def _is_flatex_financial_instruments_statement(low: str) -> bool:
+    return (
+        "flatex" in low
+        and "lijst met financiële klanteninstrumenten en klantenfondsen" in low
+        and "ingesloten vindt u de lijst voor 31.12." in low
+        and "rekeningstand" in low
+        and "effectenrekeningposities" in low
+    )
+
+
+def _is_flatex_account_statement(low: str) -> bool:
+    return (
+        "flatex" in low
+        and "rekeninguittreksel nr:" in low
+        and "rekeningnummer:" in low
+        and "oud saldo van" in low
+        and "nieuw saldo" in low
+    )
+
+
 def _is_ing_jaaroverzicht(low: str) -> bool:
-    if "fiscaal rapport aangifte" in low:
-        return False
     return "jaaroverzicht" in low and "ing" in low and (
         "saldo op 01-01" in low or "saldo op 31-12" in low or "oranje spaarrekening" in low
     )
 
 
+def _is_rabobank_jaaroverzicht(low: str) -> bool:
+    return "rabobank" in low and "financieel jaaroverzicht" in low and (
+        "saldo 01-01" in low or "saldo 31-12" in low
+    )
+
+
 def _is_sns_jaaroverzicht(low: str) -> bool:
-    if "fiscaal rapport aangifte" in low or "grondslag sparen en beleggen" in low:
-        return False
     return "sns" in low and (
         "jaaroverzicht betalen" in low
         or ("financieel overzicht" in low and ("sns bank" in low or "sns internet sparen" in low))
@@ -110,43 +128,40 @@ def _is_sns_jaaroverzicht(low: str) -> bool:
             and "rente" in low
             and "1-1-" in low
         )
-    ) and "totaaloverzicht rekeningen" not in low
+    )
 
 
 def _is_sns_totaaloverzicht(low: str) -> bool:
-    if "fiscaal rapport aangifte" in low:
-        return False
     return "sns" in low and "totaaloverzicht rekeningen" in low
 
 
 def _is_raisin(low: str) -> bool:
-    if "fiscaal rapport aangifte" in low:
-        return False
     return "raisin" in low and "financieel jaaroverzicht" in low
 
 
 def _is_revolut_annual(low: str) -> bool:
-    if "fiscaal rapport aangifte" in low:
-        return False
     return "revolut" in low and "annual financial summary" in low
 
 
 def _is_revolut_savings(low: str) -> bool:
-    if "fiscaal rapport aangifte" in low:
-        return False
-    return "revolut" in low and (
-        "flexible cash funds" in low
-        or "total earned return" in low
+    return (
+        "revolut" in low
+        and "period jan 1" in low
+        and "dec 31" in low
+        and (
+            "flexible cash funds" in low
+            or "total earned return" in low
+        )
     )
 
 
 def _is_revolut_account_statement(low: str) -> bool:
-    if "fiscaal rapport aangifte" in low:
-        return False
     return "revolut" in low and (
-        "account statement" in low
-        or "statement of account" in low
-        or bool(re.search(r"\b(?:eur|usd|gbp) statement\b", low))
+        "account statement" in low or "statement of account" in low
+    ) and re.search(
+        r"(?:transactions|period)\s+from\s+january\s+1.*december\s+31",
+        low,
+        re.S,
     )
 
 
@@ -165,7 +180,6 @@ def guess_tax_year(text: str, doc_type: str | None = None) -> int | None:
         r"01-01-(20\d{2})",
         r"1/1/(20\d{2})",
         r"Period\s+Jan\s+1,\s+(20\d{2})",
-        r"transactions from\s+\w+\s+\d{1,2},\s+(20\d{2})",
     ]
     for pat in patterns:
         m = re.search(pat, text, re.I)

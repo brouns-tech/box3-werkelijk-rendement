@@ -92,8 +92,6 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
 
 def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
     facts: list[AccountYearFact] = []
-    # SAM & ALEX (Sparen)           A. EXAMPLE e/o E.J.M.                              2.000,00                        2.000,00
-    # NL00SNSB0000000000              EXAMPLE
     pattern = re.compile(
         r"^[ \t]*(?P<label>\S[^\n]*?)[ \t]{2,}(?P<holders>\S[^\n]*?)[ \t]{2,}"
         r"(?P<start>[\d.]+,\d{2})[ \t]{2,}(?P<end>[\d.]+,\d{2})[ \t]*$\n"
@@ -167,5 +165,4 @@ def _clean_ocr_iban(raw: str) -> str:
 
 
 def _holders(text: str) -> list[str]:
-    m = re.search(r"(T\s*S\s*N\s*EXAMPLE|E\.?J\.?M\.?\s*EXAMPLE)", text, re.I)
-    return [m.group(1)] if m else []
+    return []

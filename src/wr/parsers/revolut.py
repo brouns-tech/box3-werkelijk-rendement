@@ -173,5 +173,4 @@ def _holders(text: str) -> list[str]:
     last = re.search(r"Last Name\s+(\S+)", text)
     if first and last:
         return [f"{first.group(1)} {last.group(1)}"]
-    m = re.search(r"^(ALEX[^\n]+EXAMPLE)", text, re.M)
-    return [m.group(1).title()] if m else []
+    return []

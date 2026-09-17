@@ -19,6 +19,11 @@ def parse_document(issuer: str, doc_type: str, text: str, tax_year: int | None) 
 
         return parse_ing(text, tax_year)
 
+    if issuer == "rabobank":
+        from wr.parsers.rabobank import parse_rabobank
+
+        return parse_rabobank(text, tax_year)
+
     if issuer == "sns":
         from wr.parsers.sns import parse_sns
 
