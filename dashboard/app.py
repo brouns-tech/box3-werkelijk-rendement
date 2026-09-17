@@ -8,12 +8,49 @@ import streamlit as st
 
 from wr.config import load_config, resolve_db_path
 from wr.export import create_audit_export
+from wr.portfolio import is_box3_fact
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _currency(value: float | None) -> str:
+    return "—" if value is None else f"€ {value:,.2f}"
+
+
+def _decision_label(recommendation: str) -> str:
+    labels = {
+        "ACTUAL_BETTER": "Actual return better",
+        "FICTITIOUS_BETTER": "Fictitious return better",
+        "EQUAL": "No material difference",
+        "INDETERMINATE_MISSING_DATA": "Incomplete data",
+        "NEEDS_MANUAL_RSAMW": "Manual rSAMw needed",
+        "NOT_APPLICABLE": "Not applicable",
+    }
+    return labels.get(recommendation, recommendation)
+
+
+def _decision_rows(results) -> list[dict[str, str]]:
+    rows = []
+    for result in results:
+        actual_tax = result["estimated_box3_tax_actual"]
+        fictitious_tax = result["estimated_box3_tax_fictitious"]
+        savings = None
+        if actual_tax is not None and fictitious_tax is not None:
+            savings = max(0.0, fictitious_tax - actual_tax)
+        rows.append(
+            {
+                "Issuer": result["partner_name"],
+                "Actual return": _currency(result["allocated_actual_return"]),
+                "Fictitious return": _currency(result["fictitious_return"]),
+                "Decision": _decision_label(result["recommendation"]),
+                "Potential tax savings": _currency(savings),
+            }
+        )
+    return rows
 
 
 def main() -> None:
@@ -60,145 +97,71 @@ def main() -> None:
         help="ZIP with yearly totals, asset calculations, source facts, and tax results.",
     )
 
-    col1, col2, col3 = st.columns(3)
     portfolio = conn.execute(
         "SELECT * FROM yearly_portfolio WHERE tax_year = ?", (year,)
     ).fetchone()
     partnership = conn.execute(
         """
-        SELECT *
-        FROM tax_returns
+        SELECT * FROM tax_returns
         WHERE tax_year = ?
-        ORDER BY full_year_fiscal_partners DESC, grondslag DESC LIMIT 1
+        ORDER BY full_year_fiscal_partners DESC, grondslag DESC
+        LIMIT 1
         """,
         (year,),
     ).fetchone()
 
+    results = conn.execute(
+        "SELECT * FROM partner_tax_results WHERE tax_year = ? ORDER BY partner",
+        (year,),
+    ).fetchall()
+
+    col1, col2, col3 = st.columns(3)
     if portfolio:
         col1.metric("Coverage", portfolio["coverage_status"])
-        known = portfolio["known_combined_actual_return"]
-        col2.metric(
-            "Known combined actual return",
-            f"€ {known:,.2f}" if known is not None else "—",
-        )
-        col3.metric("Canonical facts", portfolio["source_fact_count"] or 0)
+        col2.metric("Actual return", _currency(portfolio["known_combined_actual_return"]))
+        col3.metric("Statement sources", portfolio["source_fact_count"] or 0)
         if portfolio["missing_asset_summary"]:
             st.warning(f"Missing / partial: {portfolio['missing_asset_summary']}")
     else:
         st.info("No portfolio rollup for this year.")
 
-    if partnership:
-        st.subheader("Fiscal partnership (from tax return)")
-        a_ratio = partnership["allocation_a"]
-        b_ratio = partnership["allocation_b"]
-        st.write(
-            {
-                "full_year_partners": bool(partnership["full_year_fiscal_partners"]),
-                "partner_a": partnership["partner_a_name"],
-                "partner_b": partnership["partner_b_name"],
-                "grondslag": partnership["grondslag"],
-                "allocation_a": f"{a_ratio:.1%}" if a_ratio is not None else None,
-                "allocation_b": f"{b_ratio:.1%}" if b_ratio is not None else None,
-                "bezittingen_0101": partnership["bezittingen_0101"],
-                "bezittingen_3112": partnership["bezittingen_3112"],
-            }
-        )
-
-    st.subheader("Partner recommendations")
-    results = conn.execute(
-        "SELECT * FROM partner_tax_results WHERE tax_year = ? ORDER BY partner",
-        (year,),
-    ).fetchall()
+    st.subheader("Decision overview")
     if results:
-        savings = [
-            r["estimated_tax_savings"]
-            for r in results
-            if r["estimated_tax_savings"] is not None
-        ]
-        if savings:
-            st.metric(
-                "Estimated household tax savings vs alternative",
-                f"€ {sum(savings):,.2f}",
-            )
-        st.dataframe([dict(r) for r in results], use_container_width=True)
-        for r in results:
-            badge = r["recommendation"]
-            if badge == "INDETERMINATE_MISSING_DATA":
-                st.error(f"{r['partner_name']}: {badge} — {r['notes']}")
-            elif badge == "ACTUAL_BETTER":
-                st.success(f"{r['partner_name']}: {badge} — {r['notes']}")
-            elif badge == "FICTITIOUS_BETTER":
-                st.info(f"{r['partner_name']}: {badge} — {r['notes']}")
-            else:
-                st.write(f"{r['partner_name']}: **{badge}** — {r['notes']}")
+        st.dataframe(_decision_rows(results), width="stretch", hide_index=True)
     else:
-        st.write("No partner results.")
+        st.info("No tax decision is available for this year.")
 
-    if portfolio:
-        st.subheader("Combined balances / flows (from documents)")
+    with st.expander("Diagnostics"):
         st.caption(
-            "Gross dividends are included once in actual return. Withholding tax is "
-            "shown separately; any credit or refund is outside this Box 3 comparison."
+            "Account-level inventory is derived from canonical annual statements; "
+            "the official tax return contributes aggregate figures only."
         )
-        st.write(
-            {
-                "start_balance": portfolio["start_balance"],
-                "end_balance": portfolio["end_balance"],
-                "deposits": portfolio["deposits"],
-                "withdrawals": portfolio["withdrawals"],
-                "interest_received": portfolio["interest_received"],
-                "dividends_gross": portfolio["dividends_gross"],
-                "withholding_tax": portfolio["withholding_tax"],
-                "dividends_net": portfolio["dividends_net"],
-                "market_value_change": portfolio["capital_gain"],
-            }
-        )
-
-    st.subheader("Declared Box 3 assets vs coverage")
-    assets = conn.execute(
-        """
-        SELECT category,
-               institution,
-               account_id,
-               label,
-               balance_0101,
-               balance_3112,
-               coverage_status
-        FROM declared_box3_assets
-        WHERE tax_year = ?
-        ORDER BY category, institution, account_id
-        """,
-        (year,),
-    ).fetchall()
-    if assets:
-        st.dataframe([dict(a) for a in assets], use_container_width=True)
-    else:
-        st.write("No declared assets (tax return not parsed for this year).")
-
-    with st.expander("Canonical account facts"):
+        if partnership:
+            st.subheader("Tax return")
+            st.json(dict(partnership))
+        if portfolio:
+            st.subheader("Portfolio rollup")
+            st.json(dict(portfolio))
+        st.subheader("Canonical account facts (all statements)")
+        st.caption("Includes non-Box 3 statements for diagnostics.")
         facts = conn.execute(
             """
-            SELECT issuer,
-                   account_key,
-                   account_label,
-                   start_balance,
-                   end_balance,
-                   deposits,
-                   withdrawals,
-                   interest_received,
-                   dividends_gross,
-                   capital_gain AS market_value_change,
-                   gain_method
+            SELECT issuer, account_key, account_label, start_balance, end_balance,
+                   deposits, withdrawals, interest_received, dividends_gross,
+                   capital_gain, gain_method, extra
             FROM account_year_facts
-            WHERE tax_year = ?
-              AND is_canonical = 1
+            WHERE tax_year = ? AND is_canonical = 1
             ORDER BY issuer, account_key
             """,
             (year,),
         ).fetchall()
-        st.dataframe([dict(f) for f in facts], use_container_width=True)
-
-    with st.expander("Import diagnostics"):
+        fact_rows = []
+        for fact in facts:
+            row = dict(fact)
+            row["Box 3"] = is_box3_fact(fact)
+            fact_rows.append(row)
+        st.dataframe(fact_rows, width="stretch")
+        st.subheader("Import diagnostics")
         docs = conn.execute(
             """
             SELECT parse_status, issuer, doc_type, COUNT(*) AS n
@@ -207,7 +170,7 @@ def main() -> None:
             ORDER BY n DESC
             """
         ).fetchall()
-        st.dataframe([dict(d) for d in docs], use_container_width=True)
+        st.dataframe([dict(d) for d in docs], width="stretch")
 
 
 if __name__ == "__main__":
