@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ from wr.parsers import parse_document
 from wr.pdf import extract_text, sha256_file
 from wr.portfolio import rebuild_portfolio
 from wr.recommend import rebuild_recommendations
+from wr.source_rules import has_zero_return_by_product
 
 
 def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) -> dict:
@@ -37,14 +39,16 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
     pdfs = sorted(root.rglob("*.pdf"))
     if limit is not None:
         pdfs = pdfs[:limit]
+    print(f"Scanning {len(pdfs)} PDF(s)")
 
-    for path in pdfs:
+    for index, path in enumerate(pdfs, start=1):
+        progress = f"[{index}/{len(pdfs)}]"
         stats["seen"] += 1
         try:
             sha = sha256_file(path)
         except OSError as exc:
             stats["failed"] += 1
-            print(f"FAIL hash {path}: {exc}")
+            print(f"{progress} failed to hash {path}: {exc}")
             continue
 
         inserted = upsert_document(
@@ -61,10 +65,16 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
             parse_status="skipped",
         )
         if not inserted:
-            stats["duplicate"] += 1
-            continue
+            existing = conn.execute(
+                "SELECT parse_status FROM documents WHERE content_sha256 = ?", (sha,)
+            ).fetchone()
+            if existing is None or existing["parse_status"] != "skipped":
+                stats["duplicate"] += 1
+                print(f"{progress} duplicate {path}")
+                continue
 
-        stats["new"] += 1
+        if inserted:
+            stats["new"] += 1
         try:
             text, page_count = extract_text(path)
         except Exception as exc:  # noqa: BLE001
@@ -75,6 +85,7 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
                 raw_text_excerpt=str(exc)[:500],
             )
             stats["failed"] += 1
+            print(f"{progress} failed to extract {path}: {exc}")
             conn.commit()
             continue
 
@@ -91,6 +102,7 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
                 doc_type="other",
             )
             stats["skipped"] += 1
+            print(f"{progress} skipped {path}")
             conn.commit()
             continue
 
@@ -112,6 +124,10 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
                     result.notes.append("pensioen filename hint")
             _persist_parse(conn, sha, classification, result, page_count, excerpt)
             stats["parsed"] += 1
+            print(
+                f"{progress} parsed {classification.issuer}/{classification.doc_type} "
+                f"{result.tax_year or year or 'unknown'} {path}"
+            )
         except Exception as exc:  # noqa: BLE001
             update_document(
                 conn,
@@ -124,11 +140,11 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
                 parse_status="failed",
             )
             stats["failed"] += 1
-            print(f"FAIL parse {path}: {exc}")
+            print(f"{progress} failed to parse {path}: {exc}")
         conn.commit()
 
+    _apply_source_return_rules(conn)
     canonicalize_facts(conn)
-    _persist_tax_assets_from_returns(conn)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn)
 
@@ -217,43 +233,33 @@ def _persist_parse(conn, sha, classification: Classification, result, page_count
                 tr.box3_tax_b,
             ),
         )
-        for asset in tr.assets:
-            conn.execute(
-                """
-                INSERT INTO declared_box3_assets (
-                    tax_year, category, institution, account_id, label,
-                    balance_0101, balance_3112, coverage_status, matched_fact_ids,
-                    source_document_sha256
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'UNKNOWN', NULL, ?)
-                ON CONFLICT(tax_year, account_id, category) DO UPDATE SET
-                    institution=excluded.institution,
-                    label=excluded.label,
-                    balance_0101=COALESCE(excluded.balance_0101, declared_box3_assets.balance_0101),
-                    balance_3112=COALESCE(excluded.balance_3112, declared_box3_assets.balance_3112),
-                    source_document_sha256=excluded.source_document_sha256
-                """,
-                (
-                    asset.tax_year,
-                    asset.category,
-                    asset.institution,
-                    asset.account_id,
-                    asset.label,
-                    asset.balance_0101,
-                    asset.balance_3112,
-                    sha,
-                ),
-            )
-
-
-def _persist_tax_assets_from_returns(conn) -> None:
-    """No-op hook; assets are inserted during parse. Kept for pipeline clarity."""
-    return
 
 
 def recompute(db_path: str | Path) -> None:
     conn = connect(db_path)
     init_db(conn)
+    _apply_source_return_rules(conn)
     clear_canonical_flags(conn)
     canonicalize_facts(conn)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn)
+
+
+def _apply_source_return_rules(conn) -> None:
+    rows = conn.execute(
+        "SELECT id, issuer, account_label, extra FROM account_year_facts"
+    ).fetchall()
+    for row in rows:
+        if not has_zero_return_by_product(row["issuer"], row["account_label"] or ""):
+            continue
+        extra = json.loads(row["extra"]) if row["extra"] else {}
+        extra["return_assumption"] = "zero_by_product"
+        conn.execute(
+            """
+            UPDATE account_year_facts
+            SET capital_gain = 0, gain_method = 'explicit', extra = ?
+            WHERE id = ?
+            """,
+            (json.dumps(extra), row["id"]),
+        )
+    conn.commit()

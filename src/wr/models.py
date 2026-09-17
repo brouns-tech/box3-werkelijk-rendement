@@ -106,18 +106,6 @@ class AccountYearFact:
 
 
 @dataclass
-class DeclaredBox3Asset:
-    tax_year: int
-    category: str
-    institution: str
-    account_id: str
-    label: str
-    balance_0101: float | None = None
-    balance_3112: float | None = None
-    coverage_status: str = CoverageStatus.UNKNOWN.value
-
-
-@dataclass
 class TaxReturnData:
     tax_year: int
     filer_name: str
@@ -136,7 +124,6 @@ class TaxReturnData:
     voordeel_b: float | None = None
     box3_tax_a: float | None = None
     box3_tax_b: float | None = None
-    assets: list[DeclaredBox3Asset] = field(default_factory=list)
     allocation_status: str = "ok"
 
     @property

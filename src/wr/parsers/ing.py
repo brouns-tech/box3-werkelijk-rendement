@@ -5,6 +5,7 @@ import re
 from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
 from wr.pdf import normalize_iban, parse_nl_amount
+from wr.source_rules import has_zero_return_by_product
 
 
 def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
@@ -13,8 +14,7 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
     if year is None:
         return ParseResult("ing", "jaaroverzicht", None, notes=["no year"])
 
-    # Blocks like:
-    # ING Oranje Spaarrekening: A 969-47927 Hr A EXAMPLE*
+    # Blocks list one product, account identifier, balances, and optional interest.
     # Saldo op 01-01-2023                                                                                                                     5.000,00
     # Saldo op 31-12-2023                                                                                                                         0,00
     # Rente, ontvangen in 2023                                                                                                                   29,65
@@ -64,6 +64,10 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
             withdrawals=None,
             extra={"interest_source": interest_source} if interest_source else {},
         )
+        if has_zero_return_by_product("ing", label):
+            fact.capital_gain = 0.0
+            fact.gain_method = "explicit"
+            fact.extra = {"return_assumption": "zero_by_product"}
         fact.compute_capital_gain()
         facts.append(fact)
 
@@ -71,7 +75,6 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
 
 
 def _ing_account_key(raw: str) -> str:
-    # NL06 INGB 0008 6797 63 or A 969-47927
     iban_m = re.search(r"(NL\d{2}\s*INGB\s*[\d\s]+)", raw, re.I)
     if iban_m:
         return normalize_iban(iban_m.group(1))
@@ -81,7 +84,7 @@ def _ing_account_key(raw: str) -> str:
 
 
 def _holders(text: str) -> list[str]:
-    m = re.search(r"Hr\s+([A-Za-z\. ]+EXAMPLE)", text)
+    m = re.search(r"(?:Hr|Mevr\.)\s+([^\n*]+)", text, re.I)
     if m:
         return [m.group(1).strip()]
     return []

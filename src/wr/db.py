@@ -71,21 +71,6 @@ CREATE TABLE IF NOT EXISTS tax_returns (
     UNIQUE(document_sha256, tax_year)
 );
 
-CREATE TABLE IF NOT EXISTS declared_box3_assets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tax_year INTEGER NOT NULL,
-    category TEXT NOT NULL,
-    institution TEXT,
-    account_id TEXT NOT NULL,
-    label TEXT,
-    balance_0101 REAL,
-    balance_3112 REAL,
-    coverage_status TEXT DEFAULT 'UNKNOWN',
-    matched_fact_ids TEXT,
-    source_document_sha256 TEXT,
-    UNIQUE(tax_year, account_id, category)
-);
-
 CREATE TABLE IF NOT EXISTS yearly_portfolio (
     tax_year INTEGER PRIMARY KEY,
     coverage_status TEXT NOT NULL,
