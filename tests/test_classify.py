@@ -30,6 +30,27 @@ def test_requires_full_year_revolut_account_statement():
     ) is None
 
 
+def test_excludes_revolut_business_account_statement():
+    assert classify(
+        "Revolut Business Account statement\n"
+        "Balance summary\n"
+        "Transactions from January 1, 2025 to December 31, 2025"
+    ) is None
+
+
+def test_requires_personal_revolut_current_account_summary():
+    classification = classify(
+        "Revolut EUR Statement\n"
+        "Account (Current Account)\n"
+        "Transactions from January 1, 2025 to December 31, 2025"
+    )
+    assert classification is not None
+    assert (classification.issuer, classification.doc_type) == (
+        "revolut",
+        "account_statement",
+    )
+
+
 def test_accepts_degiro_jaaroverzicht_with_portfolio_totals():
     classification = classify(
         "flatexDEGIRO Bank Dutch Branch\n"
@@ -40,3 +61,28 @@ def test_accepts_degiro_jaaroverzicht_with_portfolio_totals():
 
     assert classification is not None
     assert (classification.issuer, classification.doc_type) == ("degiro", "jaaroverzicht")
+
+
+def test_requires_rabobank_annual_overview_layout():
+    assert classify(
+        "Rabobank Financieel Jaaroverzicht\n"
+        "Saldo 01-01-2024\nSaldo 31-12-2024"
+    ) is None
+
+    classification = classify(
+        "Rabobank\nOnderwerp Financieel Jaaroverzicht 2024\n"
+        "Saldo 01-01-2024\nSaldo 31-12-2024"
+    )
+    assert classification is not None
+    assert (classification.issuer, classification.doc_type) == ("rabobank", "jaaroverzicht")
+
+
+def test_requires_raisin_product_table_layout():
+    assert classify("Raisin Financieel Jaaroverzicht 2024") is None
+
+    classification = classify(
+        "Raisin Financieel Jaaroverzicht 2024\n"
+        "Raisin spaarproduct(en)\nKENMERK:\nOMSCHRIJVING:\nBronbelasting"
+    )
+    assert classification is not None
+    assert (classification.issuer, classification.doc_type) == ("raisin", "jaaroverzicht")

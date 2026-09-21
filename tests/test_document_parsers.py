@@ -88,6 +88,36 @@ Totaaloverzicht Rekeningen 2025
     assert result.facts[1].extra["account_type"] == "savings"
 
 
+def test_sns_jaaroverzicht_recovers_ocr_mangled_iban():
+    text = """
+Financieel overzicht 2024
+SNS Bank
+NL9ð SNSB 12ó4 56õò óô SNS Internet Sparen * 0,00 1.100,00 0,00 12,34
+"""
+
+    result = parse_sns(text, 2024, "jaaroverzicht")
+
+    assert len(result.facts) == 1
+    fact = result.facts[0]
+    assert fact.account_key == "NL90SNSB1234565234"
+    assert fact.interest_received == 127.70
+
+
+def test_sns_jaaroverzicht_recovers_ocr_mangled_nine():
+    text = """
+Financieel overzicht 2023
+SNS Bank
+NL9ð SNSB 12óø ùöõò óô SNS Internet Sparen * 1.000,00 2.000,00 0,00 9,99
+"""
+
+    result = parse_sns(text, 2023, "jaaroverzicht")
+
+    assert len(result.facts) == 1
+    fact = result.facts[0]
+    assert fact.account_key == "NL90SNSB1238965234"
+    assert fact.interest_received == 30.69
+
+
 def test_revolut_currency_statement_has_balances_and_flows():
     text = """
 EUR Statement

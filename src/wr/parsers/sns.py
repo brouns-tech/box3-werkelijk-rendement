@@ -22,11 +22,15 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
     # Recover IBAN even with OCR-mangled digits in the body.
     ibans = [
         normalize_iban(_clean_ocr_iban(m.group(0)))
-        for m in re.finditer(r"NL\d{2}\s*SNSB\s*[\d\søóõòôùúûüð]{8,}", text, re.I)
+        for m in re.finditer(
+            r"NL[\døóõòôöùúûüð]{2}\s*SNSB\s*[\d\søóõòôöùúûüð]{8,}",
+            text,
+            re.I,
+        )
     ]
     # SNS Internet Sparen *                                 2.000,00            2.000,00                 0,00                12,34
     row = re.compile(
-        r"(NL\d{2}\s*SNSB\s*[\d\søóõòôùúûüð]+)\s+"
+        r"(NL[\døóõòôöùúûüð]{2}\s*SNSB\s*[\d\søóõòôöùúûüð]+)\s+"
         r"(SNS[^\n]*?)\s+"
         r"([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})",
         re.I,
@@ -156,10 +160,9 @@ def _account_type(label: str) -> str:
 
 
 def _clean_ocr_iban(raw: str) -> str:
-    # Map common OCR confusions in SNS PDFs
     table = str.maketrans({
-        "ø": "0", "ó": "0", "õ": "0", "ò": "0", "ô": "0",
-        "ù": "1", "ú": "1", "û": "1", "ü": "1", "ð": "0",
+        "ð": "0", "ù": "9", "ò": "2", "ó": "3", "ô": "4",
+        "õ": "5", "ö": "6", "ø": "8", "ú": "1", "û": "1", "ü": "1",
     })
     return raw.translate(table)
 

@@ -52,6 +52,9 @@ def classify(text: str) -> Classification | None:
     if _is_revolut_savings(low):
         return Classification("revolut", "savings_statement")
 
+    if _is_revolut_business_account_statement(low):
+        return None
+
     if _is_revolut_account_statement(low):
         return Classification("revolut", "account_statement")
 
@@ -83,7 +86,12 @@ def _is_degiro_jaaroverzicht(low: str) -> bool:
 
 
 def _is_flatex_tax_cert(low: str) -> bool:
-    return "steuerbescheinigung" in low and "flatex" in low
+    return (
+        "flatex" in low
+        and "steuerbescheinigung" in low
+        and "kunde:" in low
+        and "kapitalerträge" in low
+    )
 
 
 def _is_flatex_financial_instruments_statement(low: str) -> bool:
@@ -107,40 +115,72 @@ def _is_flatex_account_statement(low: str) -> bool:
 
 
 def _is_ing_jaaroverzicht(low: str) -> bool:
-    return "jaaroverzicht" in low and "ing" in low and (
-        "saldo op 01-01" in low or "saldo op 31-12" in low or "oranje spaarrekening" in low
-    )
-
-
-def _is_rabobank_jaaroverzicht(low: str) -> bool:
-    return "rabobank" in low and "financieel jaaroverzicht" in low and (
-        "saldo 01-01" in low or "saldo 31-12" in low
-    )
-
-
-def _is_sns_jaaroverzicht(low: str) -> bool:
-    return "sns" in low and (
-        "jaaroverzicht betalen" in low
-        or ("financieel overzicht" in low and ("sns bank" in low or "sns internet sparen" in low))
-        or (
-            "sns internet sparen" in low
-            and "ontvangen" in low
-            and "rente" in low
-            and "1-1-" in low
+    return (
+        "ing" in low
+        and bool(re.search(r"jaaroverzicht\s+20\d{2}", low))
+        and "saldo op 01-01" in low
+        and "saldo op 31-12" in low
+        and any(
+            marker in low
+            for marker in ("ing betaalrekening", "ing oranje spaarrekening", "creditcards")
         )
     )
 
 
+def _is_rabobank_jaaroverzicht(low: str) -> bool:
+    return (
+        "rabobank" in low
+        and "financieel jaaroverzicht" in low
+        and (
+            bool(re.search(r"onderwerp\s+financieel jaaroverzicht", low))
+            or "hierbij ontvangt u een financieel jaaroverzicht over het afgelopen jaar" in low
+            or "dit is uw financieel jaaroverzicht van het afgelopen jaar" in low
+        )
+        and "saldo 01-01" in low
+        and "saldo 31-12" in low
+    )
+
+
+def _is_sns_jaaroverzicht(low: str) -> bool:
+    return (
+        "sns bank" in low
+        and (
+            "jaaroverzicht betalen, sparen & lenen" in low
+            or "financieel overzicht" in low
+        )
+        and "saldo" in low
+        and "rente" in low
+        and "1-1-" in low
+    )
+
+
 def _is_sns_totaaloverzicht(low: str) -> bool:
-    return "sns" in low and "totaaloverzicht rekeningen" in low
+    return (
+        "sns" in low
+        and "totaaloverzicht rekeningen" in low
+        and "rekeninghouder" in low
+        and "saldo per 01-01" in low
+        and "saldo per 31-12" in low
+    )
 
 
 def _is_raisin(low: str) -> bool:
-    return "raisin" in low and "financieel jaaroverzicht" in low
+    return (
+        "raisin" in low
+        and "raisin financieel jaaroverzicht" in low
+        and "raisin spaarproduct" in low
+        and "kenmerk:" in low
+        and "omschrijving:" in low
+        and "bronbelasting" in low
+    )
 
 
 def _is_revolut_annual(low: str) -> bool:
-    return "revolut" in low and "annual financial summary" in low
+    return (
+        "revolut" in low
+        and bool(re.search(r"annual financial summary\s+20\d{2}", low))
+        and "account number" in low
+    )
 
 
 def _is_revolut_savings(low: str) -> bool:
@@ -148,22 +188,30 @@ def _is_revolut_savings(low: str) -> bool:
         "revolut" in low
         and "period jan 1" in low
         and "dec 31" in low
-        and (
-            "flexible cash funds" in low
-            or "total earned return" in low
-        )
+        and "account number" in low
+        and "flexible cash funds" in low
+        and "total earned return" in low
     )
 
 
 def _is_revolut_account_statement(low: str) -> bool:
-    return "revolut" in low and (
-        "account statement" in low
-        or "statement of account" in low
-        or bool(re.search(r"\b(?:eur|usd|gbp) statement\b", low))
-    ) and re.search(
-        r"(?:transactions|period)\s+from\s+january\s+1.*december\s+31",
-        low,
-        re.S,
+    return (
+        "revolut" in low
+        and "account (current account)" in low
+        and bool(re.search(r"\b(?:eur|usd|gbp) statement\b", low))
+        and re.search(
+            r"(?:transactions|period)\s+from\s+january\s+1.*december\s+31",
+            low,
+            re.S,
+        )
+    )
+
+
+def _is_revolut_business_account_statement(low: str) -> bool:
+    return (
+        "revolut business" in low
+        and "account statement" in low
+        and "balance summary" in low
     )
 
 

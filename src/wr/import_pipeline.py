@@ -111,17 +111,6 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
             result = parse_document(
                 classification.issuer, classification.doc_type, text, year
             )
-            # Soft path hint: Degiro pension jaaropgaves are Box 1.
-            if "pensioen" in path.name.lower() and classification.issuer == "degiro":
-                for fact in result.facts:
-                    if "-pensioen" not in fact.account_key:
-                        fact.account_key = f"{fact.account_key}-pensioen"
-                    fact.account_label = fact.account_label.replace(
-                        "Beleggingsrekening", "Pensioen"
-                    )
-                    fact.logical_group = None
-                    fact.extra = {**(fact.extra or {}), "box3": False}
-                    result.notes.append("pensioen filename hint")
             _persist_parse(conn, sha, classification, result, page_count, excerpt)
             stats["parsed"] += 1
             print(
