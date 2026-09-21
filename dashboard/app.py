@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sqlite3
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from wr.config import load_config, resolve_db_path
@@ -51,6 +54,35 @@ def _decision_rows(results) -> list[dict[str, str]]:
             }
         )
     return rows
+
+
+def _person_key(name: str | None) -> str:
+    return re.sub(r"[^a-z]", "", (name or "").lower())
+
+
+def _holder_label(value: str | None) -> str:
+    try:
+        holders = json.loads(value or "[]")
+    except json.JSONDecodeError:
+        holders = []
+    return ", ".join(holders) if holders else "Unknown"
+
+
+def _owner_style(value: str, colors: dict[str, str]) -> str:
+    holder_keys = [_person_key(holder) for holder in value.split(", ")]
+    matches = {color for name, color in colors.items() if any(name in holder for holder in holder_keys)}
+    if len(matches) == 1:
+        return f"background-color: {matches.pop()}; color: #f8fafc"
+    if len(matches) > 1:
+        return "background-color: #581c87; color: #f8fafc"
+    return "background-color: #334155; color: #f8fafc"
+
+
+def _styled_table(rows: list[dict], owner_column: str, colors: dict[str, str]):
+    frame = pd.DataFrame(rows)
+    return frame.style.apply(
+        lambda row: [_owner_style(str(row[owner_column]), colors)] * len(row), axis=1
+    )
 
 
 def main() -> None:
@@ -114,6 +146,12 @@ def main() -> None:
         "SELECT * FROM partner_tax_results WHERE tax_year = ? ORDER BY partner",
         (year,),
     ).fetchall()
+    owner_colors = {}
+    for slot, color in (("partner_a", "#1e3a5f"), ("partner_b", "#14532d")):
+        partners = cfg.get("partners", {})
+        for name in [partners.get(slot), *partners.get(f"{slot}_aliases", [])]:
+            if name:
+                owner_colors[_person_key(name)] = color
 
     col1, col2, col3 = st.columns(3)
     if portfolio:
@@ -127,7 +165,11 @@ def main() -> None:
 
     st.subheader("Decision overview")
     if results:
-        st.dataframe(_decision_rows(results), width="stretch", hide_index=True)
+        st.dataframe(
+            _styled_table(_decision_rows(results), "Issuer", owner_colors),
+            width="stretch",
+            hide_index=True,
+        )
     else:
         st.info("No tax decision is available for this year.")
 
@@ -146,7 +188,7 @@ def main() -> None:
         st.caption("Includes non-Box 3 statements for diagnostics.")
         facts = conn.execute(
             """
-            SELECT issuer, account_key, account_label, start_balance, end_balance,
+            SELECT issuer, account_key, account_label, holder_names, start_balance, end_balance,
                    deposits, withdrawals, interest_received, dividends_gross,
                    capital_gain, gain_method, extra
             FROM account_year_facts
@@ -158,9 +200,15 @@ def main() -> None:
         fact_rows = []
         for fact in facts:
             row = dict(fact)
+            row["Account holder"] = _holder_label(row.pop("holder_names"))
             row["Box 3"] = is_box3_fact(fact)
             fact_rows.append(row)
-        st.dataframe(fact_rows, width="stretch")
+        st.caption("Navy: A. EXAMPLE · Green: S. EXAMPLE · Purple: joint · Grey: unknown")
+        st.dataframe(
+            _styled_table(fact_rows, "Account holder", owner_colors),
+            width="stretch",
+            hide_index=True,
+        )
         st.subheader("Import diagnostics")
         docs = conn.execute(
             """
