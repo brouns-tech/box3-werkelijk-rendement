@@ -21,9 +21,7 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         text,
         re.I,
     )
-    full_year = partner_line is not None or bool(
-        re.search(rf"heel\s+{year}\s+fiscale partners", text, re.I)
-    )
+    full_year = _has_full_year_fiscal_partners(text, year, partner_line is not None)
 
     partner_a = None
     partner_b = None
@@ -151,11 +149,33 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
     voordeel = _single_amount(
         text, r"Voordeel uit sparen en beleggen\s+(?:€\s*)?([\d.]+)"
     )
+    if voordeel is None:
+        voordeel = _single_amount(
+            text,
+            rf"Uw gezamenlijk fictief rendement over\s+{year}\s+€?\s*([\d.]+)",
+        )
+    fictitious_parts = [
+        parse_nl_amount(match.group(1))
+        for match in re.finditer(
+            r"Voordeel sparen en beleggen \(fictief\)\s+€?\s*([\d.]+)",
+            text,
+            re.I,
+        )
+    ]
+    fictitious_parts = [amount for amount in fictitious_parts if amount is not None]
+    if voordeel is None and fictitious_parts:
+        voordeel = fictitious_parts[0]
     # Box 3 tax for filer
     box3_tax = None
     m = re.search(r"Box 3 belasting:.*?([\d.]+)\s*$", text, re.M)
     if not m:
         m = re.search(r"Totaal box 3 belasting\s+([\d.]+)", text)
+    if not m:
+        m = re.search(
+            r"Inkomstenbelasting box 3\s*\n\s*€?\s*([\d.]+)",
+            text,
+            re.I,
+        )
     if m:
         box3_tax = parse_nl_amount(m.group(1))
 
@@ -193,6 +213,14 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
             tr.voordeel_b = voordeel
         else:
             tr.voordeel_a = voordeel
+    if full_year and len(fictitious_parts) >= 2:
+        tr.voordeel_b = fictitious_parts[1]
+    if full_year and tr.partner_b_name:
+        partner_voordeel, partner_box3_tax = _partner_box3_figures(text, tr.partner_b_name)
+        if partner_voordeel is not None:
+            tr.voordeel_b = partner_voordeel
+        if partner_box3_tax is not None:
+            tr.box3_tax_b = partner_box3_tax
 
     return ParseResult(
         issuer="belastingdienst",
@@ -212,6 +240,27 @@ def _filer_name(text: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+def _has_full_year_fiscal_partners(text: str, year: int, has_partner_line: bool) -> bool:
+    if has_partner_line or re.search(rf"heel\s+{year}\s+fiscale partners", text, re.I):
+        return True
+    same_address = re.search(
+        rf"Stond u heel\s+{year}\s+ingeschreven op hetzelfde adres.*?\bJa\b",
+        text,
+        re.I | re.S,
+    )
+    if not same_address:
+        return False
+    qualifying_relationship = re.search(
+        rf"(?:Had u in {year} een echtgenoot|Had u een notarieel samenlevingscontract|"
+        r"Had u een kind samen|Heeft 1 van u een kind van de ander erkend|"
+        r"Was u met .*? partners in een pensioenregeling|Was u samen met .*? eigenaar van de woning|"
+        rf"Was .*? in {year - 1} uw fiscale partner)[^\n]*\bJa\b",
+        text,
+        re.I,
+    )
+    return qualifying_relationship is not None
+
+
 def _name_matches(a: str, b: str) -> bool:
     def norm(s: str) -> str:
         return re.sub(r"[^a-z]", "", s.lower())
@@ -220,6 +269,29 @@ def _name_matches(a: str, b: str) -> bool:
     if not na or not nb:
         return False
     return na in nb or nb in na
+
+
+def _partner_box3_figures(text: str, partner_name: str) -> tuple[float | None, float | None]:
+    blocks = [text[match.start() : match.start() + 4000] for match in re.finditer(
+        rf"(?:Deel|Grondslag)\s+{re.escape(partner_name)}\b", text, re.I
+    )]
+    block = next((block for block in reversed(blocks) if "sparen en beleggen" in block.lower()), None)
+    if block is None:
+        return None, None
+    voordeel = _single_amount(
+        block,
+        r"Voordeel sparen en beleggen(?:\s*\([^)]*\))?\s+€?\s*([\d.]+)",
+    )
+    taxes = [
+        parse_nl_amount(match.group(1))
+        for match in re.finditer(
+            r"Inkomstenbelasting box 3\s*\n\s*€?\s*([\d.]+)",
+            block,
+            re.I,
+        )
+    ]
+    taxes = [tax for tax in taxes if tax is not None]
+    return voordeel, taxes[-1] if taxes else None
 
 
 def _single_amount(text: str, pattern: str) -> float | None:
