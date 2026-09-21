@@ -110,45 +110,7 @@ def _results_for_year(
 
     full_year = bool(primary["full_year_fiscal_partners"])
     if not full_year:
-        known_actual, coverage, missing = _individual_portfolio(
-            conn, year, primary["filer_name"], partner_cfg
-        )
-        fictitious = primary["voordeel_a"]
-        filed_tax = primary["box3_tax_a"]
-        if coverage != CoverageStatus.COMPLETE.value:
-            recommendation = Recommendation.INDETERMINATE_MISSING_DATA.value
-            estimated_actual_tax = None
-            notes = f"Partial coverage. Missing: {missing or 'unknown'}"
-        else:
-            comparison = compare_partner(year, known_actual, fictitious, filed_tax)
-            recommendation = comparison.recommendation
-            estimated_actual_tax = comparison.estimated_tax_actual
-            notes = comparison.notes
-        tax_fictitious = filed_tax
-        rate = BOX3_RATE_BY_YEAR.get(year)
-        if tax_fictitious is None and fictitious is not None and rate is not None:
-            tax_fictitious = fictitious * rate
-        savings = (
-            tax_fictitious - estimated_actual_tax
-            if tax_fictitious is not None and estimated_actual_tax is not None
-            else None
-        )
-        return [
-            PartnerTaxResult(
-                tax_year=year,
-                partner="a",
-                partner_name=primary["filer_name"] or "filer",
-                allocation_ratio=1.0,
-                allocated_actual_return=known_actual,
-                fictitious_return=fictitious,
-                estimated_box3_tax_actual=estimated_actual_tax,
-                estimated_box3_tax_fictitious=tax_fictitious,
-                estimated_tax_savings=savings,
-                recommendation=recommendation,
-                coverage_status=coverage,
-                notes=notes,
-            )
-        ]
+        return _individual_results(conn, year, returns, partner_cfg)
 
     if primary["allocation_status"] == "ZERO_BASE" or (primary["grondslag"] or 0) == 0:
         return [
@@ -246,6 +208,42 @@ def _same_person(a: str | None, b: str | None) -> bool:
     al = re.sub(r"[^a-z]", "", a.lower())
     bl = re.sub(r"[^a-z]", "", b.lower())
     return al in bl or bl in al
+
+
+def _individual_results(conn, year: int, returns, partner_cfg: dict) -> list[PartnerTaxResult]:
+    configured = [("a", partner_cfg.get("partner_a")), ("b", partner_cfg.get("partner_b"))]
+    if not any(name for _, name in configured):
+        configured = [(chr(ord("a") + index), row["filer_name"]) for index, row in enumerate(returns)]
+    results = []
+    for slot, name in configured:
+        matching = [row for row in returns if _same_person(row["filer_name"], name)]
+        tax_return = max(matching, key=lambda row: _submission_rank(row["raw_text_excerpt"])) if matching else None
+        known_actual, coverage, missing = _individual_portfolio(conn, year, name, partner_cfg)
+        if tax_return is None:
+            results.append(PartnerTaxResult(
+                tax_year=year, partner=slot, partner_name=name or slot, allocation_ratio=1.0,
+                allocated_actual_return=known_actual, fictitious_return=None,
+                estimated_box3_tax_actual=None, estimated_box3_tax_fictitious=None,
+                estimated_tax_savings=None, recommendation=Recommendation.NEEDS_MANUAL_RSAMW.value,
+                coverage_status=coverage, notes="No tax return parsed for this filer",
+            ))
+            continue
+        fictitious, filed_tax = tax_return["voordeel_a"], tax_return["box3_tax_a"]
+        if coverage != CoverageStatus.COMPLETE.value:
+            recommendation, estimated_actual_tax = Recommendation.INDETERMINATE_MISSING_DATA.value, None
+            notes = f"Partial coverage. Missing: {missing or 'unknown'}"
+        else:
+            comparison = compare_partner(year, known_actual, fictitious, filed_tax)
+            recommendation, estimated_actual_tax, notes = comparison.recommendation, comparison.estimated_tax_actual, comparison.notes
+        tax_fictitious = filed_tax or (fictitious * BOX3_RATE_BY_YEAR[year] if fictitious is not None and year in BOX3_RATE_BY_YEAR else None)
+        results.append(PartnerTaxResult(
+            tax_year=year, partner=slot, partner_name=name or tax_return["filer_name"] or slot,
+            allocation_ratio=1.0, allocated_actual_return=known_actual, fictitious_return=fictitious,
+            estimated_box3_tax_actual=estimated_actual_tax, estimated_box3_tax_fictitious=tax_fictitious,
+            estimated_tax_savings=(tax_fictitious - estimated_actual_tax if tax_fictitious is not None and estimated_actual_tax is not None else None),
+            recommendation=recommendation, coverage_status=coverage, notes=notes,
+        ))
+    return results
 
 
 def _individual_portfolio(
