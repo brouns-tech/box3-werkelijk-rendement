@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 
 from wr.compare.base import BOX3_RATE_BY_YEAR, compare_partner
 from wr.config import load_config
 from wr.models import CoverageStatus, PartnerTaxResult, Recommendation
+from wr.portfolio import _fact_return, is_box3_fact
 
 
 def rebuild_recommendations(conn: sqlite3.Connection) -> None:
@@ -58,7 +61,14 @@ def _results_for_year(
         "SELECT * FROM yearly_portfolio WHERE tax_year = ?", (year,)
     ).fetchone()
     returns = conn.execute(
-        "SELECT * FROM tax_returns WHERE tax_year = ? ORDER BY id", (year,)
+        """
+        SELECT t.*, d.raw_text_excerpt
+        FROM tax_returns t
+        JOIN documents d ON d.content_sha256 = t.document_sha256
+        WHERE t.tax_year = ?
+        ORDER BY t.id
+        """,
+        (year,),
     ).fetchall()
 
     coverage = portfolio["coverage_status"] if portfolio else CoverageStatus.UNKNOWN.value
@@ -87,6 +97,7 @@ def _results_for_year(
     primary = max(
         returns,
         key=lambda r: (
+            _submission_rank(r["raw_text_excerpt"]),
             r["full_year_fiscal_partners"] or 0,
             1 if r["grondslag"] else 0,
             1 if r["allocation_a"] is not None else 0,
@@ -97,17 +108,11 @@ def _results_for_year(
         ),
     )
 
-    voordeel_by_name: dict[str, float] = {}
-    tax_by_name: dict[str, float] = {}
-    for r in returns:
-        name = r["filer_name"] or ""
-        if r["voordeel_a"] is not None:
-            voordeel_by_name[name] = r["voordeel_a"]
-        if r["box3_tax_a"] is not None:
-            tax_by_name[name] = r["box3_tax_a"]
-
     full_year = bool(primary["full_year_fiscal_partners"])
     if not full_year:
+        known_actual, coverage, missing = _individual_portfolio(
+            conn, year, primary["filer_name"], partner_cfg
+        )
         fictitious = primary["voordeel_a"]
         filed_tax = primary["box3_tax_a"]
         if coverage != CoverageStatus.COMPLETE.value:
@@ -181,27 +186,12 @@ def _results_for_year(
         name_a, name_b = name_b, name_a
         alloc_a, alloc_b = alloc_b, alloc_a
 
-    def lookup_voordeel(person: str | None) -> float | None:
-        if not person:
-            return None
-        for n, v in voordeel_by_name.items():
-            if _same_person(n, person):
-                return v
-        return None
-
-    def lookup_tax(person: str | None) -> float | None:
-        if not person:
-            return None
-        for n, v in tax_by_name.items():
-            if _same_person(n, person):
-                return v
-        return None
-
     incomplete = coverage != CoverageStatus.COMPLETE.value
     results = []
-    for slot, name, ratio in (("a", name_a, alloc_a), ("b", name_b, alloc_b)):
-        fict = lookup_voordeel(name)
-        filed_tax = lookup_tax(name)
+    for slot, name, ratio, fict, filed_tax in (
+        ("a", name_a, alloc_a, primary["voordeel_a"], primary["box3_tax_a"]),
+        ("b", name_b, alloc_b, primary["voordeel_b"], primary["box3_tax_b"]),
+    ):
         allocated = None if known_actual is None or ratio is None else known_actual * ratio
         if incomplete:
             rec = Recommendation.INDETERMINATE_MISSING_DATA.value
@@ -241,8 +231,74 @@ def _results_for_year(
     return results
 
 
+def _submission_rank(excerpt: str | None) -> int:
+    text = (excerpt or "").lower()
+    if "verzonden: aangifte inkomstenbelasting" in text:
+        return 2
+    if "nog niet verstuurd" in text:
+        return 0
+    return 1
+
+
 def _same_person(a: str | None, b: str | None) -> bool:
     if not a or not b:
         return False
-    al, bl = a.lower(), b.lower()
+    al = re.sub(r"[^a-z]", "", a.lower())
+    bl = re.sub(r"[^a-z]", "", b.lower())
     return al in bl or bl in al
+
+
+def _individual_portfolio(
+    conn: sqlite3.Connection, year: int, filer_name: str | None, partner_cfg: dict
+) -> tuple[float | None, str, str | None]:
+    aliases = _aliases_for_filer(filer_name, partner_cfg)
+    facts = conn.execute(
+        "SELECT * FROM account_year_facts WHERE tax_year = ? AND is_canonical = 1", (year,)
+    ).fetchall()
+    total = 0.0
+    used = 0
+    missing: list[str] = []
+    for fact in facts:
+        if not is_box3_fact(fact):
+            continue
+        holders = json.loads(fact["holder_names"] or "[]")
+        matches = [_matches_alias(holder, aliases) for holder in holders]
+        if len(holders) == 1 and matches[0]:
+            portion = 1.0
+        elif fact["ownership"] == "joint" and len(holders) >= 2:
+            portion = 0.5
+        elif not holders:
+            missing.append(f"{fact['issuer']} {fact['account_key']} (holder unknown)")
+            continue
+        else:
+            continue
+        value = _fact_return(fact)
+        if value is None:
+            missing.append(f"{fact['issuer']} {fact['account_key']} (no actual-return fields)")
+            continue
+        total += value * portion
+        used += 1
+    if not used:
+        missing.append("no statement-derived assets assigned to this filer")
+    return (
+        total if used else None,
+        CoverageStatus.PARTIAL.value if missing else CoverageStatus.COMPLETE.value,
+        "; ".join(missing) if missing else None,
+    )
+
+
+def _aliases_for_filer(filer_name: str | None, partner_cfg: dict) -> list[str]:
+    aliases = [filer_name or ""]
+    for slot in ("partner_a", "partner_b"):
+        configured = partner_cfg.get(slot, "")
+        if _same_person(filer_name, configured):
+            aliases.extend([configured, *partner_cfg.get(f"{slot}_aliases", [])])
+    return aliases
+
+
+def _matches_alias(name: str, aliases: list[str]) -> bool:
+    normalized = re.sub(r"[^a-z]", "", name.lower())
+    return any(
+        alias and re.sub(r"[^a-z]", "", alias.lower()) in normalized
+        for alias in aliases
+    )

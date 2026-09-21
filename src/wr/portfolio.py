@@ -87,8 +87,6 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
             )
 
     used_facts = eligible_facts
-
-
     start = _sum(used_facts, "start_balance")
     end = _sum(used_facts, "end_balance")
     deposits = _sum(used_facts, "deposits")

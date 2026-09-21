@@ -44,6 +44,7 @@ def parse_flatex(
         issuer="flatex",
         account_key=account_key,
         account_label="flatex (legacy)",
+        holder_names=_holder_names(text),
         interest_received=interest,
         gain_method="interest_only" if interest is not None else "unknown",
         capital_gain=interest,
@@ -90,6 +91,7 @@ def _parse_financial_instruments_statement(text: str) -> ParseResult:
         issuer="flatex",
         account_key=account_key,
         account_label=f"flatex securities portfolio (cash and custody) {account_key}",
+        holder_names=_holder_names(text),
         end_balance=round(cash + securities_value, 2),
         extra={
             "inventory_date": snapshot.group(1),
@@ -166,6 +168,7 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
         issuer="flatex",
         account_key=account.group(1),
         account_label=account_label,
+        holder_names=_holder_names(text),
         start_balance=opening_balance if opening_statement else None,
         end_balance=end_balance,
         deposits=linked_deposits,
@@ -184,6 +187,11 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
         },
     )
     return ParseResult("flatex", "account_statement", year, facts=[fact])
+
+
+def _holder_names(text: str) -> list[str]:
+    match = re.search(r"(?:De heer|Mevrouw)\s*\n\s*([A-Z][A-Z .'-]{3,80})", text)
+    return [match.group(1).strip()] if match else []
 
 
 def _linked_account_transfers(

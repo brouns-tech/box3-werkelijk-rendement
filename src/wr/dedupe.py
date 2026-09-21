@@ -27,6 +27,7 @@ _ISSUER_DOC_PRIORITY = {
 
 def canonicalize_facts(conn: sqlite3.Connection) -> None:
     """Mark one canonical fact per issuer, normalized account key, and tax year."""
+    _enrich_fact_holders(conn)
     conn.execute("UPDATE account_year_facts SET is_canonical = 0")
 
     rows = conn.execute(
@@ -55,6 +56,47 @@ def canonicalize_facts(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE account_year_facts SET is_canonical = 1 WHERE id = ?", (fid,))
     _enrich_flatex_inventory_returns(conn)
     conn.commit()
+
+
+def _enrich_fact_holders(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT id, issuer, account_key, holder_names FROM account_year_facts"
+    ).fetchall()
+    by_account: dict[tuple[str, str], set[str]] = defaultdict(set)
+    by_issuer: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        holders = _holders(row["holder_names"])
+        if not holders:
+            continue
+        by_account[(row["issuer"], _account_family(row["account_key"]))].update(holders)
+        by_issuer[row["issuer"]].update(holders)
+    for row in rows:
+        if _holders(row["holder_names"]):
+            continue
+        holders = by_account[(row["issuer"], _account_family(row["account_key"]))]
+        if not holders:
+            holders = by_issuer[row["issuer"]]
+        if len(holders) == 1:
+            conn.execute(
+                "UPDATE account_year_facts SET holder_names = ? WHERE id = ?",
+                (json.dumps(sorted(holders)), row["id"]),
+            )
+        elif len(holders) == 2:
+            conn.execute(
+                "UPDATE account_year_facts SET holder_names = ?, ownership = 'joint' WHERE id = ?",
+                (json.dumps(sorted(holders)), row["id"]),
+            )
+
+
+def _holders(value: str | None) -> list[str]:
+    try:
+        return json.loads(value or "[]")
+    except json.JSONDecodeError:
+        return []
+
+
+def _account_family(account_key: str) -> str:
+    return account_key.split(":", 1)[0]
 
 
 def _logical_key(year: int, issuer: str, account_key: str, logical_group: str | None) -> tuple[int, str]:
