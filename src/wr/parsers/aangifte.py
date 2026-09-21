@@ -8,7 +8,8 @@ from wr.pdf import parse_nl_amount
 
 
 def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
-    year = tax_year or guess_tax_year(text)
+    assessment_year = re.search(r"\bAanslag\s+(20\d{2})\b", text, re.I)
+    year = int(assessment_year.group(1)) if assessment_year else tax_year or guess_tax_year(text)
     if year is None:
         m = re.search(r"inkomstenbelasting\s+(20\d{2})", text, re.I)
         year = int(m.group(1)) if m else None
@@ -149,6 +150,28 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
     voordeel = _single_amount(
         text, r"Voordeel uit sparen en beleggen\s+(?:€\s*)?([\d.]+)"
     )
+    if voordeel is None and re.search(
+        r"Voordeel uit sparen en beleggen:.*?Forfaitair rendement\s+0,000%",
+        text,
+        re.I | re.S,
+    ):
+        voordeel = 0.0
+    if voordeel is None:
+        benefit_block = re.search(
+            r"Voordeel uit sparen en beleggen:.*?(?=Belastbaar inkomen uit sparen en beleggen|\f|\Z)",
+            text,
+            re.I | re.S,
+        )
+        if benefit_block:
+            components = [
+                float(percent.replace(",", ".")) / 100 * parse_nl_amount(amount)
+                for percent, amount in re.findall(
+                    r"([\d,]+)%\s+van\s+€\s*([\d.]+)", benefit_block.group(0)
+                )
+                if parse_nl_amount(amount) is not None
+            ]
+            if components:
+                voordeel = float(round(sum(components)))
     if voordeel is None:
         voordeel = _single_amount(
             text,
@@ -234,6 +257,9 @@ def _filer_name(text: str) -> str | None:
     m = re.search(
         r"Persoonlijke gegevens van\s+([A-Z][A-Z ]+)", text, re.I
     )
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"^\s*([A-Z][A-Z .'-]{3,80})\s+Aanslag\s+20\d{2}\b", text, re.M)
     if m:
         return m.group(1).strip()
     m = re.search(r"Naam\s+([^\n]+)", text)

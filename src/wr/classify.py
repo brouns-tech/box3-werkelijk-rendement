@@ -70,6 +70,13 @@ def _is_aangifte(low: str) -> bool:
         and "formulierenversie" in low
     ):
         return True
+    if (
+        "belastingdienst" in low
+        and re.search(r"aanslag\s+20\d{2}", low)
+        and "definitieve aanslag is vastgesteld overeenkomstig uw aangifte" in low
+        and "inkomstenbelasting en premie volksverzekeringen" in low
+    ):
+        return True
     return False
 
 
