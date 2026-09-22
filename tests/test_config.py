@@ -17,6 +17,32 @@ def test_configuration_is_optional(monkeypatch, tmp_path):
     assert resolve_db_path(config) == tmp_path / "data" / "wr.sqlite"
 
 
+def test_partner_configuration_is_optional(tmp_path):
+    config_path = tmp_path / "single-filer.toml"
+    config_path.write_text('db_path = "results.sqlite"\n', encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.partners.partner_a is None
+    assert config.partners.partner_b is None
+    assert config.partners.partner_a_aliases == ()
+    assert config.partners.partner_b_aliases == ()
+
+
+def test_single_filer_configuration_does_not_require_partner_b(tmp_path):
+    config_path = tmp_path / "single-filer.toml"
+    config_path.write_text(
+        '[partners]\npartner_a = "Sophie de Vries"\n'
+        'partner_a_aliases = ["S. de Vries"]\n',
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.partners.partner_a == "Sophie de Vries"
+    assert config.partners.partner_b is None
+
+
 def test_explicit_missing_configuration_is_an_error(tmp_path):
     missing = tmp_path / "missing.toml"
 

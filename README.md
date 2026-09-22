@@ -54,7 +54,7 @@ imported from your computer, and the demo data is removed when the process stops
 ### 3. Configure your workspace (optional)
 
 No configuration file is required when you pass the statement directory to the
-import command. For persistent paths, partner aliases and other configuration settings, start from the example:
+import command. For persistent paths and other settings, start from the example:
 
 ```bash
 cp config.example.toml config.toml
@@ -62,6 +62,11 @@ cp config.example.toml config.toml
 
 Relative database paths are resolved from the configuration file. Use a different
 file with `wr --config /path/to/config.toml <command>`.
+
+Fiscal-partner configuration is optional. For an individual return, omit the
+`[partners]` section: the taxpayer name is read from the imported tax return.
+Configure `partner_a` only when aliases are needed to match differently formatted
+account-holder names. Add `partner_b` only for full-year fiscal partners.
 
 ### 4. Import your documents
 

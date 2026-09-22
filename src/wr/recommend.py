@@ -214,8 +214,10 @@ def _same_person(a: str | None, b: str | None) -> bool:
 def _individual_results(
     conn, year: int, returns, partner_cfg: PartnerSettings
 ) -> list[PartnerTaxResult]:
-    configured = list(partner_cfg.configured())
-    if not any(name for _, name in configured):
+    configured = [
+        (slot, name) for slot, name in partner_cfg.configured() if name is not None
+    ]
+    if not configured:
         configured = [(chr(ord("a") + index), row["filer_name"]) for index, row in enumerate(returns)]
     results = []
     for slot, name in configured:

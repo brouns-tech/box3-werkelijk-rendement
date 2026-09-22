@@ -47,7 +47,7 @@ def _decision_rows(results) -> list[dict[str, str]]:
             savings = max(0.0, subtract(fictitious_tax, actual_tax))
         rows.append(
             {
-                "Issuer": result["partner_name"],
+                "Taxpayer": result["partner_name"],
                 "Actual return": _currency(result["allocated_actual_return"]),
                 "Fictitious return": _currency(result["fictitious_return"]),
                 "Decision": _decision_label(result["recommendation"]),
@@ -188,7 +188,7 @@ def main() -> None:
     st.subheader("Decision overview")
     if results:
         st.dataframe(
-            _styled_table(_decision_rows(results), "Issuer", owner_colors),
+            _styled_table(_decision_rows(results), "Taxpayer", owner_colors),
             width="stretch",
             hide_index=True,
         )

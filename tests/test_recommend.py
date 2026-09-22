@@ -5,7 +5,7 @@ from wr.db import init_db
 from wr.recommend import _results_for_year
 
 
-def test_non_full_year_return_compares_main_issuer():
+def test_individual_return_uses_taxpayer_from_return_without_configuration():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_db(conn)
@@ -49,6 +49,49 @@ def test_non_full_year_return_compares_main_issuer():
     assert result[0].partner_name == "Alex Example"
     assert result[0].allocation_ratio == 1.0
     assert result[0].recommendation == "ACTUAL_BETTER"
+
+
+def test_single_configured_taxpayer_does_not_create_empty_partner_result():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    conn.execute(
+        """
+        INSERT INTO documents (content_sha256, byte_size, imported_at, parse_status)
+        VALUES ('return', 1, '2026-01-01T00:00:00+00:00', 'parsed')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO tax_returns (
+            document_sha256, tax_year, filer_name, full_year_fiscal_partners,
+            voordeel_a, box3_tax_a
+        ) VALUES ('return', 2023, 'Sophie de Vries', 0, 100, 32)
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO account_year_facts (
+            document_sha256, tax_year, issuer, account_key, holder_names,
+            capital_gain, gain_method, is_canonical
+        ) VALUES ('return', 2023, 'bank', 'example', '["S. de Vries"]',
+                  50, 'explicit', 1)
+        """
+    )
+    conn.commit()
+
+    result = _results_for_year(
+        conn,
+        2023,
+        PartnerSettings(
+            partner_a="Sophie de Vries",
+            partner_a_aliases=("S. de Vries",),
+        ),
+    )
+
+    assert len(result) == 1
+    assert result[0].partner == "a"
+    assert result[0].partner_name == "Sophie de Vries"
 
 
 def test_prefers_sent_tax_return_over_unsent_draft():

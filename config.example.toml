@@ -4,9 +4,13 @@
 import_root = "/path/to/your/finance/documents"
 db_path = "data/wr.sqlite"
 
-[partners]
-# Optional canonical names and aliases used to match tax returns to account holders.
-partner_a = "A. Partner"
-partner_b = "B. Partner"
-partner_a_aliases = ["Partner A", "A Partner"]
-partner_b_aliases = ["Partner B", "B Partner"]
+# Fiscal-partner settings are optional. For an individual return, omit this
+# section: the taxpayer name is read from the imported tax return.
+#
+# Add only the entries you need when statement holder names require aliases:
+# [partners]
+# partner_a = "Sophie de Vries"
+# partner_a_aliases = ["S. de Vries", "Sophie M. de Vries"]
+#
+# For full-year fiscal partners, partner_b and partner_b_aliases can be added
+# to the same section.
