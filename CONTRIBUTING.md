@@ -33,3 +33,6 @@ pytest
 Keep changes focused and include a regression test for parser fixes. A new parser
 should fail closed: if the required identity or annual-period markers are absent,
 the document must remain unsupported rather than being partially guessed.
+
+Pull requests run the test and wheel smoke-test matrix on Python 3.10 through
+3.13. Update tax policies explicitly when adding support for a new tax year.

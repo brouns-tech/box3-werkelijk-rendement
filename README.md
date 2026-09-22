@@ -1,40 +1,27 @@
 # Werkelijk Rendement
 
-Werkelijk Rendement is a local Python tool for reconstructing Dutch Box 3 actual
-return (`werkelijk rendement`) from annual bank and broker statements. It compares
-that result with the fictitious return (`forfaitair rendement`) reported in an
-income-tax return and can produce an auditable ZIP export.
+_Reconstruct and compare Dutch Box 3 returns from your own financial statements._
 
-> [!WARNING]
-> This project is an analysis aid, not tax or financial advice. Verify its output
-> against the source documents and current Belastingdienst guidance before filing.
+Werkelijk Rendement is a local Python application that reads supported annual
+bank, broker, and Dutch income-tax PDFs. It reconstructs actual return
+(`werkelijk rendement`), compares it with the filed fictitious return
+(`forfaitair rendement`), and produces an auditable ZIP export.
 
-## Supported documents
+The included Streamlit dashboard summarizes coverage, return calculations, tax
+outcomes, and the account-level source data behind them. Processing stays on your
+machine.
 
-Support is deliberately allowlisted: a PDF is imported only when its extracted
-text matches a known template. Renamed files and arbitrary folder layouts are
-fine; unsupported templates are skipped.
+![Werkelijk Rendement dashboard with synthetic example data](docs/assets/dashboard-overview.png)
 
-| Institution | Supported PDF statement | Use and limitations |
-| --- | --- | --- |
-| Belastingdienst | `Aangifte Inkomstenbelasting` copy containing `Eigen kopie, niet opsturen`, `Formulierenversie`, and `Burgerservicenummer`; supported final-assessment layout | Supplies aggregate Box 3 and filed tax figures, never the account inventory. |
-| DEGIRO | `Jaaropgave` / `Jaaroverzicht` containing opening and closing portfolio totals | Supplies portfolio balances, deposits, withdrawals, and return components. |
-| flatex | `Lijst met financiële klanteninstrumenten en klantenfondsen` dated 31 December | Supplies the year-end securities-and-cash inventory. Adjacent years are needed to derive a full-year value change. |
-| flatex | `Rekeninguittreksel` | Used only for external transfers involving the configured linked bank account. Cash sweeps are excluded. |
-| flatex | `Steuerbescheinigung` | Accepted as supplementary legacy income data; it is not a complete portfolio inventory. |
-| ING | `Jaaroverzicht` for ING payment, savings, and credit-card products | Supplies account balances and reported interest. |
-| Rabobank | `Financieel Jaaroverzicht` | Supplies account balances and reported interest. |
-| SNS | `Jaaroverzicht Betalen, Sparen & Lenen`, `Financieel overzicht`, and `Totaaloverzicht Rekeningen` | The total overview supplies balances; savings accounts without a reported interest figure remain incomplete. |
-| Raisin | `Raisin Financieel Jaaroverzicht` | Supplies savings-product balances, interest, and withholding tax. |
-| Revolut | `Annual Financial Summary` | Supplies annual account data. |
-| Revolut | Annual Flexible Cash Funds savings statement | Supplies earned return for the savings product. |
-| Revolut | Personal current-account statement covering 1 January through 31 December | Supplies balances and flows. Revolut Business statements are not supported. |
+## Supported institutions
 
-The PDF must contain extractable text. Image-only scans are not OCRed. CSV files,
-transaction exports, interim statements (except the listed flatex statements),
-and templates from other banks or brokers are currently unsupported. Support for
-additional cases is welcome through pull requests; see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The current allowlist covers statements from **ING, Rabobank, SNS, Raisin,
+Revolut, DEGIRO, flatex, and the Belastingdienst**. Only recognized annual
+statement layouts are imported; unsupported PDFs are skipped rather than guessed.
+
+See [Supported documents](docs/supported-documents.md) for the exact statement
+names, required content markers, and known limitations. Support for other banks,
+brokers, or layouts can be added through pull requests.
 
 ## Requirements
 
@@ -42,7 +29,9 @@ additional cases is welcome through pull requests; see
 - Optional but recommended: Poppler's `pdftotext` executable for more reliable
   layout-preserving extraction. The tool falls back to `pypdf`.
 
-## Installation
+## Quickstart
+
+### 1. Install the application
 
 From a checkout of this repository:
 
@@ -52,41 +41,51 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
-The shortest usable invocation needs no configuration file:
+### 2. Try the dashboard with example data
 
 ```bash
-wr import --root /path/to/your/pdf-statements
-wr dashboard
+wr demo
 ```
 
-By default, the SQLite database is written to `data/wr.sqlite` under the current
-directory.
+This creates a temporary database with entirely synthetic financial data for
+Sophie de Vries and Daan Jansen, then opens the populated dashboard. Nothing is
+imported from your computer, and the demo data is removed when the process stops.
 
-## Configuration
+### 3. Configure your workspace (optional)
 
-Copy the example only when you need persistent paths, partner aliases, or flatex
-transfer matching:
+No configuration file is required when you pass the statement directory to the
+import command. For persistent paths, partner aliases and other configuration settings, start from the example:
 
 ```bash
 cp config.example.toml config.toml
 ```
 
-Then edit the values for your environment. Relative `db_path` values are resolved
-relative to the configuration file. Pass a different file with
-`wr --config /path/to/config.toml <command>`.
+Relative database paths are resolved from the configuration file. Use a different
+file with `wr --config /path/to/config.toml <command>`.
 
-The `accounts.flatex_linked_account` setting is important when importing flatex
-account statements: only transfers to or from that IBAN are treated as external
-portfolio flows. Partner names and aliases improve matching when statement and
-tax-return name formats differ.
-
-## Commands
+### 4. Import your documents
 
 ```bash
-wr import --root /path/to/pdfs  # recursively import supported PDFs
+wr import --root /path/to/your/pdf-statements
+```
+
+The importer scans recursively, admits only supported PDF layouts, deduplicates
+documents by content hash, and writes the analysis to `data/wr.sqlite` by default.
+
+### 5. Open your dashboard
+
+```bash
+wr dashboard
+```
+
+Streamlit opens the local dashboard in your browser. Use
+`wr dashboard --port 8501` to select a different port.
+
+## Other commands
+
+```bash
 wr import --fresh               # rebuild the configured database from scratch
 wr recompute                    # recompute existing imported facts
-wr dashboard --port 8501        # launch the local Streamlit dashboard
 wr export --year 2024           # write exports/wr-audit.zip
 ```
 
@@ -95,16 +94,18 @@ use `wr import --fresh` so previously admitted rows cannot affect the result.
 
 ## Data and privacy
 
-Processing is local, but the SQLite database contains source paths, extracted PDF
-text excerpts, account identifiers, holder names, balances, and tax figures. Audit
-exports can also contain identifying financial data. `config.toml`, the default
-`data/` directory, SQLite files, and `exports/` are ignored by Git; rSAMw files
-before sharing them.
+The SQLite database contains source paths, extracted PDF text excerpts, account
+identifiers, holder names, balances, and tax figures. Audit exports can also
+contain identifying financial data. `config.toml`, the default `data/` directory,
+SQLite files, and `exports/` are ignored by Git; rSAMw files before sharing them.
 
-Documents are deduplicated by content SHA-256. For full-year fiscal partners, the
-combined Box 3 return is allocated using the filed taxable-base split. Incomplete
-statement coverage produces `INDETERMINATE_MISSING_DATA` rather than a definitive
-recommendation.
+For full-year fiscal partners, combined Box 3 return is allocated using the filed
+taxable-base split. Incomplete statement coverage produces
+`INDETERMINATE_MISSING_DATA` rather than a definitive recommendation.
+
+Tax comparison policies are currently implemented for 2017 through 2025. Later
+years remain importable, but return `NEEDS_MANUAL_RSAMW` instead of using a
+guessed future tax rate.
 
 ## Development
 
@@ -113,5 +114,9 @@ python -m pip install -e '.[dev]'
 pytest
 ```
 
-Known structural improvements are tracked in
-[docs/refactoring.md](docs/refactoring.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for parser and fixture guidelines.
+
+## Disclaimer
+
+This project is an analysis aid, not tax or financial advice. Verify its output
+against the source documents and current Belastingdienst guidance before filing.
