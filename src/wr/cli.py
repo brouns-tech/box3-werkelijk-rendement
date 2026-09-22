@@ -53,7 +53,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
     db_path = resolve_db_path(cfg)
     partner_config = cfg.partners
-    flatex_linked_account = cfg.accounts.flatex_linked_account
 
     if args.cmd == "import":
         if args.fresh and db_path.exists():
@@ -72,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
             db_path,
             limit=args.limit,
             partner_config=partner_config,
-            flatex_linked_account=flatex_linked_account,
+            institution_options=cfg.institution_options,
             progress=_print_import_outcome,
         )
         print(
@@ -86,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         recompute(
             db_path,
             partner_config=partner_config,
-            flatex_linked_account=flatex_linked_account,
+            institution_options=cfg.institution_options,
         )
         print("Recomputed canonical facts, coverage, and recommendations")
         return 0

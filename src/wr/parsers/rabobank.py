@@ -3,8 +3,32 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserRegistration,
+    simple_parser,
+)
 from wr.parsers.common import amount_after_label, first_holder, resolve_tax_year
 from wr.pdf import normalize_iban
+
+
+def _is_supported_document(text: str) -> bool:
+    return (
+        "rabobank" in text
+        and "financieel jaaroverzicht" in text
+        and (
+            bool(re.search(r"onderwerp\s+financieel jaaroverzicht", text))
+            or "hierbij ontvangt u een financieel jaaroverzicht over het afgelopen jaar" in text
+            or "dit is uw financieel jaaroverzicht van het afgelopen jaar" in text
+            or (
+                "alstublieft, uw financieel jaaroverzicht" in text
+                and "op het overzicht vindt u de gegevens van uw eigen" in text
+            )
+        )
+        and ("saldo 01-01" in text or "sa l do 01 - 01" in text)
+        and ("saldo 31-12" in text or "sa l do 31 - 12" in text)
+    )
 
 
 def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
@@ -55,3 +79,14 @@ def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
 
 def _holders(text: str) -> list[str]:
     return first_holder(text, r"\b([A-Z](?:\.[A-Z])+\.\s+[A-Z][A-Za-z]+)\b")
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="rabobank",
+    classification_rules=(
+        ClassificationRule("rabobank", "jaaroverzicht", _is_supported_document),
+    ),
+    parsers={
+        "jaaroverzicht": ParserRegistration(simple_parser(parse_rabobank), 90),
+    },
+)

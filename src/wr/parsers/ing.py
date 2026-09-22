@@ -3,9 +3,27 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserRegistration,
+    simple_parser,
+)
 from wr.parsers.common import first_holder, resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
-from wr.source_rules import has_zero_return_by_product
+
+
+def _is_supported_document(text: str) -> bool:
+    return (
+        "ing" in text
+        and bool(re.search(r"jaaroverzicht\s+20\d{2}", text))
+        and "saldo op 01-01" in text
+        and "saldo op 31-12" in text
+        and any(
+            marker in text
+            for marker in ("ing betaalrekening", "ing oranje spaarrekening", "creditcards")
+        )
+    )
 
 
 def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
@@ -64,7 +82,10 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
             withdrawals=None,
             extra={"interest_source": interest_source} if interest_source else {},
         )
-        if has_zero_return_by_product("ing", label):
+        if any(
+            product in label.casefold()
+            for product in ("betaalrekening", "creditcardrekening")
+        ):
             fact.capital_gain = 0.0
             fact.gain_method = "explicit"
             fact.extra = {"return_assumption": "zero_by_product"}
@@ -85,3 +106,14 @@ def _ing_account_key(raw: str) -> str:
 
 def _holders(text: str) -> list[str]:
     return first_holder(text, r"(?:Hr|Mevr\.)\s+([^\n*]+)")
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="ing",
+    classification_rules=(
+        ClassificationRule("ing", "jaaroverzicht", _is_supported_document),
+    ),
+    parsers={
+        "jaaroverzicht": ParserRegistration(simple_parser(parse_ing), 90),
+    },
+)

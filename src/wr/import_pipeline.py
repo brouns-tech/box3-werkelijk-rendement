@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -19,10 +18,10 @@ from wr.db import (
 )
 from wr.dedupe import canonicalize_facts
 from wr.parsers import parse_document
+from wr.parsers.base import InstitutionOptions
 from wr.pdf import extract_text, sha256_file
 from wr.portfolio import rebuild_portfolio
 from wr.recommend import rebuild_recommendations
-from wr.source_rules import has_zero_return_by_product
 
 
 class ImportStatus(str, Enum):
@@ -70,7 +69,7 @@ def run_import(
     limit: int | None = None,
     *,
     partner_config: PartnerSettings | None = None,
-    flatex_linked_account: str | None = None,
+    institution_options: InstitutionOptions | None = None,
     progress: ProgressCallback | None = None,
 ) -> ImportReport:
     root = Path(root)
@@ -174,7 +173,7 @@ def run_import(
                 classification.doc_type,
                 text,
                 year,
-                flatex_linked_account=flatex_linked_account,
+                institution_options=institution_options,
             )
             _persist_parse(conn, sha, classification, result, page_count, excerpt)
             outcome = DocumentImportOutcome(
@@ -210,8 +209,7 @@ def run_import(
         conn.commit()
         _record(report, outcome, progress, inserted=inserted)
 
-    _apply_source_return_rules(conn)
-    canonicalize_facts(conn, flatex_linked_account)
+    canonicalize_facts(conn, institution_options)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, partner_config)
 
@@ -318,32 +316,11 @@ def recompute(
     db_path: str | Path,
     *,
     partner_config: PartnerSettings | None = None,
-    flatex_linked_account: str | None = None,
+    institution_options: InstitutionOptions | None = None,
 ) -> None:
     conn = connect(db_path)
     init_db(conn)
-    _apply_source_return_rules(conn)
     clear_canonical_flags(conn)
-    canonicalize_facts(conn, flatex_linked_account)
+    canonicalize_facts(conn, institution_options)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, partner_config)
-
-
-def _apply_source_return_rules(conn) -> None:
-    rows = conn.execute(
-        "SELECT id, issuer, account_label, extra FROM account_year_facts"
-    ).fetchall()
-    for row in rows:
-        if not has_zero_return_by_product(row["issuer"], row["account_label"] or ""):
-            continue
-        extra = json.loads(row["extra"]) if row["extra"] else {}
-        extra["return_assumption"] = "zero_by_product"
-        conn.execute(
-            """
-            UPDATE account_year_facts
-            SET capital_gain = 0, gain_method = 'explicit', extra = ?
-            WHERE id = ?
-            """,
-            (json.dumps(extra), row["id"]),
-        )
-    conn.commit()

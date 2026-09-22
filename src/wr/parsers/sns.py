@@ -1,10 +1,41 @@
 from __future__ import annotations
 
 import re
+import sqlite3
+from typing import Mapping
 
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserRegistration,
+    doc_type_parser,
+)
 from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
+
+
+def _is_annual_overview(text: str) -> bool:
+    return (
+        "sns bank" in text
+        and (
+            "jaaroverzicht betalen, sparen & lenen" in text
+            or "financieel overzicht" in text
+        )
+        and "saldo" in text
+        and "rente" in text
+        and "1-1-" in text
+    )
+
+
+def _is_total_overview(text: str) -> bool:
+    return (
+        "sns" in text
+        and "totaaloverzicht rekeningen" in text
+        and "rekeninghouder" in text
+        and "saldo per 01-01" in text
+        and "saldo per 31-12" in text
+    )
 
 
 def parse_sns(text: str, tax_year: int | None, doc_type: str) -> ParseResult:
@@ -169,3 +200,36 @@ def _clean_ocr_iban(raw: str) -> str:
 
 def _holders(text: str) -> list[str]:
     return []
+
+
+def _postprocess(conn: sqlite3.Connection, _options: Mapping[str, object]) -> None:
+    rows = conn.execute(
+        "SELECT id, account_key, account_label FROM account_year_facts WHERE issuer = ?",
+        ("sns",),
+    ).fetchall()
+    product_labels: dict[str, str] = {}
+    for row in rows:
+        label = (row["account_label"] or "").strip()
+        if label.lower().startswith("sns "):
+            product_labels[row["account_key"].split(":", 1)[0]] = label
+    for row in rows:
+        product_label = product_labels.get(row["account_key"].split(":", 1)[0])
+        if product_label and not (row["account_label"] or "").lower().startswith("sns "):
+            conn.execute(
+                "UPDATE account_year_facts SET account_label = ? WHERE id = ?",
+                (product_label, row["id"]),
+            )
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="sns",
+    classification_rules=(
+        ClassificationRule("sns", "totaaloverzicht", _is_total_overview),
+        ClassificationRule("sns", "jaaroverzicht", _is_annual_overview),
+    ),
+    parsers={
+        "jaaroverzicht": ParserRegistration(doc_type_parser(parse_sns), 90),
+        "totaaloverzicht": ParserRegistration(doc_type_parser(parse_sns), 50),
+    },
+    postprocess=_postprocess,
+)

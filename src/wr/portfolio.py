@@ -171,9 +171,6 @@ def _fact_has_actual_return(fact) -> bool:
         and fact["withdrawals"] is not None
     ):
         return True
-    # Savings with interest_only already handled; bank with only balances → partial
-    if fact["issuer"] in {"ing", "sns", "raisin", "revolut"} and fact["interest_received"] is not None:
-        return True
     return False
 
 

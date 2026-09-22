@@ -4,8 +4,56 @@ import re
 
 from wr.models import AccountYearFact, ParseResult
 from wr.money import add
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserRegistration,
+    doc_type_parser,
+)
 from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_account_id, normalize_iban, parse_en_amount, parse_nl_amount
+
+
+def _is_annual_summary(text: str) -> bool:
+    return (
+        "revolut" in text
+        and bool(re.search(r"annual financial summary\s+20\d{2}", text))
+        and "account number" in text
+    )
+
+
+def _is_savings_statement(text: str) -> bool:
+    return (
+        "revolut" in text
+        and "period jan 1" in text
+        and "dec 31" in text
+        and "account number" in text
+        and "flexible cash funds" in text
+        and "total earned return" in text
+    )
+
+
+def _is_account_statement(text: str) -> bool:
+    return (
+        "revolut" in text
+        and "account (current account)" in text
+        and bool(re.search(r"\b(?:eur|usd|gbp) statement\b", text))
+        and bool(
+            re.search(
+                r"(?:transactions|period)\s+from\s+january\s+1.*december\s+31",
+                text,
+                re.S,
+            )
+        )
+    )
+
+
+def _is_business_statement(text: str) -> bool:
+    return (
+        "revolut business" in text
+        and "account statement" in text
+        and "balance summary" in text
+    )
 
 
 def parse_revolut(text: str, tax_year: int | None, doc_type: str) -> ParseResult:
@@ -175,3 +223,21 @@ def _holders(text: str) -> list[str]:
     if first and last:
         return [f"{first.group(1)} {last.group(1)}"]
     return []
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="revolut",
+    classification_rules=(
+        ClassificationRule("revolut", "jaaroverzicht", _is_annual_summary),
+        ClassificationRule("revolut", "savings_statement", _is_savings_statement),
+        ClassificationRule(
+            "revolut", "business_account_statement", _is_business_statement, supported=False
+        ),
+        ClassificationRule("revolut", "account_statement", _is_account_statement),
+    ),
+    parsers={
+        "jaaroverzicht": ParserRegistration(doc_type_parser(parse_revolut), 90),
+        "savings_statement": ParserRegistration(doc_type_parser(parse_revolut), 85),
+        "account_statement": ParserRegistration(doc_type_parser(parse_revolut), 20),
+    },
+)

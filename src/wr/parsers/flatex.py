@@ -1,11 +1,61 @@
 from __future__ import annotations
 
+import json
 import re
+import sqlite3
+from collections import defaultdict
+from typing import Mapping
 
 from wr.models import AccountYearFact, ParseResult
+from wr.money import add, subtract, total
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserContext,
+    ParserRegistration,
+)
 from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
-from wr.source_rules import has_zero_return_by_product
+
+
+def _is_tax_certificate(text: str) -> bool:
+    return (
+        "flatex" in text
+        and "steuerbescheinigung" in text
+        and "kunde:" in text
+        and "kapitalerträge" in text
+    )
+
+
+def _is_financial_instruments_statement(text: str) -> bool:
+    return (
+        "flatex" in text
+        and "lijst met financiële klanteninstrumenten en klantenfondsen" in text
+        and "ingesloten vindt u de lijst voor 31.12." in text
+        and "rekeningstand" in text
+        and "effectenrekeningposities" in text
+    )
+
+
+def _is_account_statement(text: str) -> bool:
+    return (
+        "flatex" in text
+        and "rekeninguittreksel nr:" in text
+        and "rekeningnummer:" in text
+        and "oud saldo van" in text
+        and "nieuw saldo" in text
+    )
+
+
+def _parse_with_context(
+    text: str, tax_year: int | None, context: ParserContext
+) -> ParseResult:
+    return parse_flatex(
+        text,
+        tax_year,
+        context.doc_type,
+        context.string_option("linked_account"),
+    )
 
 
 def parse_flatex(
@@ -163,7 +213,6 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
     sweep_deposits, sweep_withdrawals, sweep_count = _cash_sweep_transfers(text)
     end_balance = _closing_balance(text)
     account_label = f"flatex cash account {account.group(1)}"
-    zero_return = has_zero_return_by_product("flatex", account_label)
     fact = AccountYearFact(
         tax_year=year,
         issuer="flatex",
@@ -174,8 +223,8 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
         end_balance=end_balance,
         deposits=linked_deposits,
         withdrawals=linked_withdrawals,
-        capital_gain=0.0 if zero_return else None,
-        gain_method="explicit" if zero_return else "unknown",
+        capital_gain=0.0,
+        gain_method="explicit",
         extra={
             "linked_account": linked_account,
             "statement_number": statement_number,
@@ -266,3 +315,179 @@ def _closing_balance(text: str) -> float | None:
     if closing.group(2) == "-" and balance and balance > 0:
         return -balance
     return balance
+
+
+def _postprocess(conn: sqlite3.Connection, options: Mapping[str, object]) -> None:
+    linked_account = options.get("linked_account")
+    normalized_account = (
+        normalize_iban(linked_account)
+        if isinstance(linked_account, str) and linked_account.strip()
+        else None
+    )
+    conn.execute(
+        """
+        UPDATE account_year_facts
+        SET capital_gain = NULL, gain_method = 'unknown'
+        WHERE issuer = 'flatex'
+          AND id IN (
+              SELECT f.id
+              FROM account_year_facts f
+              JOIN documents d ON d.content_sha256 = f.document_sha256
+              WHERE d.doc_type = 'account_statement' AND f.gain_method = 'balance_flow'
+          )
+        """
+    )
+    _select_statement_canonicals(conn)
+    inventories = conn.execute(
+        """
+        SELECT f.*
+        FROM account_year_facts f
+        JOIN documents d ON d.content_sha256 = f.document_sha256
+        WHERE f.issuer = 'flatex'
+          AND f.is_canonical = 1
+          AND d.doc_type = 'financial_instruments_statement'
+        ORDER BY f.account_key, f.tax_year
+        """
+    ).fetchall()
+    inventory_by_year = {
+        (row["account_key"], row["tax_year"]): row for row in inventories
+    }
+
+    for inventory in inventories:
+        account_key = inventory["account_key"]
+        tax_year = inventory["tax_year"]
+        flows = conn.execute(
+            """
+            SELECT start_balance, deposits, withdrawals, extra
+            FROM account_year_facts f
+            JOIN documents d ON d.content_sha256 = f.document_sha256
+            WHERE f.issuer = 'flatex'
+              AND f.account_key = ?
+              AND f.tax_year = ?
+              AND d.doc_type = 'account_statement'
+            """,
+            (account_key, tax_year),
+        ).fetchall()
+        if not flows:
+            continue
+
+        deposits = total(row["deposits"] or 0.0 for row in flows)
+        withdrawals = total(row["withdrawals"] or 0.0 for row in flows)
+        previous = inventory_by_year.get((account_key, tax_year - 1))
+        start_balance = previous["end_balance"] if previous else _opening_balance(flows)
+        if start_balance is None:
+            continue
+
+        end_balance = inventory["end_balance"]
+        capital_gain = add(subtract(end_balance, start_balance, deposits), withdrawals)
+        extra = json.loads(inventory["extra"] or "{}")
+        previous_extra = json.loads(previous["extra"] or "{}") if previous else {}
+        start_securities_value = previous_extra.get("securities_market_value")
+        end_securities_value = extra.get("securities_market_value")
+        extra["portfolio_return_basis"] = (
+            "year-end securities-and-cash valuation adjusted only for external transfers"
+        )
+        extra["securities_market_value_start"] = start_securities_value
+        extra["securities_market_value_end"] = end_securities_value
+        if start_securities_value is not None and end_securities_value is not None:
+            extra["securities_market_value_change"] = subtract(
+                end_securities_value, start_securities_value
+            )
+        extra["return_derived_from"] = {
+            "opening_balance": (
+                "prior_31_december_inventory" if previous else "opening_account_statement"
+            ),
+            "external_flow_documents": len(flows),
+            "linked_account": normalized_account,
+        }
+        conn.execute(
+            """
+            UPDATE account_year_facts
+            SET start_balance = ?, deposits = ?, withdrawals = ?,
+                capital_gain = ?, gain_method = 'balance_flow', extra = ?
+            WHERE id = ?
+            """,
+            (
+                start_balance,
+                deposits,
+                withdrawals,
+                capital_gain,
+                json.dumps(extra),
+                inventory["id"],
+            ),
+        )
+
+
+def _select_statement_canonicals(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT f.id, f.tax_year, f.account_key, f.extra
+        FROM account_year_facts f
+        JOIN documents d ON d.content_sha256 = f.document_sha256
+        WHERE f.issuer = 'flatex' AND d.doc_type = 'account_statement'
+        ORDER BY f.tax_year, f.account_key
+        """
+    ).fetchall()
+    groups: dict[tuple[int, str], list] = defaultdict(list)
+    for row in rows:
+        groups[(row["tax_year"], row["account_key"])].append(row)
+
+    for (tax_year, account_key), statements in groups.items():
+        has_inventory = conn.execute(
+            """
+            SELECT 1
+            FROM account_year_facts f
+            JOIN documents d ON d.content_sha256 = f.document_sha256
+            WHERE f.issuer = 'flatex' AND f.tax_year = ? AND f.account_key = ?
+              AND d.doc_type = 'financial_instruments_statement'
+            """,
+            (tax_year, account_key),
+        ).fetchone()
+        if has_inventory:
+            continue
+        selected = max(statements, key=_statement_number)
+        conn.execute(
+            """
+            UPDATE account_year_facts SET is_canonical = 0
+            WHERE issuer = 'flatex' AND tax_year = ? AND account_key = ?
+            """,
+            (tax_year, account_key),
+        )
+        conn.execute(
+            "UPDATE account_year_facts SET is_canonical = 1 WHERE id = ?",
+            (selected["id"],),
+        )
+
+
+def _statement_number(row) -> int:
+    extra = json.loads(row["extra"] or "{}")
+    return int(extra.get("statement_number", 0))
+
+
+def _opening_balance(flows) -> float | None:
+    opening_balances = []
+    for flow in flows:
+        extra = json.loads(flow["extra"] or "{}")
+        if extra.get("opening_statement") and flow["start_balance"] is not None:
+            opening_balances.append(flow["start_balance"])
+    return opening_balances[0] if len(opening_balances) == 1 else None
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="flatex",
+    classification_rules=(
+        ClassificationRule("flatex", "belastingcertificaat", _is_tax_certificate),
+        ClassificationRule(
+            "flatex",
+            "financial_instruments_statement",
+            _is_financial_instruments_statement,
+        ),
+        ClassificationRule("flatex", "account_statement", _is_account_statement),
+    ),
+    parsers={
+        "financial_instruments_statement": ParserRegistration(_parse_with_context, 100),
+        "account_statement": ParserRegistration(_parse_with_context, 20),
+        "belastingcertificaat": ParserRegistration(_parse_with_context, 10),
+    },
+    postprocess=_postprocess,
+)

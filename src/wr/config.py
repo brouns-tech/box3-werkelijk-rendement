@@ -9,9 +9,6 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore
 
-from wr.pdf import normalize_iban
-
-
 @dataclass(frozen=True)
 class PartnerSettings:
     partner_a: str | None = None
@@ -31,18 +28,13 @@ class PartnerSettings:
 
 
 @dataclass(frozen=True)
-class AccountSettings:
-    flatex_linked_account: str | None = None
-
-
-@dataclass(frozen=True)
 class Settings:
     project_root: Path
     config_path: Path | None = None
     import_root: Path | None = None
     db_path: Path = Path("data/wr.sqlite")
     partners: PartnerSettings = field(default_factory=PartnerSettings)
-    accounts: AccountSettings = field(default_factory=AccountSettings)
+    institution_options: dict[str, dict[str, object]] = field(default_factory=dict)
 
     @property
     def resolved_db_path(self) -> Path:
@@ -65,10 +57,7 @@ def load_config(path: str | Path | None = None) -> Settings:
 
 def _settings_from_mapping(raw: dict[str, Any], config_path: Path) -> Settings:
     partner_raw = _mapping(raw.get("partners"), "partners")
-    account_raw = _mapping(raw.get("accounts"), "accounts")
-    linked_account = _optional_string(
-        account_raw.get("flatex_linked_account"), "accounts.flatex_linked_account"
-    )
+    institution_raw = _mapping(raw.get("institutions"), "institutions")
     return Settings(
         project_root=config_path.parent,
         config_path=config_path,
@@ -84,9 +73,10 @@ def _settings_from_mapping(raw: dict[str, Any], config_path: Path) -> Settings:
                 partner_raw.get("partner_b_aliases"), "partners.partner_b_aliases"
             ),
         ),
-        accounts=AccountSettings(
-            flatex_linked_account=normalize_iban(linked_account) if linked_account else None
-        ),
+        institution_options={
+            name: _mapping(options, f"institutions.{name}")
+            for name, options in institution_raw.items()
+        },
     )
 
 

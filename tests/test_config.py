@@ -24,14 +24,14 @@ def test_explicit_missing_configuration_is_an_error(tmp_path):
         load_config(missing)
 
 
-def test_typed_configuration_normalizes_paths_and_iban(tmp_path):
+def test_typed_configuration_preserves_generic_institution_options(tmp_path):
     config_path = tmp_path / "custom.toml"
     config_path.write_text(
         'import_root = "statements"\n'
         'db_path = "state/results.sqlite"\n'
         '[partners]\npartner_a = "Alex Example"\n'
         'partner_a_aliases = ["A. Example"]\n'
-        '[accounts]\nflatex_linked_account = "NL00 TEST 0000 0000 00"\n',
+        '[institutions.broker]\nlinked_account = "NL00 TEST 0000 0000 00"\n',
         encoding="utf-8",
     )
 
@@ -40,7 +40,9 @@ def test_typed_configuration_normalizes_paths_and_iban(tmp_path):
     assert config.import_root == Path("statements")
     assert config.resolved_db_path == tmp_path / "state" / "results.sqlite"
     assert config.partners.partner_a_aliases == ("A. Example",)
-    assert config.accounts.flatex_linked_account == "NL00TEST0000000000"
+    assert config.institution_options == {
+        "broker": {"linked_account": "NL00 TEST 0000 0000 00"}
+    }
 
 
 def test_import_with_root_does_not_require_configuration(monkeypatch, tmp_path):
@@ -65,7 +67,7 @@ def test_import_returns_a_structured_report(tmp_path):
     assert report.outcomes == []
 
 
-def test_parser_receives_flatex_linked_account():
+def test_parser_receives_institution_options():
     text = (
         "flatex Bank AG\n"
         "Rekeninguittreksel nr: 001/2020\n"
@@ -81,7 +83,9 @@ def test_parser_receives_flatex_linked_account():
         "account_statement",
         text,
         2020,
-        flatex_linked_account="NL00 TEST 0000 0000 00",
+        institution_options={
+            "flatex": {"linked_account": "NL00 TEST 0000 0000 00"}
+        },
     )
 
     assert result.facts[0].deposits == 5000.0

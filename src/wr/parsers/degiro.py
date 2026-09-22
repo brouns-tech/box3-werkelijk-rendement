@@ -3,8 +3,26 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserRegistration,
+    simple_parser,
+)
 from wr.parsers.common import resolve_tax_year
 from wr.pdf import parse_nl_amount
+
+
+def _is_supported_document(text: str) -> bool:
+    return (
+        ("degiro" in text or "flatexdegiro" in text)
+        and ("jaaropgave" in text or "jaaroverzicht" in text)
+        and "portefeuilleoverzicht per" in text
+        and (
+            "totale portefeuille waarde" in text
+            or "totale portefeuillewaarde" in text
+        )
+    )
 
 
 def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
@@ -113,3 +131,14 @@ def _holders(text: str) -> list[str]:
     if m:
         return [re.sub(r"\s+", " ", m.group(1)).strip()]
     return []
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="degiro",
+    classification_rules=(
+        ClassificationRule("degiro", "jaaroverzicht", _is_supported_document),
+    ),
+    parsers={
+        "jaaroverzicht": ParserRegistration(simple_parser(parse_degiro), 100),
+    },
+)

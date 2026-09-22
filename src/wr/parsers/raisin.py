@@ -3,8 +3,25 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserRegistration,
+    simple_parser,
+)
 from wr.parsers.common import first_holder, resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
+
+
+def _is_supported_document(text: str) -> bool:
+    return (
+        "raisin" in text
+        and "raisin financieel jaaroverzicht" in text
+        and "raisin spaarproduct" in text
+        and "kenmerk:" in text
+        and "omschrijving:" in text
+        and "bronbelasting" in text
+    )
 
 
 def parse_raisin(text: str, tax_year: int | None = None) -> ParseResult:
@@ -53,3 +70,14 @@ def parse_raisin(text: str, tax_year: int | None = None) -> ParseResult:
 
 def _holders(text: str) -> list[str]:
     return first_holder(text, r"Naam:\s*([^\n]+)")
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="raisin",
+    classification_rules=(
+        ClassificationRule("raisin", "jaaroverzicht", _is_supported_document),
+    ),
+    parsers={
+        "jaaroverzicht": ParserRegistration(simple_parser(parse_raisin), 90),
+    },
+)

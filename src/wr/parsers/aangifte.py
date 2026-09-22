@@ -2,9 +2,31 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import ParseResult, TaxReturnData
+from wr.parsers.base import (
+    ClassificationRule,
+    InstitutionPlugin,
+    ParserRegistration,
+    simple_parser,
+)
+from wr.parsers.common import guess_tax_year
 from wr.pdf import parse_nl_amount
+
+
+def _is_supported_document(text: str) -> bool:
+    if (
+        "aangifte inkomstenbelasting" in text
+        and "eigen kopie, niet opsturen" in text
+        and "burgerservicenummer" in text
+        and "formulierenversie" in text
+    ):
+        return True
+    return bool(
+        "belastingdienst" in text
+        and re.search(r"aanslag\s+20\d{2}", text)
+        and "definitieve aanslag is vastgesteld overeenkomstig uw aangifte" in text
+        and "inkomstenbelasting en premie volksverzekeringen" in text
+    )
 
 
 def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
@@ -351,3 +373,15 @@ def _official_box3_assets_at_0101(text: str) -> float | None:
     if bank_accounts is None or investments is None:
         return None
     return bank_accounts + investments
+
+
+PLUGIN = InstitutionPlugin(
+    issuer="belastingdienst",
+    classification_rules=(
+        ClassificationRule("belastingdienst", "aangifte_ib", _is_supported_document),
+    ),
+    parsers={
+        "aangifte_ib": ParserRegistration(simple_parser(parse_aangifte), 100),
+    },
+    classification_priority=100,
+)
