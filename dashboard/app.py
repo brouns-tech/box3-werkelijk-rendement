@@ -98,75 +98,6 @@ def _canonical_name_map(partner_cfg: dict) -> dict[str, str]:
     return names
 
 
-def _extra(value: str | None) -> dict:
-    try:
-        return json.loads(value or "{}")
-    except json.JSONDecodeError:
-        return {}
-
-
-def _is_investment_fact(fact) -> bool:
-    if not is_box3_fact(fact):
-        return False
-    extra = _extra(fact["extra"])
-    label = (fact["account_label"] or "").lower()
-    return (
-        extra.get("asset_class") == "securities_portfolio"
-        or fact["issuer"] == "degiro"
-        or "flexible cash funds" in label
-    )
-
-
-def _investment_tax_rows(facts, canonical_names: dict[str, str]) -> list[dict[str, str]]:
-    rows = []
-    for fact in facts:
-        if not _is_investment_fact(fact):
-            continue
-        income_parts = [fact["dividends_gross"], fact["interest_received"]]
-        gross_cash_income = (
-            sum(value or 0.0 for value in income_parts)
-            if any(value is not None for value in income_parts)
-            else None
-        )
-        required = {
-            "opening value": fact["start_balance"],
-            "closing value": fact["end_balance"],
-            "purchases/deposits": fact["deposits"],
-            "sales/withdrawals": fact["withdrawals"],
-            "gross cash income": gross_cash_income,
-        }
-        missing = [name for name, value in required.items() if value is None]
-        rows.append(
-            {
-                "Account holder": _holder_label(fact["holder_names"], canonical_names),
-                "Investment": fact["account_label"],
-                "Value 1 January": _currency(fact["start_balance"]),
-                "Value 31 December": _currency(fact["end_balance"]),
-                "Purchases / deposits": _currency(fact["deposits"]),
-                "Sales / withdrawals": _currency(fact["withdrawals"]),
-                "Gross dividend + reported interest": _currency(gross_cash_income),
-                "Dividend / source tax withheld": _currency(fact["withholding_tax"]),
-                "Calculated investment return": _currency(_fact_return(fact)),
-                "Investment-cost adjustment": "Not available from annual statement",
-                "Currency": fact["currency"] or "EUR",
-                "Source coverage": "Complete" if not missing else "Missing: " + ", ".join(missing),
-            }
-        )
-    return rows
-
-
-_FACT_MONEY_FIELDS = (
-    "start_balance",
-    "end_balance",
-    "deposits",
-    "withdrawals",
-    "interest_received",
-    "interest_paid",
-    "dividends_gross",
-    "withholding_tax",
-)
-
-
 def _owner_style(value: str, colors: dict[str, str]) -> str:
     holder_keys = [_person_key(holder) for holder in value.split(", ")]
     matches = {color for name, color in colors.items() if any(name in holder for holder in holder_keys)}
@@ -231,16 +162,6 @@ def main() -> None:
     portfolio = conn.execute(
         "SELECT * FROM yearly_portfolio WHERE tax_year = ?", (year,)
     ).fetchone()
-    partnership = conn.execute(
-        """
-        SELECT * FROM tax_returns
-        WHERE tax_year = ?
-        ORDER BY full_year_fiscal_partners DESC, grondslag DESC
-        LIMIT 1
-        """,
-        (year,),
-    ).fetchone()
-
     results = conn.execute(
         "SELECT * FROM partner_tax_results WHERE tax_year = ? ORDER BY partner",
         (year,),
@@ -274,99 +195,95 @@ def main() -> None:
     else:
         st.info("No tax decision is available for this year.")
 
-    with st.expander("Diagnostics"):
-        st.caption(
-            "Account-level inventory is derived from canonical annual statements; "
-            "the official tax return contributes aggregate figures only."
-        )
-        if partnership:
-            st.subheader("Tax return")
-            st.json(dict(partnership))
-        if portfolio:
-            st.subheader("Portfolio rollup")
-            st.json(dict(portfolio))
-        facts = conn.execute(
-            """
-            SELECT issuer, account_key, account_label, holder_names, ownership, currency,
-                   start_balance, end_balance, deposits, withdrawals,
-                   interest_received, interest_paid, dividends_gross, withholding_tax,
-                   capital_gain, gain_method, extra
-            FROM account_year_facts
-            WHERE tax_year = ? AND is_canonical = 1
-            ORDER BY issuer, account_key
-            """,
-            (year,),
-        ).fetchall()
-        st.subheader("Investment return tax inputs")
-        investment_rows = _investment_tax_rows(facts, canonical_names)
-        if investment_rows:
-            st.caption(
-                "Gross cash income uses source-reported gross dividends plus received interest. "
-                "Withholding is shown separately and is not deducted from the gross-income input."
-            )
-            st.dataframe(
-                _styled_table(investment_rows, "Account holder", owner_colors),
-                width="stretch",
-                hide_index=True,
-            )
-            st.info(
-                "Manual source rSAMw remains required for green-investment status, stock dividends, "
-                "accrued interest, purchased interest and interest included in a sale. These categories "
-                "are not inferred when the annual statement does not identify them explicitly. Brokerage "
-                "costs are not deductible, but the accepted DEGIRO annual statements do not provide a "
-                "separate annual cost total for an automatic adjustment."
-            )
-        else:
-            st.info("No canonical Box 3 investment facts are available for this year.")
-        st.subheader("Canonical account facts (all statements)")
-        st.caption("Includes non-Box 3 statements for diagnostics.")
-        fact_rows = []
-        for fact in facts:
-            row = dict(fact)
-            row["Account holder"] = _holder_label(
-                row.pop("holder_names"), canonical_names
-            )
-            row.pop("ownership", None)
-            row["Box 3"] = is_box3_fact(fact)
-            row["Calculated actual return"] = _currency(_fact_return(fact))
-            row["Market-value component (internal)"] = _currency(row.pop("capital_gain"))
-            for field in _FACT_MONEY_FIELDS:
-                row[field] = _currency(row[field])
-            fact_rows.append(row)
-        legend_rows = [
-            {"Account holder": partner_cfg.get("partner_a", "Partner A"), "Meaning": "Individual"},
-            {"Account holder": partner_cfg.get("partner_b", "Partner B"), "Meaning": "Individual"},
+    facts = conn.execute(
+        """
+        SELECT issuer, account_key, account_label, holder_names, ownership, currency,
+               start_balance, end_balance, deposits, withdrawals,
+               interest_received, interest_paid, dividends_gross, withholding_tax,
+               capital_gain, gain_method, extra
+        FROM account_year_facts
+        WHERE tax_year = ? AND is_canonical = 1
+        ORDER BY issuer, account_key
+        """,
+        (year,),
+    ).fetchall()
+    st.subheader("Account overview")
+    fact_rows = []
+    for fact in facts:
+        fact_rows.append(
             {
-                "Account holder": ", ".join(
-                    name
-                    for name in (partner_cfg.get("partner_a"), partner_cfg.get("partner_b"))
-                    if name
-                ),
-                "Meaning": "Joint",
-            },
-            {"Account holder": "Unknown", "Meaning": "Holder not established"},
-        ]
-        st.caption("Account-holder color legend")
+                "Account holder": _holder_label(fact["holder_names"], canonical_names),
+                "Box 3": is_box3_fact(fact),
+                "Source": fact["issuer"].upper(),
+                "Account label": fact["account_label"],
+                "Account key": fact["account_key"],
+                "Value 1 January": _currency(fact["start_balance"]),
+                "Value 31 December": _currency(fact["end_balance"]),
+                "Purchases / deposits": _currency(fact["deposits"]),
+                "Sales / withdrawals": _currency(fact["withdrawals"]),
+                "Received interest": _currency(fact["interest_received"]),
+                "Paid interest": _currency(fact["interest_paid"]),
+                "Gross dividends": _currency(fact["dividends_gross"]),
+                "Withholding tax": _currency(fact["withholding_tax"]),
+                "Calculated actual return": _currency(_fact_return(fact)),
+                "Market-value component (internal)": _currency(fact["capital_gain"]),
+                "Currency": fact["currency"] or "EUR",
+                "Calculation method": fact["gain_method"],
+            }
+        )
+    legend_rows = [
+        {"Account holder": partner_cfg.get("partner_a", "Partner A"), "Meaning": "Individual"},
+        {"Account holder": partner_cfg.get("partner_b", "Partner B"), "Meaning": "Individual"},
+        {
+            "Account holder": ", ".join(
+                name
+                for name in (partner_cfg.get("partner_a"), partner_cfg.get("partner_b"))
+                if name
+            ),
+            "Meaning": "Joint",
+        },
+        {"Account holder": "Unknown", "Meaning": "Holder not established"},
+    ]
+    st.caption("Account-holder color legend")
+    legend_column, _ = st.columns(2)
+    with legend_column:
         st.dataframe(
             _styled_table(legend_rows, "Account holder", owner_colors),
             width="stretch",
             hide_index=True,
         )
-        st.dataframe(
-            _styled_table(fact_rows, "Account holder", owner_colors),
-            width="stretch",
-            hide_index=True,
-        )
-        st.subheader("Import diagnostics")
+    st.dataframe(
+        _styled_table(fact_rows, "Account holder", owner_colors),
+        width="stretch",
+        hide_index=True,
+    )
+
+    with st.expander("Import diagnostics"):
         docs = conn.execute(
             """
-            SELECT parse_status, issuer, doc_type, COUNT(*) AS n
+            SELECT COALESCE(issuer, 'unknown') AS issuer,
+                   COALESCE(doc_type, 'unclassified') AS doc_type,
+                   SUM(CASE WHEN parse_status = 'parsed' THEN 1 ELSE 0 END) AS parsed,
+                   SUM(CASE WHEN parse_status = 'skipped' THEN 1 ELSE 0 END) AS skipped,
+                   SUM(CASE WHEN parse_status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                   COUNT(*) AS total
             FROM documents
-            GROUP BY parse_status, issuer, doc_type
-            ORDER BY n DESC
+            GROUP BY issuer, doc_type
+            ORDER BY total DESC, issuer, doc_type
             """
         ).fetchall()
-        st.dataframe([dict(d) for d in docs], width="stretch")
+        diagnostic_rows = [
+            {
+                "Source": row["issuer"].upper() if row["issuer"] != "unknown" else "Unknown",
+                "Document type": row["doc_type"].replace("_", " ").title(),
+                "Parsed": row["parsed"],
+                "Skipped": row["skipped"],
+                "Failed": row["failed"],
+                "Total": row["total"],
+            }
+            for row in docs
+        ]
+        st.dataframe(diagnostic_rows, width="stretch", hide_index=True)
 
 
 if __name__ == "__main__":
