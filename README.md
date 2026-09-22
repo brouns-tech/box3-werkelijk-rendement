@@ -7,6 +7,9 @@ bank, broker, and Dutch income-tax PDFs. It reconstructs actual return
 (`werkelijk rendement`), compares it with the filed fictitious return
 (`forfaitair rendement`), and produces an auditable ZIP export.
 
+Point it at any folder: supported PDFs are discovered recursively, regardless
+of filenames or directory structure.
+
 The included Streamlit dashboard summarizes coverage, return calculations, tax
 outcomes, and the account-level source data behind them. Processing stays on your
 machine.
