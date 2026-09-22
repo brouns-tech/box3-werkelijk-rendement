@@ -9,9 +9,15 @@ description = "Dutch Box 3 actual vs fictitious return analysis from local PDFs"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "pandas>=2.0",
   "pypdf>=4.0",
   "streamlit>=1.32",
   "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
 ]
 
 [project.scripts]
