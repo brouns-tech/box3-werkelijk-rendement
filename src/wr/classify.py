@@ -142,9 +142,13 @@ def _is_rabobank_jaaroverzicht(low: str) -> bool:
             bool(re.search(r"onderwerp\s+financieel jaaroverzicht", low))
             or "hierbij ontvangt u een financieel jaaroverzicht over het afgelopen jaar" in low
             or "dit is uw financieel jaaroverzicht van het afgelopen jaar" in low
+            or (
+                "alstublieft, uw financieel jaaroverzicht" in low
+                and "op het overzicht vindt u de gegevens van uw eigen" in low
+            )
         )
-        and "saldo 01-01" in low
-        and "saldo 31-12" in low
+        and ("saldo 01-01" in low or "sa l do 01 - 01" in low)
+        and ("saldo 31-12" in low or "sa l do 31 - 12" in low)
     )
 
 

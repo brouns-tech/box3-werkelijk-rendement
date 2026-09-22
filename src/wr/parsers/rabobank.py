@@ -15,7 +15,7 @@ def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
 
     facts: list[AccountYearFact] = []
     account = re.compile(
-        r"(?P<iban>NL\d{2}\s*RABO\s*\d{4}\s*\d{4}\s*\d{2})\s+EUR\s+"
+        r"(?P<iban>NL\d{2}\s*RABO\s*\d{4}\s*\d{4}\s*\d{2})\s*EUR\s*"
         r"(?P<label>[^\n]+)\n"
         r"(?P<body>.*?)(?=\n\s*NL\d{2}\s*RABO\s*\d{4}\s*\d{4}\s*\d{2}\s+EUR|\Z)",
         re.I | re.S,
@@ -52,8 +52,9 @@ def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
 
 
 def _amount_after(text: str, label: str) -> float | None:
-    match = re.search(rf"{label}\s+(-?[\d.]+,\d{{2}})", text, re.I)
-    return parse_nl_amount(match.group(1)) if match else None
+    spaced_label = r"\s*".join(re.escape(char) for char in label)
+    match = re.search(rf"{spaced_label}\s*:\s*(-?[\d\s.,]+)", text, re.I)
+    return parse_nl_amount(match.group(1).replace(" ", "")) if match else None
 
 
 def _holders(text: str) -> list[str]:
