@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.common import first_holder, resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
 
 
 def parse_raisin(text: str, tax_year: int | None = None) -> ParseResult:
-    year = tax_year or guess_tax_year(text)
+    year = resolve_tax_year(text, tax_year)
     if year is None:
         return ParseResult("raisin", "jaaroverzicht", None, notes=["no year"])
 
@@ -52,5 +52,4 @@ def parse_raisin(text: str, tax_year: int | None = None) -> ParseResult:
 
 
 def _holders(text: str) -> list[str]:
-    m = re.search(r"Naam:\s*([^\n]+)", text)
-    return [m.group(1).strip()] if m else []
+    return first_holder(text, r"Naam:\s*([^\n]+)")

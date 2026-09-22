@@ -1,5 +1,6 @@
 import sqlite3
 
+from wr.config import PartnerSettings
 from wr.db import init_db
 from wr.recommend import _results_for_year
 
@@ -42,7 +43,7 @@ def test_non_full_year_return_compares_main_issuer():
     )
     conn.commit()
 
-    result = _results_for_year(conn, 2023, {})
+    result = _results_for_year(conn, 2023, PartnerSettings())
 
     assert len(result) == 1
     assert result[0].partner_name == "Alex Example"
@@ -85,6 +86,6 @@ def test_prefers_sent_tax_return_over_unsent_draft():
     )
     conn.commit()
 
-    result = _results_for_year(conn, 2025, {})
+    result = _results_for_year(conn, 2025, PartnerSettings())
 
     assert result[0].fictitious_return == 100

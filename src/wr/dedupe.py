@@ -4,22 +4,8 @@ import json
 import sqlite3
 from collections import defaultdict
 
-# Higher = preferred when multiple facts share a logical account/year.
-_ISSUER_DOC_PRIORITY = {
-    ("degiro", "jaaroverzicht"): 100,
-    ("raisin", "jaaroverzicht"): 90,
-    ("revolut", "jaaroverzicht"): 90,
-    ("revolut", "savings_statement"): 85,
-    ("sns", "jaaroverzicht"): 90,
-    ("ing", "jaaroverzicht"): 90,
-    ("rabobank", "jaaroverzicht"): 90,
-    ("sns", "totaaloverzicht"): 50,
-    ("revolut", "account_statement"): 20,
-    ("flatex", "financial_instruments_statement"): 100,
-    ("flatex", "account_statement"): 20,
-    ("flatex", "belastingcertificaat"): 10,
-    ("flatex", "other"): 5,
-}
+from wr.money import add, subtract, total
+from wr.parsers import canonical_priority
 
 
 def canonicalize_facts(
@@ -129,7 +115,7 @@ def _logical_key(year: int, issuer: str, account_key: str, logical_group: str | 
 
 def _score(row) -> tuple:
     doc_type = row["doc_type"] or ""
-    prio = _ISSUER_DOC_PRIORITY.get((row["issuer"], doc_type), 1)
+    prio = canonical_priority(row["issuer"], doc_type)
     completeness = sum(
         1
         for v in (
@@ -195,15 +181,15 @@ def _enrich_flatex_inventory_returns(
         if not flows:
             continue
 
-        deposits = round(sum(row["deposits"] or 0.0 for row in flows), 2)
-        withdrawals = round(sum(row["withdrawals"] or 0.0 for row in flows), 2)
+        deposits = total(row["deposits"] or 0.0 for row in flows)
+        withdrawals = total(row["withdrawals"] or 0.0 for row in flows)
         previous = inventory_by_year.get((account_key, tax_year - 1))
         start_balance = previous["end_balance"] if previous else _opening_balance(flows)
         if start_balance is None:
             continue
 
         end_balance = inventory["end_balance"]
-        capital_gain = round(end_balance - start_balance - deposits + withdrawals, 2)
+        capital_gain = add(subtract(end_balance, start_balance, deposits), withdrawals)
         extra = json.loads(inventory["extra"] or "{}")
         previous_extra = json.loads(previous["extra"] or "{}") if previous else {}
         start_securities_value = previous_extra.get("securities_market_value")
@@ -214,8 +200,8 @@ def _enrich_flatex_inventory_returns(
         extra["securities_market_value_start"] = start_securities_value
         extra["securities_market_value_end"] = end_securities_value
         if start_securities_value is not None and end_securities_value is not None:
-            extra["securities_market_value_change"] = round(
-                end_securities_value - start_securities_value, 2
+            extra["securities_market_value_change"] = subtract(
+                end_securities_value, start_securities_value
             )
         extra["return_derived_from"] = {
             "opening_balance": "prior_31_december_inventory" if previous else "opening_account_statement",
@@ -314,9 +300,9 @@ def _enrich_flatex_statement_returns(conn, inventories, linked_account: str | No
         if start_balance is None or end_balance is None:
             continue
 
-        deposits = round(sum(row["deposits"] or 0.0 for row in statements), 2)
-        withdrawals = round(sum(row["withdrawals"] or 0.0 for row in statements), 2)
-        capital_gain = round(end_balance - start_balance - deposits + withdrawals, 2)
+        deposits = total(row["deposits"] or 0.0 for row in statements)
+        withdrawals = total(row["withdrawals"] or 0.0 for row in statements)
+        capital_gain = add(subtract(end_balance, start_balance, deposits), withdrawals)
         extra = json.loads(selected["extra"] or "{}")
         extra["return_derived_from"] = {
             "opening_balance": "prior_31_december_balance"

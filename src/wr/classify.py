@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Callable
 
 
 @dataclass
@@ -11,53 +12,20 @@ class Classification:
     confidence: float = 1.0
 
 
+@dataclass(frozen=True)
+class ClassificationRule:
+    issuer: str
+    doc_type: str
+    detector: Callable[[str], bool]
+    supported: bool = True
+
+
 def classify(text: str) -> Classification | None:
     """Classify PDF by content markers. Returns None if not relevant."""
     low = text.lower()
-
-    # Tax returns embed bank names/IBANs — detect them before bank heuristics.
-    if _is_aangifte(low):
-        return Classification("belastingdienst", "aangifte_ib")
-
-    if _is_degiro_jaaroverzicht(low):
-        return Classification("degiro", "jaaroverzicht")
-
-    if _is_flatex_tax_cert(low):
-        return Classification("flatex", "belastingcertificaat")
-
-    if _is_flatex_financial_instruments_statement(low):
-        return Classification("flatex", "financial_instruments_statement")
-
-    if _is_flatex_account_statement(low):
-        return Classification("flatex", "account_statement")
-
-    if _is_ing_jaaroverzicht(low):
-        return Classification("ing", "jaaroverzicht")
-
-    if _is_rabobank_jaaroverzicht(low):
-        return Classification("rabobank", "jaaroverzicht")
-
-    if _is_sns_totaaloverzicht(low):
-        return Classification("sns", "totaaloverzicht")
-
-    if _is_sns_jaaroverzicht(low):
-        return Classification("sns", "jaaroverzicht")
-
-    if _is_raisin(low):
-        return Classification("raisin", "jaaroverzicht")
-
-    if _is_revolut_annual(low):
-        return Classification("revolut", "jaaroverzicht")
-
-    if _is_revolut_savings(low):
-        return Classification("revolut", "savings_statement")
-
-    if _is_revolut_business_account_statement(low):
-        return None
-
-    if _is_revolut_account_statement(low):
-        return Classification("revolut", "account_statement")
-
+    for rule in CLASSIFICATION_RULES:
+        if rule.detector(low):
+            return Classification(rule.issuer, rule.doc_type) if rule.supported else None
     return None
 
 
@@ -224,6 +192,35 @@ def _is_revolut_business_account_statement(low: str) -> bool:
         and "account statement" in low
         and "balance summary" in low
     )
+
+
+# Order is significant: tax returns can mention banks, and Revolut Business must
+# be rejected before the broader personal-account rule.
+CLASSIFICATION_RULES = (
+    ClassificationRule("belastingdienst", "aangifte_ib", _is_aangifte),
+    ClassificationRule("degiro", "jaaroverzicht", _is_degiro_jaaroverzicht),
+    ClassificationRule("flatex", "belastingcertificaat", _is_flatex_tax_cert),
+    ClassificationRule(
+        "flatex",
+        "financial_instruments_statement",
+        _is_flatex_financial_instruments_statement,
+    ),
+    ClassificationRule("flatex", "account_statement", _is_flatex_account_statement),
+    ClassificationRule("ing", "jaaroverzicht", _is_ing_jaaroverzicht),
+    ClassificationRule("rabobank", "jaaroverzicht", _is_rabobank_jaaroverzicht),
+    ClassificationRule("sns", "totaaloverzicht", _is_sns_totaaloverzicht),
+    ClassificationRule("sns", "jaaroverzicht", _is_sns_jaaroverzicht),
+    ClassificationRule("raisin", "jaaroverzicht", _is_raisin),
+    ClassificationRule("revolut", "jaaroverzicht", _is_revolut_annual),
+    ClassificationRule("revolut", "savings_statement", _is_revolut_savings),
+    ClassificationRule(
+        "revolut",
+        "business_account_statement",
+        _is_revolut_business_account_statement,
+        supported=False,
+    ),
+    ClassificationRule("revolut", "account_statement", _is_revolut_account_statement),
+)
 
 
 def guess_tax_year(text: str, doc_type: str | None = None) -> int | None:

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from wr.config import load_config, resolve_db_path
 from wr.export import write_audit_export
-from wr.import_pipeline import recompute, run_import
+from wr.import_pipeline import DocumentImportOutcome, ImportStatus, recompute, run_import
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,6 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     p_dash = sub.add_parser("dashboard", help="Launch Streamlit dashboard")
     p_dash.add_argument("--port", type=int, default=8501)
 
+    p_demo = sub.add_parser("demo", help="Launch a dashboard with synthetic example data")
+    p_demo.add_argument("--port", type=int, default=8501)
+
     p_export = sub.add_parser("export", help="Export an auditable ZIP bundle")
     p_export.add_argument(
         "--output", default="exports/wr-audit.zip", help="Destination ZIP path"
@@ -34,18 +39,26 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    if args.cmd == "demo":
+        from wr.demo import create_demo_workspace
+
+        with tempfile.TemporaryDirectory(prefix="werkelijk-rendement-demo-") as directory:
+            config_path = create_demo_workspace(directory)
+            print("Opening dashboard with synthetic example data")
+            return _launch_dashboard(config_path, args.port)
+
     try:
         cfg = load_config(args.config)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
     db_path = resolve_db_path(cfg)
-    partner_config = cfg.get("partners", {})
-    flatex_linked_account = cfg.get("accounts", {}).get("flatex_linked_account")
+    partner_config = cfg.partners
+    flatex_linked_account = cfg.accounts.flatex_linked_account
 
     if args.cmd == "import":
         if args.fresh and db_path.exists():
             db_path.unlink()
-        root = args.root or cfg.get("import_root")
+        root = Path(args.root) if args.root else cfg.import_root
         if not root:
             print("Provide --root or set import_root in config.toml", file=sys.stderr)
             return 2
@@ -54,17 +67,18 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"Importing from {root}")
         print(f"Database {db_path}")
-        stats = run_import(
+        report = run_import(
             root,
             db_path,
             limit=args.limit,
             partner_config=partner_config,
             flatex_linked_account=flatex_linked_account,
+            progress=_print_import_outcome,
         )
         print(
             "Done: "
-            f"seen={stats['seen']} new={stats['new']} duplicate={stats['duplicate']} "
-            f"parsed={stats['parsed']} skipped={stats['skipped']} failed={stats['failed']}"
+            f"seen={report.seen} new={report.new} duplicate={report.duplicate} "
+            f"parsed={report.parsed} skipped={report.skipped} failed={report.failed}"
         )
         return 0
 
@@ -86,23 +100,40 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "dashboard":
-        app = Path(__file__).resolve().parents[2] / "dashboard" / "app.py"
-        if not app.exists():
-            app = Path(cfg["_project_root"]) / "dashboard" / "app.py"
-        cmd = [
-            sys.executable,
-            "-m",
-            "streamlit",
-            "run",
-            str(app),
-            "--server.port",
-            str(args.port),
-        ]
-        if cfg.get("_config_path"):
-            cmd.extend(["--", "--config", cfg["_config_path"]])
-        return subprocess.call(cmd)
+        return _launch_dashboard(cfg.config_path, args.port)
 
     return 1
+
+
+def _launch_dashboard(config_path: Path | None, port: int) -> int:
+    app_module = importlib.import_module("dashboard.app")
+    app = Path(app_module.__file__).resolve()
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(app),
+        "--server.port",
+        str(port),
+    ]
+    if config_path:
+        cmd.extend(["--", "--config", str(config_path)])
+    try:
+        return subprocess.call(cmd)
+    except KeyboardInterrupt:
+        return 130
+
+
+def _print_import_outcome(outcome: DocumentImportOutcome) -> None:
+    prefix = f"[{outcome.index}/{outcome.total}]"
+    if outcome.status is ImportStatus.PARSED:
+        source = f"{outcome.issuer}/{outcome.doc_type}"
+        print(f"{prefix} parsed {source} {outcome.tax_year or 'unknown'} {outcome.path}")
+    elif outcome.error:
+        print(f"{prefix} {outcome.status.value} {outcome.path}: {outcome.error}")
+    else:
+        print(f"{prefix} {outcome.status.value} {outcome.path}")
 
 
 if __name__ == "__main__":

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
 from wr.source_rules import has_zero_return_by_product
 
@@ -20,7 +20,7 @@ def parse_flatex(
         normalized_account = normalize_iban(linked_account) if linked_account else None
         return _parse_account_statement(text, normalized_account)
 
-    year = tax_year or guess_tax_year(text)
+    year = resolve_tax_year(text, tax_year)
     # Try period in Steuerbescheinigung
     if year is None:
         m = re.search(r"Zeitraum vom 01\.01\.(20\d{2}) bis 31\.12\.(20\d{2})", text)

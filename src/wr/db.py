@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS partner_tax_results (
 );
 """
 
+SCHEMA_VERSION = 2
+
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
@@ -116,20 +118,45 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    applied = {
+        row[0] for row in conn.execute("SELECT version FROM schema_migrations")
+    }
+    for version, migration in ((1, _migration_1), (2, _migration_2)):
+        if version in applied:
+            continue
+        with conn:
+            migration(conn)
+            conn.execute(
+                "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
+            )
+
+
+def _migration_1(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
-    columns = {
-        row[1] for row in conn.execute("PRAGMA table_info(partner_tax_results)").fetchall()
-    }
-    if "estimated_tax_savings" not in columns:
-        conn.execute("ALTER TABLE partner_tax_results ADD COLUMN estimated_tax_savings REAL")
-    portfolio_columns = {
-        row[1] for row in conn.execute("PRAGMA table_info(yearly_portfolio)").fetchall()
-    }
-    if "dividends_gross" not in portfolio_columns:
-        conn.execute("ALTER TABLE yearly_portfolio ADD COLUMN dividends_gross REAL")
-    if "withholding_tax" not in portfolio_columns:
-        conn.execute("ALTER TABLE yearly_portfolio ADD COLUMN withholding_tax REAL")
-    conn.commit()
+
+
+def _migration_2(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(
+        conn, "partner_tax_results", "estimated_tax_savings", "REAL"
+    )
+    _add_column_if_missing(conn, "yearly_portfolio", "dividends_gross", "REAL")
+    _add_column_if_missing(conn, "yearly_portfolio", "withholding_tax", "REAL")
+
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, definition: str
+) -> None:
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def upsert_document(conn: sqlite3.Connection, **kwargs: Any) -> bool:

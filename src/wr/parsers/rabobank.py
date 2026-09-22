@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
-from wr.pdf import normalize_iban, parse_nl_amount
+from wr.parsers.common import amount_after_label, first_holder, resolve_tax_year
+from wr.pdf import normalize_iban
 
 
 def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
     """Parse Rabobank Financieel Jaaroverzicht deposit-account blocks."""
-    year = tax_year or guess_tax_year(text)
+    year = resolve_tax_year(text, tax_year)
     if year is None:
         return ParseResult("rabobank", "jaaroverzicht", None, notes=["no year"])
 
@@ -29,8 +29,8 @@ def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
             continue
 
         body = match.group("body")
-        start = _amount_after(body, f"Saldo 01-01-{year}")
-        end = _amount_after(body, f"Saldo 31-12-{year}")
+        start = amount_after_label(body, f"Saldo 01-01-{year}")
+        end = amount_after_label(body, f"Saldo 31-12-{year}")
         if start is None and end is None:
             continue
 
@@ -42,8 +42,10 @@ def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
             holder_names=_holders(text),
             start_balance=start,
             end_balance=end,
-            interest_received=_amount_after(body, f"Door u ontvangen rente in {year}"),
-            interest_paid=_amount_after(body, f"Door u betaalde rente in {year}"),
+            interest_received=amount_after_label(
+                body, f"Door u ontvangen rente in {year}"
+            ),
+            interest_paid=amount_after_label(body, f"Door u betaalde rente in {year}"),
         )
         fact.compute_capital_gain()
         facts.append(fact)
@@ -51,12 +53,5 @@ def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
     return ParseResult("rabobank", "jaaroverzicht", year, facts=facts)
 
 
-def _amount_after(text: str, label: str) -> float | None:
-    spaced_label = r"\s*".join(re.escape(char) for char in label)
-    match = re.search(rf"{spaced_label}\s*:?\s*(-?[\d\s.,]+)", text, re.I)
-    return parse_nl_amount(match.group(1).replace(" ", "")) if match else None
-
-
 def _holders(text: str) -> list[str]:
-    match = re.search(r"\b([A-Z](?:\.[A-Z])+\.\s+[A-Z][A-Za-z]+)\b", text)
-    return [match.group(1)] if match else []
+    return first_holder(text, r"\b([A-Z](?:\.[A-Z])+\.\s+[A-Z][A-Za-z]+)\b")

@@ -5,12 +5,14 @@ import re
 import sqlite3
 
 from wr.compare.base import BOX3_RATE_BY_YEAR, compare_partner
+from wr.config import PartnerSettings
+from wr.money import add, multiply, subtract
 from wr.models import CoverageStatus, PartnerTaxResult, Recommendation
 from wr.portfolio import _fact_return, is_box3_fact
 
 
 def rebuild_recommendations(
-    conn: sqlite3.Connection, partner_cfg: dict | None = None
+    conn: sqlite3.Connection, partner_cfg: PartnerSettings | None = None
 ) -> None:
     conn.execute("DELETE FROM partner_tax_results")
     years = {
@@ -20,7 +22,7 @@ def rebuild_recommendations(
         r[0] for r in conn.execute("SELECT DISTINCT tax_year FROM yearly_portfolio").fetchall()
     }
 
-    partner_cfg = partner_cfg or {}
+    partner_cfg = partner_cfg or PartnerSettings()
 
     for year in sorted(y for y in years if y):
         for result in _results_for_year(conn, year, partner_cfg):
@@ -52,7 +54,7 @@ def rebuild_recommendations(
 
 
 def _results_for_year(
-    conn: sqlite3.Connection, year: int, partner_cfg: dict
+    conn: sqlite3.Connection, year: int, partner_cfg: PartnerSettings
 ) -> list[PartnerTaxResult]:
     portfolio = conn.execute(
         "SELECT * FROM yearly_portfolio WHERE tax_year = ?", (year,)
@@ -71,7 +73,7 @@ def _results_for_year(
     coverage = portfolio["coverage_status"] if portfolio else CoverageStatus.UNKNOWN.value
     known_actual = portfolio["known_combined_actual_return"] if portfolio else None
     missing = portfolio["missing_asset_summary"] if portfolio else "no portfolio"
-    preferred_a = partner_cfg.get("partner_a", "partner_a")
+    preferred_a = partner_cfg.partner_a or "partner_a"
 
     if not returns:
         return [
@@ -151,7 +153,9 @@ def _results_for_year(
         ("a", name_a, alloc_a, primary["voordeel_a"], primary["box3_tax_a"]),
         ("b", name_b, alloc_b, primary["voordeel_b"], primary["box3_tax_b"]),
     ):
-        allocated = None if known_actual is None or ratio is None else known_actual * ratio
+        allocated = (
+            None if known_actual is None or ratio is None else multiply(known_actual, ratio)
+        )
         if incomplete:
             rec = Recommendation.INDETERMINATE_MISSING_DATA.value
             notes = f"Partial coverage. Missing: {missing or 'unknown'}"
@@ -165,7 +169,7 @@ def _results_for_year(
         rate = BOX3_RATE_BY_YEAR.get(year)
         tax_fict = filed_tax
         if tax_fict is None and fict is not None and rate is not None:
-            tax_fict = fict * rate
+            tax_fict = multiply(fict, rate)
 
         results.append(
             PartnerTaxResult(
@@ -178,7 +182,7 @@ def _results_for_year(
                 estimated_box3_tax_actual=tax_actual,
                 estimated_box3_tax_fictitious=tax_fict,
                 estimated_tax_savings=(
-                    tax_fict - tax_actual
+                    subtract(tax_fict, tax_actual)
                     if tax_fict is not None and tax_actual is not None
                     else None
                 ),
@@ -207,8 +211,10 @@ def _same_person(a: str | None, b: str | None) -> bool:
     return al in bl or bl in al
 
 
-def _individual_results(conn, year: int, returns, partner_cfg: dict) -> list[PartnerTaxResult]:
-    configured = [("a", partner_cfg.get("partner_a")), ("b", partner_cfg.get("partner_b"))]
+def _individual_results(
+    conn, year: int, returns, partner_cfg: PartnerSettings
+) -> list[PartnerTaxResult]:
+    configured = list(partner_cfg.configured())
     if not any(name for _, name in configured):
         configured = [(chr(ord("a") + index), row["filer_name"]) for index, row in enumerate(returns)]
     results = []
@@ -232,19 +238,26 @@ def _individual_results(conn, year: int, returns, partner_cfg: dict) -> list[Par
         else:
             comparison = compare_partner(year, known_actual, fictitious, filed_tax)
             recommendation, estimated_actual_tax, notes = comparison.recommendation, comparison.estimated_tax_actual, comparison.notes
-        tax_fictitious = filed_tax or (fictitious * BOX3_RATE_BY_YEAR[year] if fictitious is not None and year in BOX3_RATE_BY_YEAR else None)
+        tax_fictitious = filed_tax or (
+            multiply(fictitious, BOX3_RATE_BY_YEAR[year])
+            if fictitious is not None and year in BOX3_RATE_BY_YEAR
+            else None
+        )
         results.append(PartnerTaxResult(
             tax_year=year, partner=slot, partner_name=name or tax_return["filer_name"] or slot,
             allocation_ratio=1.0, allocated_actual_return=known_actual, fictitious_return=fictitious,
             estimated_box3_tax_actual=estimated_actual_tax, estimated_box3_tax_fictitious=tax_fictitious,
-            estimated_tax_savings=(tax_fictitious - estimated_actual_tax if tax_fictitious is not None and estimated_actual_tax is not None else None),
+            estimated_tax_savings=(subtract(tax_fictitious, estimated_actual_tax) if tax_fictitious is not None and estimated_actual_tax is not None else None),
             recommendation=recommendation, coverage_status=coverage, notes=notes,
         ))
     return results
 
 
 def _individual_portfolio(
-    conn: sqlite3.Connection, year: int, filer_name: str | None, partner_cfg: dict
+    conn: sqlite3.Connection,
+    year: int,
+    filer_name: str | None,
+    partner_cfg: PartnerSettings,
 ) -> tuple[float | None, str, str | None]:
     aliases = _aliases_for_filer(filer_name, partner_cfg)
     facts = conn.execute(
@@ -271,7 +284,7 @@ def _individual_portfolio(
         if value is None:
             missing.append(f"{fact['issuer']} {fact['account_key']} (no actual-return fields)")
             continue
-        total += value * portion
+        total = add(total, multiply(value, portion))
         used += 1
     if not used:
         missing.append("no statement-derived assets assigned to this filer")
@@ -282,12 +295,13 @@ def _individual_portfolio(
     )
 
 
-def _aliases_for_filer(filer_name: str | None, partner_cfg: dict) -> list[str]:
+def _aliases_for_filer(
+    filer_name: str | None, partner_cfg: PartnerSettings
+) -> list[str]:
     aliases = [filer_name or ""]
-    for slot in ("partner_a", "partner_b"):
-        configured = partner_cfg.get(slot, "")
+    for slot, configured in partner_cfg.configured():
         if _same_person(filer_name, configured):
-            aliases.extend([configured, *partner_cfg.get(f"{slot}_aliases", [])])
+            aliases.extend([configured or "", *partner_cfg.aliases_for(slot)])
     return aliases
 
 

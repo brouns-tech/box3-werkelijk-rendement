@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
 
 
 def parse_sns(text: str, tax_year: int | None, doc_type: str) -> ParseResult:
-    year = tax_year or guess_tax_year(text)
+    year = resolve_tax_year(text, tax_year)
     if year is None:
         return ParseResult("sns", doc_type, None, notes=["no year"])
 

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
+from typing import Callable
 
 from wr.classify import Classification, classify, guess_tax_year
+from wr.config import PartnerSettings
 from wr.db import (
     clear_canonical_flags,
     connect,
@@ -22,40 +25,75 @@ from wr.recommend import rebuild_recommendations
 from wr.source_rules import has_zero_return_by_product
 
 
+class ImportStatus(str, Enum):
+    PARSED = "parsed"
+    SKIPPED = "skipped"
+    DUPLICATE = "duplicate"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class DocumentImportOutcome:
+    index: int
+    total: int
+    path: Path
+    status: ImportStatus
+    issuer: str | None = None
+    doc_type: str | None = None
+    tax_year: int | None = None
+    error: str | None = None
+
+
+@dataclass
+class ImportReport:
+    seen: int = 0
+    new: int = 0
+    duplicate: int = 0
+    parsed: int = 0
+    skipped: int = 0
+    failed: int = 0
+    outcomes: list[DocumentImportOutcome] = field(default_factory=list)
+
+    def add(self, outcome: DocumentImportOutcome, *, inserted: bool = False) -> None:
+        self.seen += 1
+        self.new += int(inserted)
+        setattr(self, outcome.status.value, getattr(self, outcome.status.value) + 1)
+        self.outcomes.append(outcome)
+
+
+ProgressCallback = Callable[[DocumentImportOutcome], None]
+
+
 def run_import(
     root: str | Path,
     db_path: str | Path,
     limit: int | None = None,
     *,
-    partner_config: dict | None = None,
+    partner_config: PartnerSettings | None = None,
     flatex_linked_account: str | None = None,
-) -> dict:
+    progress: ProgressCallback | None = None,
+) -> ImportReport:
     root = Path(root)
     conn = connect(db_path)
     init_db(conn)
 
-    stats = {
-        "seen": 0,
-        "new": 0,
-        "duplicate": 0,
-        "parsed": 0,
-        "skipped": 0,
-        "failed": 0,
-    }
+    report = ImportReport()
 
     pdfs = sorted(root.rglob("*.pdf"))
     if limit is not None:
         pdfs = pdfs[:limit]
-    print(f"Scanning {len(pdfs)} PDF(s)")
-
     for index, path in enumerate(pdfs, start=1):
-        progress = f"[{index}/{len(pdfs)}]"
-        stats["seen"] += 1
+        inserted = False
         try:
             sha = sha256_file(path)
         except OSError as exc:
-            stats["failed"] += 1
-            print(f"{progress} failed to hash {path}: {exc}")
+            _record(
+                report,
+                DocumentImportOutcome(
+                    index, len(pdfs), path, ImportStatus.FAILED, error=f"hash: {exc}"
+                ),
+                progress,
+            )
             continue
 
         inserted = upsert_document(
@@ -76,12 +114,14 @@ def run_import(
                 "SELECT parse_status FROM documents WHERE content_sha256 = ?", (sha,)
             ).fetchone()
             if existing is None or existing["parse_status"] != "skipped":
-                stats["duplicate"] += 1
-                print(f"{progress} duplicate {path}")
+                _record(
+                    report,
+                    DocumentImportOutcome(
+                        index, len(pdfs), path, ImportStatus.DUPLICATE
+                    ),
+                    progress,
+                )
                 continue
-
-        if inserted:
-            stats["new"] += 1
         try:
             text, page_count = extract_text(path)
         except Exception as exc:  # noqa: BLE001
@@ -91,9 +131,19 @@ def run_import(
                 parse_status="failed",
                 raw_text_excerpt=str(exc)[:500],
             )
-            stats["failed"] += 1
-            print(f"{progress} failed to extract {path}: {exc}")
             conn.commit()
+            _record(
+                report,
+                DocumentImportOutcome(
+                    index,
+                    len(pdfs),
+                    path,
+                    ImportStatus.FAILED,
+                    error=f"extract: {exc}",
+                ),
+                progress,
+                inserted=inserted,
+            )
             continue
 
         excerpt = text[:4000]
@@ -108,9 +158,13 @@ def run_import(
                 issuer="unknown",
                 doc_type="other",
             )
-            stats["skipped"] += 1
-            print(f"{progress} skipped {path}")
             conn.commit()
+            _record(
+                report,
+                DocumentImportOutcome(index, len(pdfs), path, ImportStatus.SKIPPED),
+                progress,
+                inserted=inserted,
+            )
             continue
 
         year = guess_tax_year(text, classification.doc_type)
@@ -123,10 +177,14 @@ def run_import(
                 flatex_linked_account=flatex_linked_account,
             )
             _persist_parse(conn, sha, classification, result, page_count, excerpt)
-            stats["parsed"] += 1
-            print(
-                f"{progress} parsed {classification.issuer}/{classification.doc_type} "
-                f"{result.tax_year or year or 'unknown'} {path}"
+            outcome = DocumentImportOutcome(
+                index,
+                len(pdfs),
+                path,
+                ImportStatus.PARSED,
+                classification.issuer,
+                classification.doc_type,
+                result.tax_year or year,
             )
         except Exception as exc:  # noqa: BLE001
             update_document(
@@ -139,16 +197,37 @@ def run_import(
                 raw_text_excerpt=excerpt,
                 parse_status="failed",
             )
-            stats["failed"] += 1
-            print(f"{progress} failed to parse {path}: {exc}")
+            outcome = DocumentImportOutcome(
+                index,
+                len(pdfs),
+                path,
+                ImportStatus.FAILED,
+                classification.issuer,
+                classification.doc_type,
+                year,
+                f"parse: {exc}",
+            )
         conn.commit()
+        _record(report, outcome, progress, inserted=inserted)
 
     _apply_source_return_rules(conn)
     canonicalize_facts(conn, flatex_linked_account)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, partner_config)
 
-    return stats
+    return report
+
+
+def _record(
+    report: ImportReport,
+    outcome: DocumentImportOutcome,
+    callback: ProgressCallback | None,
+    *,
+    inserted: bool = False,
+) -> None:
+    report.add(outcome, inserted=inserted)
+    if callback:
+        callback(outcome)
 
 
 def _persist_parse(conn, sha, classification: Classification, result, page_count, excerpt) -> None:
@@ -238,7 +317,7 @@ def _persist_parse(conn, sha, classification: Classification, result, page_count
 def recompute(
     db_path: str | Path,
     *,
-    partner_config: dict | None = None,
+    partner_config: PartnerSettings | None = None,
     flatex_linked_account: str | None = None,
 ) -> None:
     conn = connect(db_path)

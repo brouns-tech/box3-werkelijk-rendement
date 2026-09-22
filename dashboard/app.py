@@ -9,8 +9,9 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from wr.config import load_config, resolve_db_path
+from wr.config import PartnerSettings, load_config, resolve_db_path
 from wr.export import create_audit_export
+from wr.money import subtract
 from wr.portfolio import _fact_return, is_box3_fact
 
 
@@ -43,7 +44,7 @@ def _decision_rows(results) -> list[dict[str, str]]:
         fictitious_tax = result["estimated_box3_tax_fictitious"]
         savings = None
         if actual_tax is not None and fictitious_tax is not None:
-            savings = max(0.0, fictitious_tax - actual_tax)
+            savings = max(0.0, subtract(fictitious_tax, actual_tax))
         rows.append(
             {
                 "Issuer": result["partner_name"],
@@ -84,14 +85,13 @@ def _holder_label(value: str | None, canonical_names: dict[str, str] | None = No
     return ", ".join(normalized)
 
 
-def _canonical_name_map(partner_cfg: dict) -> dict[str, str]:
+def _canonical_name_map(partner_cfg: PartnerSettings) -> dict[str, str]:
     names = {}
-    for slot in ("partner_a", "partner_b"):
-        canonical = partner_cfg.get(slot)
+    for slot, canonical in partner_cfg.configured():
         if not canonical:
             continue
         surname = _person_key(canonical.split()[-1])
-        for alias in [canonical, *partner_cfg.get(f"{slot}_aliases", [])]:
+        for alias in [canonical, *partner_cfg.aliases_for(slot)]:
             alias_key = _person_key(alias)
             if alias_key != surname:
                 names[alias_key] = canonical
@@ -125,7 +125,7 @@ def main() -> None:
 
     st.set_page_config(page_title="Werkelijk Rendement", layout="wide")
     st.title("Werkelijk rendement — Box 3")
-    st.caption(f"DB: `{db_path}`")
+    st.caption(f"Database: `{db_path.name}`")
 
     if not db_path.exists():
         st.warning("Database not found. Run `wr import` first.")
@@ -167,10 +167,10 @@ def main() -> None:
         (year,),
     ).fetchall()
     owner_colors = {}
-    partner_cfg = cfg.get("partners", {})
+    partner_cfg = cfg.partners
     canonical_names = _canonical_name_map(partner_cfg)
     for slot, color in (("partner_a", "#1e3a5f"), ("partner_b", "#14532d")):
-        canonical = partner_cfg.get(slot)
+        canonical = getattr(partner_cfg, slot)
         for alias, name in canonical_names.items():
             if name == canonical:
                 owner_colors[alias] = color
@@ -230,27 +230,6 @@ def main() -> None:
                 "Currency": fact["currency"] or "EUR",
                 "Calculation method": fact["gain_method"],
             }
-        )
-    legend_rows = [
-        {"Account holder": partner_cfg.get("partner_a", "Partner A"), "Meaning": "Individual"},
-        {"Account holder": partner_cfg.get("partner_b", "Partner B"), "Meaning": "Individual"},
-        {
-            "Account holder": ", ".join(
-                name
-                for name in (partner_cfg.get("partner_a"), partner_cfg.get("partner_b"))
-                if name
-            ),
-            "Meaning": "Joint",
-        },
-        {"Account holder": "Unknown", "Meaning": "Holder not established"},
-    ]
-    st.caption("Account-holder color legend")
-    legend_column, _ = st.columns(2)
-    with legend_column:
-        st.dataframe(
-            _styled_table(legend_rows, "Account holder", owner_colors),
-            width="stretch",
-            hide_index=True,
         )
     st.dataframe(
         _styled_table(fact_rows, "Account holder", owner_colors),

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.common import resolve_tax_year
 from wr.pdf import parse_nl_amount
 
 
 def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
-    year = tax_year or guess_tax_year(text) or _year_from_portefeuille(text)
+    year = resolve_tax_year(text, tax_year) or _year_from_portefeuille(text)
     facts: list[AccountYearFact] = []
     notes: list[str] = []
 

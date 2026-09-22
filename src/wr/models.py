@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from wr.money import add, subtract
+
 
 class CoverageStatus(str, Enum):
     COMPLETE = "COMPLETE"
@@ -54,7 +56,9 @@ class AccountYearFact:
             return
         if self.start_balance is None or self.end_balance is None:
             if self.interest_received is not None and self.deposits is None:
-                self.capital_gain = (self.interest_received or 0.0) - (self.interest_paid or 0.0)
+                self.capital_gain = subtract(
+                    self.interest_received or 0.0, self.interest_paid or 0.0
+                )
                 self.gain_method = "interest_only"
             return
         deposits = self.deposits if self.deposits is not None else 0.0
@@ -63,19 +67,27 @@ class AccountYearFact:
         if self.deposits is None and self.withdrawals is None:
             # Prefer interest-only when interest is known and we lack flows.
             if self.interest_received is not None:
-                self.capital_gain = (self.interest_received or 0.0) - (self.interest_paid or 0.0)
+                self.capital_gain = subtract(
+                    self.interest_received or 0.0, self.interest_paid or 0.0
+                )
                 self.gain_method = "interest_only"
                 return
-            self.capital_gain = self.end_balance - self.start_balance
+            self.capital_gain = subtract(self.end_balance, self.start_balance)
             self.gain_method = "balance_delta_incomplete"
             return
-        balance_flow_return = self.end_balance - self.start_balance - deposits + withdrawals
-        net_interest = (self.interest_received or 0.0) - (self.interest_paid or 0.0)
-        net_dividends = (self.dividends_gross or 0.0) - (self.withholding_tax or 0.0)
+        balance_flow_return = add(
+            subtract(self.end_balance, self.start_balance, deposits), withdrawals
+        )
+        net_interest = subtract(
+            self.interest_received or 0.0, self.interest_paid or 0.0
+        )
+        net_dividends = subtract(
+            self.dividends_gross or 0.0, self.withholding_tax or 0.0
+        )
         # The balance movement already contains cash income after withholding.
         # Keep market value change separate so gross dividends can be included
         # exactly once in taxable actual return.
-        self.capital_gain = balance_flow_return - net_interest - net_dividends
+        self.capital_gain = subtract(balance_flow_return, net_interest, net_dividends)
         self.gain_method = "balance_flow"
 
     @property
@@ -99,7 +111,9 @@ class AccountYearFact:
             )
         parts: list[float] = []
         if self.interest_received is not None or self.interest_paid is not None:
-            parts.append((self.interest_received or 0.0) - (self.interest_paid or 0.0))
+            parts.append(
+                subtract(self.interest_received or 0.0, self.interest_paid or 0.0)
+            )
         if self.dividends_gross is not None:
             parts.append(self.dividends_gross)
         if self.gain_method == "interest_only":
@@ -118,7 +132,7 @@ class AccountYearFact:
                 parts.append(self.capital_gain)
         if not parts:
             return None
-        return sum(parts)
+        return add(*parts)
 
 
 @dataclass

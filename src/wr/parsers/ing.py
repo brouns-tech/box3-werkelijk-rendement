@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
+from wr.parsers.common import first_holder, resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
 from wr.source_rules import has_zero_return_by_product
 
 
 def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
-    year = tax_year or guess_tax_year(text)
+    year = resolve_tax_year(text, tax_year)
     facts: list[AccountYearFact] = []
     if year is None:
         return ParseResult("ing", "jaaroverzicht", None, notes=["no year"])
@@ -84,7 +84,4 @@ def _ing_account_key(raw: str) -> str:
 
 
 def _holders(text: str) -> list[str]:
-    m = re.search(r"(?:Hr|Mevr\.)\s+([^\n*]+)", text, re.I)
-    if m:
-        return [m.group(1).strip()]
-    return []
+    return first_holder(text, r"(?:Hr|Mevr\.)\s+([^\n*]+)")

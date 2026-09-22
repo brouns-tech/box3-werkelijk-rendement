@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import re
 
-from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
+from wr.money import add
+from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_account_id, normalize_iban, parse_en_amount, parse_nl_amount
 
 
 def parse_revolut(text: str, tax_year: int | None, doc_type: str) -> ParseResult:
-    year = tax_year or guess_tax_year(text)
+    year = resolve_tax_year(text, tax_year)
     if year is None:
         return ParseResult("revolut", doc_type, None, notes=["no year"])
 
@@ -102,7 +103,7 @@ def _parse_savings(text: str, year: int) -> ParseResult:
         end_balance=closing,
         deposits=purchased,
         withdrawals=sold,
-        capital_gain=(earned or 0.0) + (fees or 0.0) if earned is not None else None,
+        capital_gain=add(earned or 0.0, fees or 0.0) if earned is not None else None,
         gain_method="earned_return" if earned is not None else "unknown",
         extra={"fees": fees, "earned_return": earned},
     )

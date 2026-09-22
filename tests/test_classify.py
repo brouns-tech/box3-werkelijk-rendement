@@ -1,4 +1,13 @@
-from wr.classify import classify
+from wr.classify import CLASSIFICATION_RULES, classify
+from wr.parsers import PARSER_REGISTRY
+
+
+def test_every_supported_classification_has_a_registered_parser():
+    supported = {
+        (rule.issuer, rule.doc_type) for rule in CLASSIFICATION_RULES if rule.supported
+    }
+
+    assert supported == set(PARSER_REGISTRY)
 
 
 def test_accepts_official_belastingdienst_aangifte_template():

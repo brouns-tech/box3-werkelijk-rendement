@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
+from wr.money import add, subtract, total
 from wr.models import CoverageStatus
 
 
@@ -91,14 +92,18 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     end = _sum(used_facts, "end_balance")
     deposits = _sum(used_facts, "deposits")
     withdrawals = _sum(used_facts, "withdrawals")
-    interest = _sum(used_facts, "interest_received") - _sum(used_facts, "interest_paid")
-    dividends = _sum(used_facts, "dividends_gross") - _sum(used_facts, "withholding_tax")
+    interest = subtract(
+        _sum(used_facts, "interest_received"), _sum(used_facts, "interest_paid")
+    )
+    dividends = subtract(
+        _sum(used_facts, "dividends_gross"), _sum(used_facts, "withholding_tax")
+    )
     capital = 0.0
     known_return = 0.0
     for f in used_facts:
-        known_return += _fact_return(f) or 0.0
+        known_return = add(known_return, _fact_return(f) or 0.0)
         if f["capital_gain"] is not None:
-            capital += f["capital_gain"]
+            capital = add(capital, f["capital_gain"])
 
     if not eligible_facts:
         coverage = CoverageStatus.UNKNOWN.value
@@ -179,35 +184,41 @@ def _fact_return(fact) -> float | None:
     if method == "balance_flow":
         required = ("start_balance", "end_balance", "deposits", "withdrawals")
         if all(fact[field] is not None for field in required):
-            balance_return = (
-                fact["end_balance"]
-                - fact["start_balance"]
-                - fact["deposits"]
-                + fact["withdrawals"]
+            balance_return = add(
+                subtract(
+                    fact["end_balance"], fact["start_balance"], fact["deposits"]
+                ),
+                fact["withdrawals"],
             )
-            return (
-                balance_return
-                + (fact["dividends_gross"] or 0)
-                + (fact["interest_received"] or 0)
-                - (fact["interest_paid"] or 0)
+            return add(
+                balance_return,
+                fact["dividends_gross"] or 0,
+                fact["interest_received"] or 0,
+                -(fact["interest_paid"] or 0),
             )
         return fact["capital_gain"]
     if method == "interest_only":
-        return (fact["interest_received"] or 0) - (fact["interest_paid"] or 0)
+        return subtract(fact["interest_received"] or 0, fact["interest_paid"] or 0)
     total = 0.0
     has = False
     if fact["interest_received"] is not None or fact["interest_paid"] is not None:
-        total += (fact["interest_received"] or 0) - (fact["interest_paid"] or 0)
+        total = add(
+            total,
+            subtract(fact["interest_received"] or 0, fact["interest_paid"] or 0),
+        )
         has = True
     if fact["dividends_gross"] is not None:
-        total += fact["dividends_gross"] - (fact["withholding_tax"] or 0)
+        total = add(
+            total,
+            subtract(fact["dividends_gross"], fact["withholding_tax"] or 0),
+        )
         has = True
     if fact["capital_gain"] is not None and method not in {"interest_only", "balance_delta_incomplete"}:
         if not has:
-            total += fact["capital_gain"]
+            total = add(total, fact["capital_gain"])
             has = True
     return total if has else None
 
 
 def _sum(rows, col: str) -> float:
-    return float(sum((r[col] or 0) for r in rows))
+    return total((r[col] or 0) for r in rows)
