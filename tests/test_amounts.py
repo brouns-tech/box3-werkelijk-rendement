@@ -9,5 +9,5 @@ def test_parse_nl_thousands():
 
 
 def test_parse_en():
-    assert parse_en_amount("1,000.00") == 8644.91
+    assert parse_en_amount("1,000.00") == 1000.0
     assert parse_en_amount("451.55") == 451.55

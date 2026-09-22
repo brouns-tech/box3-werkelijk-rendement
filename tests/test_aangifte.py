@@ -32,9 +32,9 @@ def test_parses_partner_split_from_official_printout():
     assert result.tax_return.full_year_fiscal_partners is True
     assert result.tax_return.filer_name == "ALEX EXAMPLE"
     assert result.tax_return.partner_b_name == "SAM EXAMPLE"
-    assert result.tax_return.grondslag == 161891.0
-    assert result.tax_return.grondslag_a == 154361.0
-    assert result.tax_return.grondslag_b == 7530.0
+    assert result.tax_return.grondslag == 160000.0
+    assert result.tax_return.grondslag_a == 120000.0
+    assert result.tax_return.grondslag_b == 40000.0
 
 
 def test_parses_full_year_partnership_from_same_address_and_marriage():
@@ -81,9 +81,9 @@ def test_parses_2025_fictitious_return_and_final_box3_tax_layout():
     )
 
     assert result.tax_return is not None
-    assert result.tax_return.voordeel_a == 8015.0
+    assert result.tax_return.voordeel_a == 8000.0
     assert result.tax_return.voordeel_b == 0.0
-    assert result.tax_return.box3_tax_a == 2845.0
+    assert result.tax_return.box3_tax_a == 2800.0
 
 
 def test_parses_partner_box3_figures_from_separate_partner_block():
@@ -94,13 +94,13 @@ def test_parses_partner_box3_figures_from_separate_partner_block():
         "ALEX EXAMPLE en partner zijn heel 2023 fiscale partners\n"
         "Voordeel uit sparen en beleggen € 3.000\n"
         "Inkomstenbelasting box 3\n€ 1.000\n"
-        "Deel SAM EXAMPLE sparen en beleggen € 40.000\n"
-        "Voordeel sparen en beleggen € 159\n"
+        "Deel SAM EXAMPLE sparen en beleggen € 7.000\n"
+        "Voordeel sparen en beleggen € 150\n"
         "Inkomstenbelasting box 3\n€ 50"
     )
 
     assert result.tax_return is not None
-    assert result.tax_return.voordeel_b == 159.0
+    assert result.tax_return.voordeel_b == 150.0
     assert result.tax_return.box3_tax_b == 50.0
 
 

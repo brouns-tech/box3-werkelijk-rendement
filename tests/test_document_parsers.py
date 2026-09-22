@@ -28,17 +28,17 @@ Portefeuilleoverzicht per 31-12-2022
 Totale portefeuille waarde per 31-12-2022               55.000,00EUR
 Totale waarde van stortingen *                          10.000,00 EUR
 Totale waarde van opnames *                                  0,00 EUR
-EUR (DE00100100000000000000)                               100,00 EUR 15,00 EUR
+EUR (XX00000000000000000000)                               100,00 EUR 15,00 EUR
 """
 
     fact = parse_degiro(text, 2022).facts[0]
 
     assert fact.account_key == "masked-mpl"
-    assert fact.start_balance == 53173.49
-    assert fact.end_balance == 56447.12
-    assert fact.deposits == 13800.0
+    assert fact.start_balance == 50000.0
+    assert fact.end_balance == 55000.0
+    assert fact.deposits == 10000.0
     assert fact.withdrawals == 0.0
-    assert abs(fact.capital_gain - -10526.37) < 0.001
+    assert fact.capital_gain == -5000.0
     assert fact.gain_method == "balance_flow"
 
 
@@ -69,7 +69,7 @@ Totaaloverzicht Rekeningen 2025
  Rekening                        Rekeninghouder                    Saldo per 01-01-2025 (€)        Saldo per 31-12-2025 (€)
  Shared checking                 ALEX EXAMPLE e/o SAM EXAMPLE                           1.000,00                          900,00
  NL00SNSB0000000000              EXAMPLE
- Shared savings (Sparen)         SAM EXAMPLE e/o ALEX EXAMPLE                            2.000,00                             0,00
+ Shared savings (Sparen)         SAM EXAMPLE e/o ALEX EXAMPLE                            2.000,00                         2.100,00
  NL00SNSB0000000001              EXAMPLE
 """
 
@@ -78,8 +78,8 @@ Totaaloverzicht Rekeningen 2025
     assert len(result.facts) == 2
     assert result.facts[0].account_key == "NL00SNSB0000000000"
     assert result.facts[0].account_label == "Shared checking"
-    assert result.facts[0].start_balance == 1600.05
-    assert result.facts[0].end_balance == 408.18
+    assert result.facts[0].start_balance == 1000.0
+    assert result.facts[0].end_balance == 900.0
     assert result.facts[0].ownership == "joint"
     assert result.facts[0].interest_received == 0.0
     assert result.facts[0].actual_return_component == 0.0
@@ -97,7 +97,7 @@ def test_sns_product_label_enriches_same_account_nickname_across_years():
     conn.row_factory = sqlite3.Row
     init_db(conn)
     for sha, year, doc_type, label in (
-        ("old", 2022, "totaaloverzicht", "SAM & ALEX"),
+        ("old", 2022, "totaaloverzicht", "Alex & Sam"),
         ("new", 2024, "jaaroverzicht", "SNS Compleet"),
     ):
         conn.execute(
@@ -124,30 +124,30 @@ def test_sns_jaaroverzicht_recovers_ocr_mangled_iban():
     text = """
 Financieel overzicht 2024
 SNS Bank
-NL9ð SNSB 12ó4 56õò óô SNS Internet Sparen * 0,00 1.100,00 0,00 12,34
+NLðð SNSB ðððð ðððð ðð SNS Internet Sparen * 1.000,00 1.100,00 0,00 12,34
 """
 
     result = parse_sns(text, 2024, "jaaroverzicht")
 
     assert len(result.facts) == 1
     fact = result.facts[0]
-    assert fact.account_key == "NL90SNSB1234565234"
-    assert fact.interest_received == 127.70
+    assert fact.account_key == "NL00SNSB0000000000"
+    assert fact.interest_received == 12.34
 
 
 def test_sns_jaaroverzicht_recovers_ocr_mangled_nine():
     text = """
 Financieel overzicht 2023
 SNS Bank
-NL9ð SNSB 12óø ùöõò óô SNS Internet Sparen * 1.000,00 2.000,00 0,00 9,99
+NL9ð SNSB ðððð ðððð ðð SNS Internet Sparen * 1.000,00 1.100,00 0,00 9,99
 """
 
     result = parse_sns(text, 2023, "jaaroverzicht")
 
     assert len(result.facts) == 1
     fact = result.facts[0]
-    assert fact.account_key == "NL90SNSB1238965234"
-    assert fact.interest_received == 30.69
+    assert fact.account_key == "NL90SNSB0000000000"
+    assert fact.interest_received == 9.99
 
 
 def test_revolut_currency_statement_has_balances_and_flows():
@@ -169,10 +169,10 @@ Account (Current Account) €1,000.00 €250.00 €400.00 €1,150.00
     assert len(result.facts) == 1
     fact = result.facts[0]
     assert fact.account_key == "NL00REVO0000000000"
-    assert fact.start_balance == 8644.91
-    assert fact.end_balance == 16678.17
-    assert fact.deposits == 346249.07
-    assert fact.withdrawals == 338215.81
+    assert fact.start_balance == 1000.0
+    assert fact.end_balance == 1150.0
+    assert fact.deposits == 400.0
+    assert fact.withdrawals == 250.0
     assert abs(fact.capital_gain) < 0.01
 
     usd = parse_revolut(text.replace("EUR Statement", "USD Statement"), 2025, "account_statement")
@@ -185,7 +185,7 @@ def test_ing_payment_account_without_interest_line_is_documented_zero():
 ING Jaaroverzicht 2022
 ING Betaalrekening: NL00 INGB 0000 0000 00 Hr ALEX EXAMPLE
 Saldo op 01-01-2022                                            1.000,00
-Saldo op 31-12-2022                                            900,00
+Saldo op 31-12-2022                                              900,00
 
 ING Oranje Spaarrekening: H 000-00000 Hr ALEX EXAMPLE
 Saldo op 01-01-2022                                                0,00

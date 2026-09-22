@@ -22,9 +22,9 @@ def test_parses_flatex_financial_instruments_inventory():
 
     fact = result.facts[0]
     assert result.tax_year == 2021
-    assert fact.end_balance == 6569.01
-    assert fact.extra["cash_balance"] == 27.55
-    assert fact.extra["securities_market_value"] == 6541.46
+    assert fact.end_balance == 3100.0
+    assert fact.extra["cash_balance"] == 100.0
+    assert fact.extra["securities_market_value"] == 3000.0
     assert fact.extra["asset_class"] == "securities_portfolio"
     assert "securities portfolio" in fact.account_label
     assert fact.extra["position_count"] == 2

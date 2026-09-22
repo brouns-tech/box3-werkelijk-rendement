@@ -40,7 +40,7 @@ def test_parses_deposit_accounts_and_excludes_credit_card():
         ("NL00RABO0000000001", "Rabobank Rabo BasisRekening"),
         ("NL00RABO0000000002", "Rabobank Rabo SpaarRekening"),
     ]
-    assert result.facts[0].start_balance == 3641.02
-    assert result.facts[0].end_balance == 13260.23
+    assert result.facts[0].start_balance == 1000.0
+    assert result.facts[0].end_balance == 1100.0
     assert result.facts[0].interest_received == 0.0
-    assert result.facts[1].interest_received == 2007.58
+    assert result.facts[1].interest_received == 200.0
