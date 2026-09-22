@@ -1,4 +1,8 @@
+import sqlite3
+
 from wr.classify import classify
+from wr.db import init_db
+from wr.dedupe import canonicalize_facts
 from wr.models import AccountYearFact
 from wr.parsers.degiro import parse_degiro
 from wr.parsers.ing import parse_ing
@@ -55,8 +59,8 @@ def test_balance_flow_separates_gross_dividend_and_market_value_change():
     fact.compute_capital_gain()
 
     assert fact.capital_gain == 6.0
-    assert fact.actual_return_component == 11.0
-    assert _fact_return(fact.__dict__) == 6.0
+    assert fact.actual_return_component == 15.0
+    assert _fact_return(fact.__dict__) == 15.0
 
 
 def test_sns_total_overview_parses_wrapped_holder_names():
@@ -86,6 +90,34 @@ Totaaloverzicht Rekeningen 2025
     assert result.facts[1].interest_received is None
     assert result.facts[1].actual_return_component is None
     assert result.facts[1].extra["account_type"] == "savings"
+
+
+def test_sns_product_label_enriches_same_account_nickname_across_years():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    for sha, year, doc_type, label in (
+        ("old", 2022, "totaaloverzicht", "SAM & ALEX"),
+        ("new", 2024, "jaaroverzicht", "SNS Compleet"),
+    ):
+        conn.execute(
+            "INSERT INTO documents (content_sha256, byte_size, imported_at, parse_status, doc_type) VALUES (?, 1, '2026-01-01', 'parsed', ?)",
+            (sha, doc_type),
+        )
+        conn.execute(
+            "INSERT INTO account_year_facts (document_sha256, tax_year, issuer, account_key, account_label) VALUES (?, ?, 'sns', 'NL00SNSB0000000000', ?)",
+            (sha, year, label),
+        )
+    canonicalize_facts(conn)
+
+    labels = [
+        row[0]
+        for row in conn.execute(
+            "SELECT account_label FROM account_year_facts ORDER BY tax_year"
+        )
+    ]
+
+    assert labels == ["SNS Compleet", "SNS Compleet"]
 
 
 def test_sns_jaaroverzicht_recovers_ocr_mangled_iban():

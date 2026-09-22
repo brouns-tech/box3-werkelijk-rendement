@@ -4,9 +4,6 @@ import json
 import sqlite3
 from collections import defaultdict
 
-from wr.source_rules import flatex_linked_account
-
-
 # Higher = preferred when multiple facts share a logical account/year.
 _ISSUER_DOC_PRIORITY = {
     ("degiro", "jaaroverzicht"): 100,
@@ -25,9 +22,12 @@ _ISSUER_DOC_PRIORITY = {
 }
 
 
-def canonicalize_facts(conn: sqlite3.Connection) -> None:
+def canonicalize_facts(
+    conn: sqlite3.Connection, flatex_linked_account: str | None = None
+) -> None:
     """Mark one canonical fact per issuer, normalized account key, and tax year."""
     _enrich_fact_holders(conn)
+    _enrich_sns_account_labels(conn)
     conn.execute("UPDATE account_year_facts SET is_canonical = 0")
 
     rows = conn.execute(
@@ -54,13 +54,13 @@ def canonicalize_facts(conn: sqlite3.Connection) -> None:
 
     for fid in canonical_ids:
         conn.execute("UPDATE account_year_facts SET is_canonical = 1 WHERE id = ?", (fid,))
-    _enrich_flatex_inventory_returns(conn)
+    _enrich_flatex_inventory_returns(conn, flatex_linked_account)
     conn.commit()
 
 
 def _enrich_fact_holders(conn: sqlite3.Connection) -> None:
     rows = conn.execute(
-        "SELECT id, issuer, account_key, holder_names FROM account_year_facts"
+        "SELECT id, issuer, account_key, holder_names, ownership FROM account_year_facts"
     ).fetchall()
     by_account: dict[tuple[str, str], set[str]] = defaultdict(set)
     by_issuer: dict[str, set[str]] = defaultdict(set)
@@ -68,6 +68,11 @@ def _enrich_fact_holders(conn: sqlite3.Connection) -> None:
         holders = _holders(row["holder_names"])
         if not holders:
             continue
+        if row["ownership"] == "unknown":
+            conn.execute(
+                "UPDATE account_year_facts SET ownership = ? WHERE id = ?",
+                ("individual" if len(holders) == 1 else "joint", row["id"]),
+            )
         by_account[(row["issuer"], _account_family(row["account_key"]))].update(holders)
         by_issuer[row["issuer"]].update(holders)
     for row in rows:
@@ -78,7 +83,7 @@ def _enrich_fact_holders(conn: sqlite3.Connection) -> None:
             holders = by_issuer[row["issuer"]]
         if len(holders) == 1:
             conn.execute(
-                "UPDATE account_year_facts SET holder_names = ? WHERE id = ?",
+                "UPDATE account_year_facts SET holder_names = ?, ownership = 'individual' WHERE id = ?",
                 (json.dumps(sorted(holders)), row["id"]),
             )
         elif len(holders) == 2:
@@ -93,6 +98,24 @@ def _holders(value: str | None) -> list[str]:
         return json.loads(value or "[]")
     except json.JSONDecodeError:
         return []
+
+
+def _enrich_sns_account_labels(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT id, account_key, account_label FROM account_year_facts WHERE issuer = 'sns'"
+    ).fetchall()
+    product_labels: dict[str, str] = {}
+    for row in rows:
+        label = (row["account_label"] or "").strip()
+        if label.lower().startswith("sns "):
+            product_labels[_account_family(row["account_key"])] = label
+    for row in rows:
+        product_label = product_labels.get(_account_family(row["account_key"]))
+        if product_label and not (row["account_label"] or "").lower().startswith("sns "):
+            conn.execute(
+                "UPDATE account_year_facts SET account_label = ? WHERE id = ?",
+                (product_label, row["id"]),
+            )
 
 
 def _account_family(account_key: str) -> str:
@@ -122,8 +145,9 @@ def _score(row) -> tuple:
     return (prio, completeness, -row["id"])
 
 
-def _enrich_flatex_inventory_returns(conn: sqlite3.Connection) -> None:
-    linked_account = flatex_linked_account()
+def _enrich_flatex_inventory_returns(
+    conn: sqlite3.Connection, linked_account: str | None
+) -> None:
     conn.execute(
         """
         UPDATE account_year_facts

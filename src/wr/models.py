@@ -81,6 +81,22 @@ class AccountYearFact:
     @property
     def actual_return_component(self) -> float | None:
         """Contribution to combined actual return for this fact."""
+        if (
+            self.gain_method == "balance_flow"
+            and self.start_balance is not None
+            and self.end_balance is not None
+            and self.deposits is not None
+            and self.withdrawals is not None
+        ):
+            return (
+                self.end_balance
+                - self.start_balance
+                - self.deposits
+                + self.withdrawals
+                + (self.dividends_gross or 0.0)
+                + (self.interest_received or 0.0)
+                - (self.interest_paid or 0.0)
+            )
         parts: list[float] = []
         if self.interest_received is not None or self.interest_paid is not None:
             parts.append((self.interest_received or 0.0) - (self.interest_paid or 0.0))

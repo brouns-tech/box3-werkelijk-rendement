@@ -176,7 +176,21 @@ def _fact_return(fact) -> float | None:
     method = fact["gain_method"] or ""
     if method == "earned_return" and fact["capital_gain"] is not None:
         return fact["capital_gain"]
-    if method == "balance_flow" and fact["capital_gain"] is not None:
+    if method == "balance_flow":
+        required = ("start_balance", "end_balance", "deposits", "withdrawals")
+        if all(fact[field] is not None for field in required):
+            balance_return = (
+                fact["end_balance"]
+                - fact["start_balance"]
+                - fact["deposits"]
+                + fact["withdrawals"]
+            )
+            return (
+                balance_return
+                + (fact["dividends_gross"] or 0)
+                + (fact["interest_received"] or 0)
+                - (fact["interest_paid"] or 0)
+            )
         return fact["capital_gain"]
     if method == "interest_only":
         return (fact["interest_received"] or 0) - (fact["interest_paid"] or 0)
