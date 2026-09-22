@@ -1,11 +1,11 @@
-# Copy to config.toml and adjust for your setup:
+# Configuration is optional. Copy to config.toml and adjust when needed:
 #   cp config.example.toml config.toml
 
 import_root = "/path/to/your/finance/documents"
 db_path = "data/wr.sqlite"
 
 [partners]
-# Canonical names used for matching tax returns and account holders
+# Optional canonical names and aliases used to match tax returns to account holders.
 partner_a = "A. Partner"
 partner_b = "B. Partner"
 partner_a_aliases = ["Partner A", "A Partner"]
@@ -13,4 +13,5 @@ partner_b_aliases = ["Partner B", "B Partner"]
 
 [accounts]
 # Optional: only transfers involving this flatex reference account are external flows.
+# Set this when importing flatex Rekeninguittreksel statements.
 flatex_linked_account = "NL00BANK0000000000"

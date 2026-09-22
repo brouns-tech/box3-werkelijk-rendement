@@ -4,8 +4,8 @@ import re
 
 from wr.classify import guess_tax_year
 from wr.models import AccountYearFact, ParseResult
-from wr.pdf import parse_nl_amount
-from wr.source_rules import flatex_linked_account, has_zero_return_by_product
+from wr.pdf import normalize_iban, parse_nl_amount
+from wr.source_rules import has_zero_return_by_product
 
 
 def parse_flatex(
@@ -17,7 +17,8 @@ def parse_flatex(
     if doc_type == "financial_instruments_statement":
         return _parse_financial_instruments_statement(text)
     if doc_type == "account_statement":
-        return _parse_account_statement(text, linked_account or flatex_linked_account())
+        normalized_account = normalize_iban(linked_account) if linked_account else None
+        return _parse_account_statement(text, normalized_account)
 
     year = tax_year or guess_tax_year(text)
     # Try period in Steuerbescheinigung

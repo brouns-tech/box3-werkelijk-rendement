@@ -34,19 +34,33 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    cfg = load_config(args.config)
+    try:
+        cfg = load_config(args.config)
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
     db_path = resolve_db_path(cfg)
+    partner_config = cfg.get("partners", {})
+    flatex_linked_account = cfg.get("accounts", {}).get("flatex_linked_account")
 
     if args.cmd == "import":
         if args.fresh and db_path.exists():
             db_path.unlink()
         root = args.root or cfg.get("import_root")
         if not root:
-            print("import_root not configured", file=sys.stderr)
+            print("Provide --root or set import_root in config.toml", file=sys.stderr)
+            return 2
+        if not Path(root).is_dir():
+            print(f"Import root is not a directory: {root}", file=sys.stderr)
             return 2
         print(f"Importing from {root}")
         print(f"Database {db_path}")
-        stats = run_import(root, db_path, limit=args.limit)
+        stats = run_import(
+            root,
+            db_path,
+            limit=args.limit,
+            partner_config=partner_config,
+            flatex_linked_account=flatex_linked_account,
+        )
         print(
             "Done: "
             f"seen={stats['seen']} new={stats['new']} duplicate={stats['duplicate']} "
@@ -55,7 +69,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "recompute":
-        recompute(db_path)
+        recompute(
+            db_path,
+            partner_config=partner_config,
+            flatex_linked_account=flatex_linked_account,
+        )
         print("Recomputed canonical facts, coverage, and recommendations")
         return 0
 
@@ -79,10 +97,9 @@ def main(argv: list[str] | None = None) -> int:
             str(app),
             "--server.port",
             str(args.port),
-            "--",
-            "--config",
-            cfg.get("_config_path", "config.toml"),
         ]
+        if cfg.get("_config_path"):
+            cmd.extend(["--", "--config", cfg["_config_path"]])
         return subprocess.call(cmd)
 
     return 1

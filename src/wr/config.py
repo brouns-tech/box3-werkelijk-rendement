@@ -11,11 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     if path is None:
-        # Prefer CWD config, then package-adjacent project root.
-        candidates = [
-            Path.cwd() / "config.toml",
-            Path(__file__).resolve().parents[2] / "config.toml",
-        ]
+        candidates = [Path.cwd() / "config.toml"]
     else:
         candidates = [Path(path)]
 
@@ -27,7 +23,13 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
             cfg["_project_root"] = str(candidate.resolve().parent)
             return cfg
 
-    raise FileNotFoundError("config.toml not found")
+    if path is not None:
+        raise FileNotFoundError(f"Config file not found: {Path(path)}")
+
+    return {
+        "_config_path": None,
+        "_project_root": str(Path.cwd().resolve()),
+    }
 
 
 def resolve_db_path(cfg: dict[str, Any]) -> Path:

@@ -5,12 +5,13 @@ import re
 import sqlite3
 
 from wr.compare.base import BOX3_RATE_BY_YEAR, compare_partner
-from wr.config import load_config
 from wr.models import CoverageStatus, PartnerTaxResult, Recommendation
 from wr.portfolio import _fact_return, is_box3_fact
 
 
-def rebuild_recommendations(conn: sqlite3.Connection) -> None:
+def rebuild_recommendations(
+    conn: sqlite3.Connection, partner_cfg: dict | None = None
+) -> None:
     conn.execute("DELETE FROM partner_tax_results")
     years = {
         r[0] for r in conn.execute("SELECT DISTINCT tax_year FROM tax_returns").fetchall()
@@ -19,11 +20,7 @@ def rebuild_recommendations(conn: sqlite3.Connection) -> None:
         r[0] for r in conn.execute("SELECT DISTINCT tax_year FROM yearly_portfolio").fetchall()
     }
 
-    try:
-        cfg = load_config()
-        partner_cfg = cfg.get("partners", {})
-    except FileNotFoundError:
-        partner_cfg = {}
+    partner_cfg = partner_cfg or {}
 
     for year in sorted(y for y in years if y):
         for result in _results_for_year(conn, year, partner_cfg):

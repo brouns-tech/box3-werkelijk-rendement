@@ -3,7 +3,14 @@ from __future__ import annotations
 from wr.models import ParseResult
 
 
-def parse_document(issuer: str, doc_type: str, text: str, tax_year: int | None) -> ParseResult:
+def parse_document(
+    issuer: str,
+    doc_type: str,
+    text: str,
+    tax_year: int | None,
+    *,
+    flatex_linked_account: str | None = None,
+) -> ParseResult:
     if issuer == "belastingdienst" and doc_type == "aangifte_ib":
         from wr.parsers.aangifte import parse_aangifte
 
@@ -42,6 +49,6 @@ def parse_document(issuer: str, doc_type: str, text: str, tax_year: int | None) 
     if issuer == "flatex":
         from wr.parsers.flatex import parse_flatex
 
-        return parse_flatex(text, tax_year, doc_type)
+        return parse_flatex(text, tax_year, doc_type, flatex_linked_account)
 
     return ParseResult(issuer=issuer, doc_type=doc_type, tax_year=tax_year, notes=["no parser"])

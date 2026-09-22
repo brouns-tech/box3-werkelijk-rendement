@@ -22,7 +22,14 @@ from wr.recommend import rebuild_recommendations
 from wr.source_rules import has_zero_return_by_product
 
 
-def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) -> dict:
+def run_import(
+    root: str | Path,
+    db_path: str | Path,
+    limit: int | None = None,
+    *,
+    partner_config: dict | None = None,
+    flatex_linked_account: str | None = None,
+) -> dict:
     root = Path(root)
     conn = connect(db_path)
     init_db(conn)
@@ -109,7 +116,11 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
         year = guess_tax_year(text, classification.doc_type)
         try:
             result = parse_document(
-                classification.issuer, classification.doc_type, text, year
+                classification.issuer,
+                classification.doc_type,
+                text,
+                year,
+                flatex_linked_account=flatex_linked_account,
             )
             _persist_parse(conn, sha, classification, result, page_count, excerpt)
             stats["parsed"] += 1
@@ -133,9 +144,9 @@ def run_import(root: str | Path, db_path: str | Path, limit: int | None = None) 
         conn.commit()
 
     _apply_source_return_rules(conn)
-    canonicalize_facts(conn)
+    canonicalize_facts(conn, flatex_linked_account)
     rebuild_portfolio(conn)
-    rebuild_recommendations(conn)
+    rebuild_recommendations(conn, partner_config)
 
     return stats
 
@@ -224,14 +235,19 @@ def _persist_parse(conn, sha, classification: Classification, result, page_count
         )
 
 
-def recompute(db_path: str | Path) -> None:
+def recompute(
+    db_path: str | Path,
+    *,
+    partner_config: dict | None = None,
+    flatex_linked_account: str | None = None,
+) -> None:
     conn = connect(db_path)
     init_db(conn)
     _apply_source_return_rules(conn)
     clear_canonical_flags(conn)
-    canonicalize_facts(conn)
+    canonicalize_facts(conn, flatex_linked_account)
     rebuild_portfolio(conn)
-    rebuild_recommendations(conn)
+    rebuild_recommendations(conn, partner_config)
 
 
 def _apply_source_return_rules(conn) -> None:
