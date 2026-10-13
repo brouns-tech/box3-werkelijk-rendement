@@ -1,0 +1,11 @@
+# Runtime and build dependencies isolated from ordinary Python development.
+# Compile with uv pip compile --universal --generate-hashes.
+# Keep runtime requirements in sync with pyproject.toml; target Python 3.13.
+pandas>=2.0
+pypdf>=4.0
+streamlit>=1.37
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+pytest==9.1.1
+setuptools>=77
+wheel>=0.45

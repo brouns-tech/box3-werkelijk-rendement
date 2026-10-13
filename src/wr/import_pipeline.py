@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+import sqlite3
 from typing import Callable
 
 from wr.classify import Classification, classify, guess_tax_year
@@ -52,6 +53,7 @@ class ImportReport:
     skipped: int = 0
     failed: int = 0
     outcomes: list[DocumentImportOutcome] = field(default_factory=list)
+    cancelled: bool = False
 
     def add(self, outcome: DocumentImportOutcome, *, inserted: bool = False) -> None:
         self.seen += 1
@@ -71,9 +73,27 @@ def run_import(
     partner_config: PartnerSettings | None = None,
     institution_options: InstitutionOptions | None = None,
     progress: ProgressCallback | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> ImportReport:
     root = Path(root)
+    if not root.is_dir():
+        raise ValueError(f"Import root is not a directory: {root}")
     conn = connect(db_path)
+    try:
+        return _run_import(root, conn, limit, partner_config, institution_options, progress, cancelled)
+    finally:
+        conn.close()
+
+
+def _run_import(
+    root: Path,
+    conn: sqlite3.Connection,
+    limit: int | None,
+    partner_config: PartnerSettings | None,
+    institution_options: InstitutionOptions | None,
+    progress: ProgressCallback | None,
+    cancelled: Callable[[], bool] | None,
+) -> ImportReport:
     init_db(conn)
 
     report = ImportReport()
@@ -82,6 +102,9 @@ def run_import(
     if limit is not None:
         pdfs = pdfs[:limit]
     for index, path in enumerate(pdfs, start=1):
+        if cancelled and cancelled():
+            report.cancelled = True
+            break
         inserted = False
         try:
             sha = sha256_file(path)
@@ -212,8 +235,6 @@ def run_import(
     canonicalize_facts(conn, institution_options)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, partner_config)
-    conn.close()
-
     return report
 
 
@@ -320,8 +341,11 @@ def recompute(
     institution_options: InstitutionOptions | None = None,
 ) -> None:
     conn = connect(db_path)
-    init_db(conn)
-    clear_canonical_flags(conn)
-    canonicalize_facts(conn, institution_options)
-    rebuild_portfolio(conn)
-    rebuild_recommendations(conn, partner_config)
+    try:
+        init_db(conn)
+        clear_canonical_flags(conn)
+        canonicalize_facts(conn, institution_options)
+        rebuild_portfolio(conn)
+        rebuild_recommendations(conn, partner_config)
+    finally:
+        conn.close()

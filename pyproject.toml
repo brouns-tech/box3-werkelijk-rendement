@@ -26,6 +26,7 @@ dev = [
 
 [project.scripts]
 wr = "wr.cli:main"
+wr-desktop = "wr.desktop:main"
 
 [tool.setuptools.packages.find]
 where = ["src", "."]

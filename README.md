@@ -28,6 +28,12 @@ brokers, or layouts can be added through pull requests.
 
 ## Requirements
 
+A Windows beta packaging path is being developed using the existing dashboard.
+See [Windows delivery assessment and build instructions](docs/windows-packaging.md)
+and the [Windows beta user guide](docs/windows-beta.md). Windows clean-machine
+validation remains a release gate; no verified public Windows download is claimed
+by this checkout.
+
 - Python 3.10 or newer
 - Optional but recommended: Poppler's `pdftotext` executable for more reliable
   layout-preserving extraction. The tool falls back to `pypdf`.

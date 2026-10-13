@@ -4,6 +4,7 @@ import hashlib
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -17,16 +18,18 @@ def sha256_file(path: Path) -> str:
 
 def extract_text(path: Path, max_pages: int | None = None) -> tuple[str, int | None]:
     """Extract PDF text. Prefer pdftotext; fall back to pypdf."""
-    if shutil.which("pdftotext"):
+    if not getattr(sys, "frozen", False) and shutil.which("pdftotext"):
         cmd = ["pdftotext", "-layout", str(path), "-"]
         if max_pages is not None:
             cmd = ["pdftotext", "-layout", "-f", "1", "-l", str(max_pages), str(path), "-"]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=False,
+                                  timeout=60,
+                                  creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
             if proc.returncode == 0 and proc.stdout.strip():
                 page_count = _count_form_feeds(proc.stdout)
                 return proc.stdout, page_count or None
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired, UnicodeError):
             pass
 
     from pypdf import PdfReader
