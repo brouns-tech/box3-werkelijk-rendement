@@ -102,7 +102,7 @@ From a checkout, with Python 3.13.5 x64 installed **on the build machine only**:
 python -m pip install --require-hashes -r packaging/requirements.lock
 python -m pip install --no-deps --no-build-isolation -e .
 python -m pytest -q
-python -m PyInstaller --noconfirm --clean packaging/windows.spec
+python -m PyInstaller --noconfirm --clean packaging/desktop.spec
 python packaging/verify.py dist/WerkelijkRendement/WerkelijkRendement.exe
 ```
 

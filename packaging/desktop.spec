@@ -1,6 +1,14 @@
 # Build on the target OS. Writable financial data is never part of this bundle.
 from pathlib import Path
+import sys
 from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
+
+if sys.platform.startswith('linux'):
+    import _tkinter
+    if not getattr(_tkinter, '__file__', None):
+        raise RuntimeError('Linux desktop builds require CPython with dynamically linked Tcl/Tk. '
+                           'This interpreter has built-in static Tk/X11, which can crash on labels. '
+                           'Use the Ubuntu release workflow or a compatible CPython build.')
 
 root = Path(SPECPATH).parent
 streamlit_data, streamlit_binaries, streamlit_hidden = collect_all('streamlit')

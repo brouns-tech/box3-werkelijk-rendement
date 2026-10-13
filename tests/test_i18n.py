@@ -217,6 +217,6 @@ def test_native_launcher_updates_from_selector_and_dashboard_preference(tmp_path
     monkeypatch.setattr(desktop, "app_data_dir", lambda: tmp_path)
     monkeypatch.setattr(desktop.sys, "argv", ["desktop"])
     monkeypatch.setattr(desktop.subprocess, "Popen", lambda *args, **kwargs: Child())
-    monkeypatch.setattr(desktop.webbrowser, "open", lambda _: True)
+    monkeypatch.setattr(desktop, "open_external", lambda _: None)
     monkeypatch.setattr(desktop.urllib.request, "build_opener", lambda *args: Health())
     assert desktop.main() == 0

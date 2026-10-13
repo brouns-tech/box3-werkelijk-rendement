@@ -115,6 +115,7 @@ DUTCH = {
     "Startup is taking too long. See {log}.": "Starten duurt te lang. Raadpleeg {log}.",
     "Could not save language preference: {error}": "Taalvoorkeur kon niet worden opgeslagen: {error}",
     "Refresh the dashboard after changing language here.": "Vernieuw het dashboard nadat u hier de taal wijzigt.",
+    "Could not open {target}: {error}": "Kon {target} niet openen: {error}",
 }
 
 

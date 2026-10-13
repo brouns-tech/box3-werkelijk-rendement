@@ -12,13 +12,13 @@ import sys
 import threading
 import time
 import urllib.request
-import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from wr.desktop_storage import (app_data_dir, app_version, prepare_workspace, selected_folder,
                                 remember_language, remembered_language)
 from wr.i18n import LANGUAGES, translator
+from wr.desktop_platform import open_external
 
 
 class InstanceLock:
@@ -226,7 +226,7 @@ def main() -> int:
                     instance = json.loads(metadata.read_text())
                     status = control_request(instance["endpoint"], instance["token"], "status", 1)
                     if status["ready"]:
-                        webbrowser.open(status["url"])
+                        open_external(status["url"])
                         window.destroy()
                         return 0
                 except (OSError, ValueError, KeyError):
@@ -240,7 +240,7 @@ def main() -> int:
 
         def dispatch(action):
             if action == "status":
-                return {"ready": ready, "url": url}
+                return {"ready": ready, "url": url, "pid": os.getpid()}
             response = queue.Queue(maxsize=1)
             events.put((action, response))
             return response.get(timeout=120)
@@ -264,9 +264,15 @@ def main() -> int:
         language_hint.pack()
         status_label = tk.Label(window, text=t("Starting dashboard…"), wraplength=520)
         status_label.pack(pady=15)
-        open_button = tk.Button(window, text=t("Open dashboard"), command=lambda: ready and webbrowser.open(url))
+        def open_target(target):
+            try:
+                open_external(str(target))
+            except OSError as exc:
+                messagebox.showerror("Werkelijk Rendement", t("Could not open {target}: {error}", target=target, error=exc), parent=window)
+
+        open_button = tk.Button(window, text=t("Open dashboard"), command=lambda: ready and open_target(url))
         open_button.pack()
-        data_button = tk.Button(window, text=t("Open local data"), command=lambda: os.startfile(directory) if sys.platform == "win32" else None)
+        data_button = tk.Button(window, text=t("Open local data"), command=lambda: open_target(directory))
         data_button.pack(pady=5)
         exit_button = tk.Button(window, text=t("Exit"), command=shutdown)
         exit_button.pack()
@@ -323,7 +329,7 @@ def main() -> int:
                         if healthy and child.poll() is None:
                             ready = True
                             status_label.config(text=t("Dashboard running. Close this window to exit."))
-                            webbrowser.open(url)
+                            open_target(url)
                     except OSError:
                         pass
                     if not ready and time.monotonic() > deadline:

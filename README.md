@@ -38,6 +38,11 @@ and the [Windows beta user guide](docs/windows-beta.md). Windows clean-machine
 validation remains a release gate; no verified public Windows download is claimed
 by this checkout.
 
+Linux beta packaging is also available as an AppImage and a portable `.tar.gz`
+archive, using the same application. See the [Linux user guide](docs/linux-beta.md)
+and [format assessment and build instructions](docs/linux-packaging.md). Public
+distribution remains subject to CI and clean-desktop validation.
+
 - Python 3.10 or newer
 - Optional but recommended: Poppler's `pdftotext` executable for more reliable
   layout-preserving extraction. The tool falls back to `pypdf`.

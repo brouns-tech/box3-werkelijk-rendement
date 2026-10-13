@@ -33,7 +33,7 @@ jobs:
       - name: Run regressions and build one-folder executable
         run: |
           python -m pytest -q
-          python -m PyInstaller --noconfirm --clean packaging/windows.spec
+          python -m PyInstaller --noconfirm --clean packaging/desktop.spec
       - name: Verify frozen import, launch, reuse and shutdown
         run: python packaging/verify.py dist/WerkelijkRendement/WerkelijkRendement.exe
       - name: Package versioned ZIP and checksum

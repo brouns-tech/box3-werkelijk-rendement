@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Werkelijk Rendement
+Comment=Reconstruct Dutch Box 3 returns from local financial documents
+Comment[nl]=Reconstrueer box 3-rendement uit lokale financiële documenten
+Exec=WerkelijkRendement
+Icon=tech.brouns.WerkelijkRendement
+Terminal=false
+Categories=Office;Finance;
+StartupNotify=true

@@ -34,11 +34,21 @@ def main():
         directory = Path(temporary)
         env = {**os.environ, "LOCALAPPDATA": str(directory), "XDG_DATA_HOME": str(directory),
                "PATH": os.path.join(os.environ.get("SystemRoot", ""), "System32") if os.name == "nt" else ""}
+        if executable.suffix == ".AppImage":
+            env["APPIMAGE_EXTRACT_AND_RUN"] = "1"
+        if os.name != "nt" and "--desktop" in sys.argv:
+            # A stand-in for the host opener avoids opening browsers during GUI tests.
+            host_bin = directory / "host-bin"
+            host_bin.mkdir()
+            opener = host_bin / "xdg-open"
+            opener.write_text("#!/bin/sh\nexit 0\n")
+            opener.chmod(0o755)
+            env["PATH"] = str(host_bin)
         smoke = subprocess.Popen([str(executable), "--smoke-test", str(directory / "smoke")], cwd=directory, env=env)
         assert smoke.wait(timeout=60) == 0
         assert json.loads((directory / "smoke/smoke-result.json").read_text())["pdf_backend"] == "pypdf"
         assert (directory / "smoke/audit.zip").exists()
-        if os.name != "nt":
+        if os.name != "nt" and "--desktop" not in sys.argv:
             # Linux verifies the frozen server without requiring a graphical desktop.
             import urllib.request
             port = free_port()
@@ -72,7 +82,11 @@ def main():
                 # Abnormal supervisor termination must also stop the server.
                 launcher = subprocess.Popen([str(executable)], cwd=directory, env=env)
                 _, status = await_status(workspace, launcher)
-                launcher.kill()
+                if os.name == "nt":
+                    launcher.kill()
+                else:
+                    # AppImage extraction can introduce a runtime wrapper process.
+                    os.kill(status["pid"], 9)
                 launcher.wait(timeout=10)
                 port = urlparse(status["url"]).port
                 deadline = time.monotonic() + 10

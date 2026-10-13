@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+app_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$app_directory/usr/bin/WerkelijkRendement" "$@"
