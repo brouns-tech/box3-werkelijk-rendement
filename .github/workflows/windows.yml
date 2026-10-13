@@ -36,6 +36,13 @@ jobs:
           python -m PyInstaller --noconfirm --clean packaging/desktop.spec
       - name: Verify frozen import, launch, reuse and shutdown
         run: python packaging/verify.py dist/WerkelijkRendement/WerkelijkRendement.exe
+      - name: Preserve failed verification diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-verification-logs
+          path: build/verification-logs/
+          if-no-files-found: ignore
       - name: Package versioned ZIP and checksum
         shell: pwsh
         run: |

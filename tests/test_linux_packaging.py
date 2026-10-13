@@ -92,3 +92,23 @@ def test_release_packager_rejects_known_static_tk_bundle_before_download(tmp_pat
     monkeypatch.setattr(module, "checked_download", lambda *args: pytest.fail("No downloads for an unsuitable bundle"))
     with pytest.raises(RuntimeError, match="dynamic Tk extension"):
         module.build(tmp_path)
+
+
+def test_verification_retains_diagnostics_without_instance_credentials(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    file = Path(__file__).resolve().parents[1] / "packaging/verify.py"
+    spec = importlib.util.spec_from_file_location("frozen_verifier", file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    diagnostics = tmp_path / "diagnostics"
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        with module.verification_workspace(diagnostics) as workspace:
+            (workspace / "server.log").write_text("synthetic startup traceback")
+            (workspace / "instance.json").write_text('{"token":"never-copy"}')
+            raise RuntimeError("synthetic failure")
+    assert (diagnostics / "server.log").read_text() == "synthetic startup traceback"
+    assert "synthetic failure" in (diagnostics / "verification.log").read_text()
+    assert not (diagnostics / "instance.json").exists()
+    output = capsys.readouterr().out
+    assert "::error title=Frozen verification failed::" in output
+    assert "never-copy" not in output

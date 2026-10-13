@@ -133,3 +133,16 @@ def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch):
     app.run()
     assert not app.exception
     assert any("1 verwerkt" in result.value for result in app.success)
+
+
+def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_path, monkeypatch):
+    import sys
+    from wr import desktop, desktop_smoke
+
+    def fail(_directory):
+        raise RuntimeError("synthetic extraction failure")
+
+    monkeypatch.setattr(sys, "argv", ["desktop", "--smoke-test", str(tmp_path)])
+    monkeypatch.setattr(desktop_smoke, "smoke_test", fail)
+    assert desktop.main() == 1
+    assert "synthetic extraction failure" in (tmp_path / "smoke-error.log").read_text()

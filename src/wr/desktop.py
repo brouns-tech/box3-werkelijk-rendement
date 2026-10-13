@@ -174,8 +174,16 @@ def main() -> int:
                 sys.stdout, sys.stderr = original_stdout, original_stderr
         return 0
     if len(sys.argv) == 3 and sys.argv[1] == "--smoke-test":
-        from wr.desktop_smoke import smoke_test
-        smoke_test(Path(sys.argv[2]))
+        directory = Path(sys.argv[2])
+        directory.mkdir(parents=True, exist_ok=True)
+        try:
+            from wr.desktop_smoke import smoke_test
+            smoke_test(directory)
+        except Exception:
+            import traceback
+            with (directory / "smoke-error.log").open("w", encoding="utf-8") as log:
+                traceback.print_exc(file=log)
+            return 1
         return 0
 
     import tkinter as tk
@@ -344,6 +352,7 @@ def main() -> int:
                         window.after(100, shutdown)
                 window.after(200, tick)
             except Exception as exc:
+                record_launcher_error(directory)
                 messagebox.showerror("Werkelijk Rendement", str(exc), parent=window)
                 shutdown()
 
@@ -352,6 +361,7 @@ def main() -> int:
         window.mainloop()
         return 0
     except Exception as exc:
+        record_launcher_error(directory)
         messagebox.showerror("Werkelijk Rendement", str(exc), parent=window)
         # A failed second instance must never delete the first instance's metadata.
         if lock and lock.file:
@@ -362,6 +372,15 @@ def main() -> int:
     finally:
         if lock and lock.file:
             shutdown()
+
+
+def record_launcher_error(directory: Path) -> None:
+    import traceback
+    try:
+        with (directory / "launcher.log").open("a", encoding="utf-8") as log:
+            traceback.print_exc(file=log)
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":
