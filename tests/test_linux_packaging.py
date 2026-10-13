@@ -112,3 +112,28 @@ def test_verification_retains_diagnostics_without_instance_credentials(tmp_path,
     output = capsys.readouterr().out
     assert "::error title=Frozen verification failed::" in output
     assert "never-copy" not in output
+
+
+def test_verification_captures_workspace_teardown_failure(tmp_path, monkeypatch):
+    file = Path(__file__).resolve().parents[1] / "packaging/verify.py"
+    spec = importlib.util.spec_from_file_location("teardown_verifier", file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    class FailingCleanup:
+        name = str(workspace)
+
+        def __enter__(self):
+            return self.name
+
+        def __exit__(self, *args):
+            raise PermissionError("synthetic teardown lock")
+
+    monkeypatch.setattr(module.tempfile, "TemporaryDirectory", lambda **kwargs: FailingCleanup())
+    diagnostics = tmp_path / "diagnostics"
+    with pytest.raises(PermissionError, match="synthetic teardown lock"):
+        with module.verification_workspace(diagnostics):
+            pass
+    assert "synthetic teardown lock" in (diagnostics / "verification.log").read_text()
