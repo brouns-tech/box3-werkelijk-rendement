@@ -120,6 +120,12 @@ portable-archive creation, and SHA-256 generation completed successfully.
 Native launcher verification failed on the uv-managed interpreter before any
 browser launch. A minimal label reproduced the X11 failure; this is an actual
 interpreter limitation, not a passed GUI check. The generated local artifacts are
-not release candidates. Linux CI with a dynamic Tk build and both final-artifact
-GUI checks is required before distribution. The new guards prevent generating
-more artifacts from that interpreter.
+not release candidates. The new guards prevent generating more artifacts from
+that interpreter.
+
+At commit `d9e60be`, the [Ubuntu 22.04 Linux workflow](https://github.com/brouns-tech/box3-werkelijk-rendement/actions/runs/38393348360)
+passed the tests, native GUI preflight, frozen-launcher lifecycle verification,
+AppImage/archive packaging, and both final-artifact GUI checks. The `Linux-beta`
+artifact contains the versioned AppImage, portable archive, and checksums. These
+are tested beta artifacts; manual clean-desktop/FUSE checks and the remaining
+license/network review still precede stable public distribution.

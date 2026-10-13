@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import io
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,13 @@ def test_staged_appdir_preserves_bundle_and_has_relocatable_launch_metadata(tmp_
     assert '"$@"' in (appdir / "AppRun").read_text()
     assert (appdir / "README.md").is_file()
     assert "Terminal=false" in (appdir / "tech.brouns.WerkelijkRendement.desktop").read_text()
+    executable = appdir / "usr/bin/WerkelijkRendement"
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    executable.chmod(0o755)
+    arguments = ["space and é", "literal $(not-a-command)"]
+    result = subprocess.run([str(appdir / "AppRun"), *arguments], env={"PATH": ""},
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines() == arguments
     with pytest.raises(FileExistsError):
         module.stage_appdir(bundle, appdir)
 
