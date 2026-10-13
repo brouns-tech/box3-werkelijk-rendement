@@ -32,33 +32,44 @@ def await_status(directory, process):
     raise TimeoutError("Frozen launcher did not become ready")
 
 
+def capture_verification_failure(directory: Path, diagnostics: Path) -> None:
+    diagnostics.mkdir(parents=True, exist_ok=True)
+    failure = traceback.format_exc()
+    details = [failure]
+    (diagnostics / "verification.log").write_text(failure, encoding="utf-8")
+    for log in directory.rglob("*.log"):
+        if log.name not in {"server.log", "launcher.log", "smoke-error.log"}:
+            continue
+        destination = diagnostics / log.relative_to(directory)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(log, destination)
+        content = log.read_text(encoding="utf-8")[-16000:]
+        details.append(f"{log.relative_to(directory)}:\n{content}")
+        print(f"Diagnostic {log.relative_to(directory)}:\n{content}", flush=True)
+    print(f"Verification diagnostics saved to {diagnostics.resolve()}", flush=True)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # This workspace is entirely synthetic; expose the trace in public
+        # check annotations as well as authenticated job logs/artifacts.
+        message = "\n".join(details)[-12000:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::error title=Frozen verification failed::{message}", flush=True)
+
+
 @contextmanager
 def verification_workspace(diagnostics: Path):
     workspace = tempfile.TemporaryDirectory(prefix="wr-frozen-")
     directory = Path(workspace.name)
+    captured = None
     try:
         with workspace:
-            yield directory
-    except Exception:
-        diagnostics.mkdir(parents=True, exist_ok=True)
-        failure = traceback.format_exc()
-        details = [failure]
-        (diagnostics / "verification.log").write_text(failure, encoding="utf-8")
-        for log in directory.rglob("*.log"):
-            if log.name not in {"server.log", "launcher.log", "smoke-error.log"}:
-                continue
-            destination = diagnostics / log.relative_to(directory)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(log, destination)
-            content = log.read_text(encoding="utf-8")[-16000:]
-            details.append(f"{log.relative_to(directory)}:\n{content}")
-            print(f"Diagnostic {log.relative_to(directory)}:\n{content}", flush=True)
-        print(f"Verification diagnostics saved to {diagnostics.resolve()}", flush=True)
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            # This workspace is entirely synthetic; expose the trace in public
-            # check annotations as well as authenticated job logs/artifacts.
-            message = "\n".join(details)[-12000:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-            print(f"::error title=Frozen verification failed::{message}", flush=True)
+            try:
+                yield directory
+            except Exception as exc:
+                capture_verification_failure(directory, diagnostics)
+                captured = exc
+                raise
+    except Exception as exc:
+        if exc is not captured:
+            capture_verification_failure(directory, diagnostics)
         raise
 
 
