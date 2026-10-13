@@ -226,3 +226,8 @@ locking, reuse, shutdown and watchdog paths. Normal application launches still u
 the host associations. Unit tests cover both launcher modes and Windows association
 handling. Diagnostics capture both verification-body and teardown exceptions.
 The expanded local suite passes 87 tests.
+
+At commit `17acf51`, the [Windows workflow](https://github.com/brouns-tech/box3-werkelijk-rendement/actions/runs/38403173126)
+passed regression tests, executable creation, frozen import/launcher verification,
+versioned ZIP/checksum generation, and artifact upload. This resolves the reported
+build failure; clean Windows 10/11 checks remain a separate public-release gate.
