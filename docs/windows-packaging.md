@@ -169,3 +169,33 @@ On Linux with the project's PyCharm-configured CPython 3.13.5 environment:
   effective bind address and security options before server startup.
 - Windows native UI/lifecycle verification has been authored for CI but has not
   run in this Linux environment. A Linux binary is not a Windows release artifact.
+
+## Dutch/English localization increment
+
+Application-owned launcher and dashboard messages use a shared Python catalog
+in `wr.i18n`; PyInstaller collects it as an application module. No translation
+files, additional runtime dependencies, or calculation-engine changes are needed.
+`Language / Taal` offers `Nederlands` and `English`. Dutch is the initial desktop
+language; the developer CLI dashboard defaults to English. The selected language
+is stored atomically in a separate `language.json` beside the configuration,
+preserving the existing folder preferences and financial database.
+
+The launcher polls this shared preference to update its labels. Dashboard changes
+apply on rerun; changing language in the launcher requires a dashboard reload.
+Each browser session formats amounts independently, without a process-wide locale
+change. Import jobs retain their progress and cancellation state during switching.
+Known decision, coverage, document-type, and calculation-method labels are
+translated at display time; unknown codes remain visible as recorded. The label
+for complete coverage explicitly refers to available statements.
+
+Evidence identifiers, names, account labels, raw source/parser errors, and audit
+exports are not translated. System-owned Windows dialogs and Streamlit built-in
+controls may retain their own language settings. Documentation remains English.
+Automated tests exercise both languages, persisted settings, native label updates
+with a test window, import cancellation after switching, and an unchanged financial
+database. Native Windows rendering still requires the Windows verification gate.
+
+Localization validation on Linux: 76 tests passed, including unchanged audit CSV
+content after language switching. The one-folder build and frozen executable
+verification also passed, with both translations, preference persistence, and
+localized amount formatting exercised without Python or Poppler on PATH.

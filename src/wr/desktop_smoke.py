@@ -36,7 +36,8 @@ def synthetic_pdf(path: Path, text: str = ING_TEXT) -> None:
 
 def smoke_test(directory: Path) -> None:
     import shutil
-    from wr.desktop_storage import app_version, prepare_workspace
+    from wr.desktop_storage import app_version, prepare_workspace, remember_language, remembered_language
+    from wr.i18n import currency, translator
     from wr.export import write_audit_export
     from wr.import_pipeline import recompute, run_import
     from wr.parsers import PLUGINS
@@ -47,6 +48,11 @@ def smoke_test(directory: Path) -> None:
 
     directory.mkdir(parents=True, exist_ok=True)
     config = prepare_workspace(directory)
+    for language in ("nl", "en"):
+        remember_language(directory, language)
+        assert remembered_language(directory) == language
+        assert translator(language)("Select folder") == ("Map selecteren" if language == "nl" else "Select folder")
+        assert currency(1234.56, language) == ("€ 1.234,56" if language == "nl" else "€ 1,234.56")
     documents = directory / "synthetic-documents"
     documents.mkdir(exist_ok=True)
     pdf = documents / "arbitrary-name.PDF"

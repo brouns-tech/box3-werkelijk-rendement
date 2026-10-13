@@ -2,6 +2,7 @@
 
 - One-folder, console-free launcher for the existing local Streamlit dashboard.
 - Native document-folder selection, import progress, cancellation, and outcomes.
+- Dutch/English launcher and dashboard, saved language preference, and localized amounts.
 - Persistent per-user database and configuration; existing CLI preserved.
 - Bundled Python PDF extraction, eight existing institution plugins, audit export.
 - Loopback-only services, telemetry disabled, authenticated launcher controls.

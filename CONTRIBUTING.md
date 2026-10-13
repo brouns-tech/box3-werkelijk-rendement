@@ -9,6 +9,14 @@ Keep original Dutch tax terms, document titles, and quoted interface labels wher
 needed for accuracy. The application interface may support Dutch and English;
 documentation language does not determine the interface language.
 
+Application translations live in `src/wr/i18n.py`: English messages are keys and
+the Dutch catalog supplies their translations. Keep formatting placeholders
+identical between languages. Pass the session's language explicitly; do not
+change the process-wide locale or translate stored financial facts and policy
+identifiers. Add translations for new UI messages and stable status labels.
+`tests/test_i18n.py` checks catalog coverage, placeholders, language switching,
+preference persistence, and preservation of financial data.
+
 ## Add a statement template
 
 1. Add one institution module under `src/wr/parsers/` and export an

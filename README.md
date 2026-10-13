@@ -14,6 +14,10 @@ The included Streamlit dashboard summarizes coverage, return calculations, tax
 outcomes, and the account-level source data behind them. Processing stays on your
 machine.
 
+Choose **Language / Taal** in the dashboard for a Dutch or English interface.
+The preference is remembered, and amounts use the selected language's separators.
+Source evidence and audit exports retain their original content.
+
 ![Werkelijk Rendement dashboard with synthetic example data](docs/assets/dashboard-overview.png)
 
 ## Supported institutions

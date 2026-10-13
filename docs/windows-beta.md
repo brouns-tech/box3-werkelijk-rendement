@@ -3,9 +3,10 @@
 This beta reconstructs Box 3 returns from supported financial documents.
 Processing takes place locally. The application is free and open-source.
 
-The current desktop controls use Dutch labels, quoted below to help you locate
-them. Documentation is maintained in English; the application may offer Dutch
-and English interfaces.
+Use **Language / Taal** in the launcher or dashboard to choose **Nederlands** or
+**English**. The desktop starts in Dutch unless a language preference has been
+saved. The CLI-launched dashboard defaults to English. This guide uses English
+labels and includes Dutch equivalents where helpful.
 
 1. Extract the entire ZIP into a folder of your choice.
 2. Open `WerkelijkRendement.exe`. Keep its accompanying `_internal` folder.
@@ -31,7 +32,16 @@ Data is stored in `%LOCALAPPDATA%\WerkelijkRendement`. Use **Open local data**
 (`Lokale gegevens openen`) in the launcher to locate this folder. The database,
 configuration, folder preference, and logs are retained across updates and after
 removing the extracted application. They can contain personal and financial
-information. The application does not encrypt the database.
+information. The application does not encrypt the database. Your language
+preference is saved separately in `language.json` in this folder.
+
+Changing language in the dashboard updates its controls, tables, and amount
+formatting immediately. The launcher follows the saved preference automatically.
+If you change language in the launcher, reload the dashboard to apply it there.
+Changing language does not change stored financial facts or calculations.
+Source document text, technical parser errors, and audit exports retain their
+original content. Windows system dialogs and Streamlit's built-in controls may
+use their own language settings.
 
 To make a backup, close the application and copy this data folder. For a complete
 reset, delete the contents of the folder after closing the application. The next
