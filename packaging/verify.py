@@ -129,11 +129,12 @@ def main():
             import socket
             workspace = directory / "WerkelijkRendement"
             print("Verifying native launcher startup", flush=True)
-            launcher = subprocess.Popen([str(executable)], cwd=directory, env=env)
+            launcher_command = [str(executable), "--verify-launcher"]
+            launcher = subprocess.Popen(launcher_command, cwd=directory, env=env)
             try:
                 instance, status = await_status(workspace, launcher)
                 print("Verifying second-instance reuse", flush=True)
-                second = subprocess.Popen([str(executable)], cwd=directory, env=env)
+                second = subprocess.Popen(launcher_command, cwd=directory, env=env)
                 try:
                     assert second.wait(timeout=60) == 0
                 finally:
@@ -145,7 +146,7 @@ def main():
                 assert launcher.wait(timeout=15) == 0
                 assert (workspace / "config.toml").exists()
                 # Abnormal supervisor termination must also stop the server.
-                launcher = subprocess.Popen([str(executable)], cwd=directory, env=env)
+                launcher = subprocess.Popen(launcher_command, cwd=directory, env=env)
                 print("Verifying server cleanup after supervisor termination", flush=True)
                 _, status = await_status(workspace, launcher)
                 if os.name == "nt":

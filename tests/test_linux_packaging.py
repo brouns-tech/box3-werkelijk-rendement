@@ -137,3 +137,11 @@ def test_verification_captures_workspace_teardown_failure(tmp_path, monkeypatch)
         with module.verification_workspace(diagnostics):
             pass
     assert "synthetic teardown lock" in (diagnostics / "verification.log").read_text()
+
+
+def test_normal_windows_external_open_uses_host_association(monkeypatch):
+    calls = []
+    monkeypatch.setattr(desktop_platform.sys, "platform", "win32")
+    monkeypatch.setattr(desktop_platform.os, "startfile", calls.append, raising=False)
+    desktop_platform.open_external("http://127.0.0.1:1234/dashboard")
+    assert calls == ["http://127.0.0.1:1234/dashboard"]

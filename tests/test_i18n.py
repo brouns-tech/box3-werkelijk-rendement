@@ -124,7 +124,8 @@ def test_desktop_import_can_switch_language_during_job(tmp_path, monkeypatch):
     assert any(result.value.startswith("Stopped:") for result in app.success)
 
 
-def test_native_launcher_updates_from_selector_and_dashboard_preference(tmp_path, monkeypatch):
+@pytest.mark.parametrize("verification_mode", [False, True])
+def test_native_launcher_updates_from_selector_and_dashboard_preference(tmp_path, monkeypatch, verification_mode):
     import tkinter as tk
     from tkinter import ttk
     from wr import desktop
@@ -215,8 +216,11 @@ def test_native_launcher_updates_from_selector_and_dashboard_preference(tmp_path
     monkeypatch.setattr(tk, "StringVar", Variable)
     monkeypatch.setattr(ttk, "Combobox", Widget)
     monkeypatch.setattr(desktop, "app_data_dir", lambda: tmp_path)
-    monkeypatch.setattr(desktop.sys, "argv", ["desktop"])
+    monkeypatch.setattr(desktop.sys, "argv", ["desktop", "--verify-launcher"] if verification_mode else ["desktop"])
     monkeypatch.setattr(desktop.subprocess, "Popen", lambda *args, **kwargs: Child())
-    monkeypatch.setattr(desktop, "open_external", lambda _: None)
+    def external_open(_target):
+        if verification_mode:
+            pytest.fail("Verification must not launch host applications")
+    monkeypatch.setattr(desktop, "open_external", external_open)
     monkeypatch.setattr(desktop.urllib.request, "build_opener", lambda *args: Health())
     assert desktop.main() == 0

@@ -189,6 +189,9 @@ def main() -> int:
 
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
+    # CI exercises the real launcher lifecycle without starting host applications
+    # that can retain a browser profile inside its isolated LOCALAPPDATA directory.
+    launch_external = (lambda _target: None) if sys.argv[1:] == ["--verify-launcher"] else open_external
 
     window = tk.Tk()
     window.title(f"Werkelijk Rendement {app_version()}")
@@ -235,7 +238,7 @@ def main() -> int:
                     instance = json.loads(metadata.read_text())
                     status = control_request(instance["endpoint"], instance["token"], "status", 1)
                     if status["ready"]:
-                        open_external(status["url"])
+                        launch_external(status["url"])
                         window.destroy()
                         return 0
                 except (OSError, ValueError, KeyError):
@@ -275,7 +278,7 @@ def main() -> int:
         status_label.pack(pady=15)
         def open_target(target):
             try:
-                open_external(str(target))
+                launch_external(str(target))
             except OSError as exc:
                 messagebox.showerror("Werkelijk Rendement", t("Could not open {target}: {error}", target=target, error=exc), parent=window)
 

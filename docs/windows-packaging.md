@@ -215,3 +215,14 @@ dialog. The verifier reports its phase and preserves allowlisted startup logs be
 removing its synthetic workspace. Failed Windows runs upload these diagnostics and
 include them in check annotations; instance credentials are excluded. The local
 suite passes 84 tests. Windows artifact verification determines release readiness.
+
+After correcting lock contention, verification exposed a separate teardown issue:
+launching the real Edge browser with the verifier's temporary `LOCALAPPDATA` created
+a browser profile there. Edge kept a metrics file open after the application had
+exited, preventing test-workspace deletion. The verifier now starts the native
+launcher with the explicit internal `--verify-launcher` option, which suppresses
+external browser/file-manager opens while preserving the actual GUI, server,
+locking, reuse, shutdown and watchdog paths. Normal application launches still use
+the host associations. Unit tests cover both launcher modes and Windows association
+handling. Diagnostics capture both verification-body and teardown exceptions.
+The expanded local suite passes 87 tests.
