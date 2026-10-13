@@ -1,52 +1,57 @@
-# Werkelijk Rendement — Windows-bèta
+# Werkelijk Rendement — Windows beta
 
-Deze bèta reconstrueert box 3-rendement uit ondersteunde financiële documenten.
-Verwerking vindt lokaal plaats. De toepassing is gratis en open-source.
+This beta reconstructs Box 3 returns from supported financial documents.
+Processing takes place locally. The application is free and open-source.
 
-1. Pak de volledige ZIP uit in een eigen map.
-2. Open `WerkelijkRendement.exe`. Laat de bijbehorende `_internal`-map staan.
-3. Het startvenster opent het dashboard in uw standaardbrowser.
-4. Kies **Map selecteren** en daarna **Documenten scannen en berekenen**.
-5. Bekijk importmeldingen, dekking, berekeningen en de auditexport.
-6. Sluit de toepassing via **Afsluiten** in het startvenster. Alleen het sluiten
-   van het browsertabblad stopt de toepassing niet.
+The current desktop controls use Dutch labels, quoted below to help you locate
+them. Documentation is maintained in English; the application may offer Dutch
+and English interfaces.
 
-Python en Poppler hoeft u niet te installeren. De beoogde platformen zijn Windows
-10 en 11, 64-bits; beschikbaarheid van een ZIP is geen bewijs dat alle
-compatibiliteitscontroles al zijn afgerond. Controleer de release-informatie.
+1. Extract the entire ZIP into a folder of your choice.
+2. Open `WerkelijkRendement.exe`. Keep its accompanying `_internal` folder.
+3. The launcher opens the dashboard in your default browser.
+4. Choose **Select folder** (`Map selecteren`), then **Scan documents and calculate**
+   (`Documenten scannen en berekenen`).
+5. Review import messages, document coverage, calculations, and the audit export.
+6. Close the application using **Exit** (`Afsluiten`) in the launcher window.
+   Closing the browser tab alone does not stop the application.
 
-Een tweede keer openen hergebruikt het bestaande dashboard. Bij problemen meldt
-het startvenster waar het logbestand staat. Selectie van een map kan worden
-geannuleerd. Tijdens import kunt u stoppen na het huidige document; al verwerkte
-stukken blijven opgeslagen. De bron-PDF's worden niet gewijzigd.
+You do not need to install Python or Poppler. The intended platforms are Windows
+10 and 11, 64-bit. The availability of a ZIP does not prove that all compatibility
+checks have been completed; consult the release information.
 
-## Lokale gegevens
+Opening the application again reuses the existing dashboard. If a problem occurs,
+the launcher tells you where to find the log file. You can cancel folder selection.
+During import, you can stop after the current document; documents already imported
+remain stored. Source PDFs are not modified.
 
-De gegevens staan in `%LOCALAPPDATA%\WerkelijkRendement`. Gebruik **Lokale gegevens
-openen** in het startvenster om deze map te vinden. De database, instellingen,
-selectievoorkeur en logs blijven behouden bij updates of bij het verwijderen van
-de uitgepakte toepassing. Ze kunnen financiële en persoonlijke gegevens bevatten.
-De database is niet door de toepassing versleuteld.
+## Local data
 
-Maak een back-up door de toepassing af te sluiten en deze gegevensmap te kopiëren.
-Verwijder voor een volledige reset de inhoud van deze map nadat de toepassing is
-afgesloten. De volgende start maakt een nieuwe lege werkruimte aan. Uw originele
-PDF's blijven staan. Gedownloade auditexports staan apart; verwijder die zelf als
-u alle afgeleide financiële gegevens wilt verwijderen.
+Data is stored in `%LOCALAPPDATA%\WerkelijkRendement`. Use **Open local data**
+(`Lokale gegevens openen`) in the launcher to locate this folder. The database,
+configuration, folder preference, and logs are retained across updates and after
+removing the extracted application. They can contain personal and financial
+information. The application does not encrypt the database.
 
-Optionele partnernamen, aliassen en instellingen per instelling kunnen worden
-opgegeven in `config.toml` in deze gegevensmap. Zie de repositorydocumentatie.
+To make a backup, close the application and copy this data folder. For a complete
+reset, delete the contents of the folder after closing the application. The next
+launch creates a new empty workspace. Your original PDFs remain untouched.
+Downloaded audit exports are stored separately; delete them separately if you
+want to remove all derived financial data.
 
-## Grenzen
+Optional fiscal-partner names, aliases, and institution-specific settings can be
+configured in `config.toml` in this data folder. See the repository documentation.
 
-Alleen ondersteunde documentlayouts worden verwerkt. Onbekende documenten worden
-getoond als niet herkend. Scans zonder tekstlaag worden niet automatisch gelezen.
-Volledige import bewijst niet dat al uw bezittingen, schulden of partnerdocumenten
-zijn opgenomen. Ontbrekende gegevens kunnen een onbepaald resultaat geven.
-Controleer berekeningen en onderliggende stukken voordat u er een fiscale keuze
-op baseert. De toepassing is geen aangiftekanaal en is niet verbonden aan de
-Belastingdienst.
+## Limitations
 
-Een ongetekende bèta kan een Windows-beveiligingsmelding opleveren. Controleer de
-herkomst en SHA-256-checksum; zet beveiligingsfuncties niet uit. Gebruik bij twijfel
-het bronproject of wacht op een gecontroleerde release.
+Only supported document layouts are processed. Unknown documents are shown as
+unrecognized. Scans without a text layer are not automatically read. Importing
+all selected documents does not prove that all your assets, debts, or partner
+documents are represented. Missing evidence can produce an indeterminate result.
+Verify calculations and underlying documents before making a tax decision. The
+application is not a tax-return submission channel and is not affiliated with the
+Belastingdienst (Dutch tax authority).
+
+An unsigned beta may trigger a Windows security warning. Verify the download's
+origin and SHA-256 checksum; do not disable security protections. If in doubt,
+use the source project or wait for a verified release.

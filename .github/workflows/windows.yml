@@ -41,7 +41,7 @@ jobs:
         run: |
           $version = python -c "from importlib.metadata import version; print(version('box3-werkelijk-rendement'))"
           if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") { throw 'Tag must match pyproject.toml version' }
-          Copy-Item docs/windows-beta.md dist/WerkelijkRendement/LEESMIJ.md
+          Copy-Item docs/windows-beta.md dist/WerkelijkRendement/README.md
           Copy-Item packaging/requirements.lock dist/WerkelijkRendement/dependencies.lock
           $archive = "WerkelijkRendement-$version-windows-x64.zip"
           Compress-Archive -Path dist/WerkelijkRendement -DestinationPath "dist/$archive"

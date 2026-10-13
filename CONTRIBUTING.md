@@ -2,6 +2,13 @@
 
 Contributions that add support for more bank and broker statement templates are welcome.
 
+## Language
+
+Write repository documentation, contribution guides, and release notes in English.
+Keep original Dutch tax terms, document titles, and quoted interface labels where
+needed for accuracy. The application interface may support Dutch and English;
+documentation language does not determine the interface language.
+
 ## Add a statement template
 
 1. Add one institution module under `src/wr/parsers/` and export an
