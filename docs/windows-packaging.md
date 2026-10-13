@@ -199,3 +199,19 @@ Localization validation on Linux: 76 tests passed, including unchanged audit CSV
 content after language switching. The one-folder build and frozen executable
 verification also passed, with both translations, preference persistence, and
 localized amount formatting exercised without Python or Poppler on PATH.
+
+## Windows second-instance lock correction
+
+The Windows artifact verifier exposed a cross-process lock failure: the second
+launcher read byte zero of `instance.lock` before attempting the lock. Windows
+mandatory byte-range locking denies that read while the first launcher owns the
+byte, so a `PermissionError` opened an error dialog and the reuse check timed out.
+The launcher now checks file size with `fstat` and catches contention during lock
+initialization/acquisition. A separate-process regression checks contention and
+recovery after release; same-process tests did not reveal this Windows behavior.
+
+Frozen smoke failures now write a traceback rather than opening an unhandled-error
+dialog. The verifier reports its phase and preserves allowlisted startup logs before
+removing its synthetic workspace. Failed Windows runs upload these diagnostics and
+include them in check annotations; instance credentials are excluded. The local
+suite passes 84 tests. Windows artifact verification determines release readiness.

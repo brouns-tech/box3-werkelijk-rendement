@@ -146,3 +146,27 @@ def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_pat
     monkeypatch.setattr(desktop_smoke, "smoke_test", fail)
     assert desktop.main() == 1
     assert "synthetic extraction failure" in (tmp_path / "smoke-error.log").read_text()
+
+
+def test_instance_lock_contention_from_another_process_is_not_a_startup_error(tmp_path):
+    import subprocess
+    import sys
+    first = InstanceLock(tmp_path)
+    assert first.acquire()
+    script = """
+from pathlib import Path
+import sys
+from wr.desktop import InstanceLock
+lock = InstanceLock(Path(sys.argv[1]))
+print(lock.acquire())
+lock.close()
+"""
+    try:
+        second = subprocess.run([sys.executable, "-c", script, str(tmp_path)],
+                                capture_output=True, text=True, timeout=10, check=True)
+        assert second.stdout.strip() == "False"
+    finally:
+        first.close()
+    after_close = subprocess.run([sys.executable, "-c", script, str(tmp_path)],
+                                 capture_output=True, text=True, timeout=10, check=True)
+    assert after_close.stdout.strip() == "True"
