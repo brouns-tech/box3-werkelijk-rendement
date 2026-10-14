@@ -51,6 +51,11 @@ rounded to cents. The generic `earned_return` method stores the complete return,
 while `extra` retains gross income, fees, net income, currency value change, and
 the original summary columns for audit.
 
+The dashboard shows earned return, currency gain/loss, and effective return
+separately in the year overview and account table. EUR holdings have zero
+currency impact. Other investment value changes are shown separately from
+earned income; unconverted foreign-currency results remain unknown in EUR.
+
 This follows the Belastingdienst's [investment return calculation](https://www.belastingdienst.nl/wps/wcm/connect/nl/box-3/content/rekenvoorbeelden-berekening-werkelijk-rendement)
 and [2025 rule excluding expense deductions](https://www.belastingdienst.nl/wps/wcm/connect/fisin/fisin2025/Box_3_Werkelijk_rendement).
 The updated processing profile requires existing imports to be scanned again;

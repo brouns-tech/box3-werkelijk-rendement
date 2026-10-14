@@ -81,21 +81,21 @@ def test_dashboard_switches_language_and_retains_year_and_evidence(tmp_path, mon
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert not app.exception
     assert any(header.value == "Decision overview" for header in app.subheader)
-    english_amount = app.metric[1].value
+    english_amount = next(metric.value for metric in app.metric if metric.label == "Effective return")
     year = app.selectbox(key="tax_year").value
     app.selectbox(key="ui_language").select("nl").run()
     assert not app.exception
     assert remembered_language(tmp_path) == "nl"
     assert any(header.value == "Vergelijking van rendementen" for header in app.subheader)
     assert app.selectbox(key="tax_year").value == year
-    assert app.metric[1].value != english_amount
+    assert next(metric.value for metric in app.metric if metric.label == "Effectief rendement") != english_amount
     assert "Belastingplichtige" in app.dataframe[0].value.columns
     assert "Rekeninghouder" in app.dataframe[1].value.columns
     restarted = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert restarted.selectbox(key="ui_language").value == "nl"
     restarted.selectbox(key="ui_language").select("en").run()
     assert not restarted.exception
-    assert restarted.metric[1].value == english_amount
+    assert next(metric.value for metric in restarted.metric if metric.label == "Effective return") == english_amount
     assert "Taxpayer" in restarted.dataframe[0].value.columns
     with sqlite3.connect(database) as conn:
         assert list(conn.iterdump()) == before

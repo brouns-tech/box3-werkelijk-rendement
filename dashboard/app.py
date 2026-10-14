@@ -15,11 +15,11 @@ from wr.recommend import rebuild_recommendations, _individual_portfolio
 from dashboard.settings import documents_ui, taxpayers_ui
 from dashboard.workspace_settings import workspace_settings_ui
 from wr.export import create_audit_export
-from wr.money import subtract
+from wr.money import decimal_value, subtract, total
 from wr.i18n import currency, coverage_details, status_label, translator
 from dashboard.localization import select_language
 from dashboard.ownership import PURPLE, UNKNOWN, slot_color, table_style
-from wr.portfolio import _native_fact_return, is_box3_fact
+from wr.portfolio import _fact_return, is_box3_fact
 from wr.import_pipeline import pending_reprocessing
 
 
@@ -29,6 +29,46 @@ def _currency(value: float | None, language: str = "en", currency_code: str = "E
 
 def _decision_label(recommendation: str, language: str = "en") -> str:
     return status_label(recommendation, language)
+
+
+def _return_components(fact) -> dict[str, float | None]:
+    """Keep reported income distinct from FX and other changes in value."""
+    raw_extra = fact["extra"]
+    try:
+        extra = json.loads(raw_extra or "{}") if isinstance(raw_extra, str) else (raw_extra or {})
+    except (TypeError, json.JSONDecodeError):
+        extra = {}
+    if not isinstance(extra, dict):
+        extra = {}
+    effective = _fact_return(fact)
+    earned = extra.get("earned_return")
+    if earned is None:
+        income = (fact["interest_received"], fact["interest_paid"], fact["dividends_gross"])
+        earned = (
+            float(decimal_value(income[0] or 0) - decimal_value(income[1] or 0)
+                  + decimal_value(income[2] or 0))
+            if any(value is not None for value in income) or effective is not None else None
+        )
+    source_currency = extra.get("fund_currency") or fact["currency"] or "EUR"
+    fx = 0.0 if source_currency == "EUR" else extra.get("fx_gain")
+    other = (
+        float(decimal_value(effective) - decimal_value(earned) - decimal_value(fx))
+        if effective is not None and earned is not None and fx is not None else None
+    )
+    return {"earned": earned, "currency": fx, "other": other, "effective": effective}
+
+
+def _overview_return_totals(facts) -> dict[str, float]:
+    # Use the same canonical Box 3 evidence as the effective EUR total. Native
+    # foreign income remains visible per account without entering EUR metrics.
+    components = [
+        _return_components(fact) for fact in facts
+        if is_box3_fact(fact) and _fact_return(fact) is not None
+    ]
+    return {
+        key: total(component[key] or 0 for component in components)
+        for key in ("earned", "currency", "other", "effective")
+    }
 
 
 def _decision_rows(results, language: str = "en", statement_returns=None) -> list[dict[str, str]]:
@@ -220,14 +260,32 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
             canonical_names[_person_key(name)] = partner_cfg.canonical_for(slot)
     owner_colors = _owner_colors(partner_cfg, canonical_names)
 
-    col1, col2, col3 = st.columns(3)
+    facts = conn.execute(
+        """
+        SELECT issuer, account_key, account_label, holder_names, ownership, currency,
+               start_balance, end_balance, deposits, withdrawals,
+               interest_received, interest_paid, dividends_gross, withholding_tax,
+               capital_gain, gain_method, extra
+        FROM account_year_facts
+        WHERE tax_year = ? AND is_canonical = 1
+        ORDER BY issuer, account_key
+        """,
+        (year,),
+    ).fetchall()
     if portfolio:
-        col1.metric(
+        components = _overview_return_totals(facts)
+        income_col, fx_col, effective_col = st.columns(3)
+        income_col.metric(t("Earned return"), money(components["earned"]))
+        fx_col.metric(t("Currency gain / loss"), money(components["currency"]))
+        effective_col.metric(t("Effective return"), money(portfolio["known_combined_actual_return"]))
+        st.caption(t("Effective return = earned return + currency gain/loss + other value changes. Totals use known EUR returns from imported Box 3 accounts."))
+        coverage_col, sources_col, value_col = st.columns(3)
+        coverage_col.metric(
             t("Coverage"), status_label(portfolio["coverage_status"], language),
             help=t("Coverage concerns imported statements only; it does not establish that all assets or partner documents are present."),
         )
-        col2.metric(t("Actual return"), money(portfolio["known_combined_actual_return"]))
-        col3.metric(t("Statement sources"), portfolio["source_fact_count"] or 0)
+        sources_col.metric(t("Statement sources"), portfolio["source_fact_count"] or 0)
+        value_col.metric(t("Other value changes"), money(components["other"]))
         if portfolio["missing_asset_summary"]:
             st.warning(t("Missing / partial: {details}", details=coverage_details(portfolio["missing_asset_summary"], language)))
     else:
@@ -248,22 +306,11 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     else:
         st.info(t("No tax decision is available for this year."))
 
-    facts = conn.execute(
-        """
-        SELECT issuer, account_key, account_label, holder_names, ownership, currency,
-               start_balance, end_balance, deposits, withdrawals,
-               interest_received, interest_paid, dividends_gross, withholding_tax,
-               capital_gain, gain_method, extra
-        FROM account_year_facts
-        WHERE tax_year = ? AND is_canonical = 1
-        ORDER BY issuer, account_key
-        """,
-        (year,),
-    ).fetchall()
     st.subheader(t("Account overview"))
     fact_rows = []
     for fact in facts:
         account_money = partial(_currency, language=language, currency_code=fact["currency"] or "EUR")
+        components = _return_components(fact)
         child_account = any(
             (identity_slot(holder, partner_cfg) or "").startswith("child_")
             for holder in json.loads(fact["holder_names"] or "[]")
@@ -284,13 +331,16 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
                 t("Paid interest"): account_money(fact["interest_paid"]),
                 t("Gross dividends"): account_money(fact["dividends_gross"]),
                 t("Withholding tax"): account_money(fact["withholding_tax"]),
-                t("Calculated actual return"): account_money(_native_fact_return(fact)),
-                t("Market-value component (internal)"): account_money(fact["capital_gain"]),
+                t("Earned return"): account_money(components["earned"]),
+                t("Currency gain / loss (EUR)"): money(components["currency"]),
+                t("Effective return (EUR)"): money(components["effective"]),
+                t("Other value changes (EUR)"): money(components["other"]),
                 t("Currency"): fact["currency"] or "EUR",
                 t("Calculation method"): status_label(fact["gain_method"], language),
             }
         )
     st.caption(t("Account amounts use the source currency. Unconverted foreign-currency accounts are excluded from EUR totals and keep the tax comparison incomplete."))
+    st.caption(t("Earned return is income before service fees. Currency gain/loss and effective return are shown in EUR; a dash means the EUR result is not yet known. EUR holdings have no currency gain/loss."))
     st.dataframe(
         _styled_table(
             fact_rows, t("Account holder"), owner_colors,
