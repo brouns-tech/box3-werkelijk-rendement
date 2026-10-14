@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 
 from wr.models import AccountYearFact, ParseResult
-from wr.money import add, subtract, total
+from wr.money import subtract, total
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
@@ -25,8 +26,7 @@ def _is_annual_summary(text: str) -> bool:
 def _is_savings_statement(text: str) -> bool:
     return (
         "revolut" in text
-        and "period jan 1" in text
-        and "dec 31" in text
+        and bool(re.search(r"period jan 1, (20\d{2})\s*-\s*dec 31, \1", text))
         and "account number" in text
         and "flexible cash funds" in text
         and "total earned return" in text
@@ -116,49 +116,124 @@ def _parse_annual(text: str, year: int) -> ParseResult:
 
 def _parse_savings(text: str, year: int) -> ParseResult:
     facts: list[AccountYearFact] = []
-    acct = re.search(r"Account Number\s+([0-9a-f\-]{20,})", text, re.I)
-    account_key = normalize_account_id(acct.group(1)) if acct else f"revolut-savings-{year}"
-
-    def euro_line(label: str) -> float | None:
-        # Opening Balance                    1,097.04            993.91
-        m = re.search(
-            rf"{re.escape(label)}\s+([\d,]+\.\d{{2}}|-)\s+([\d,]+\.\d{{2}}|-)",
-            text,
-            re.I,
-        )
-        if not m:
-            return None
-        # Prefer EUR column (second)
-        raw = m.group(2)
-        if raw == "-":
-            return 0.0
-        return parse_en_amount(raw)
-
-    opening = euro_line("Opening Balance")
-    closing = euro_line("Closing Balance")
-    purchased = euro_line("Total Value purchased")
-    sold = euro_line("Total Value sold")
-    earned = euro_line("Total Earned Return")
-    fees = euro_line("Total Fees")
-
-    fact = AccountYearFact(
-        tax_year=year,
-        issuer="revolut",
-        account_key=account_key,
-        account_label="Revolut Flexible Cash Funds",
-        holder_names=_holders(text),
-        start_balance=opening,
-        end_balance=closing,
-        deposits=purchased,
-        withdrawals=sold,
-        capital_gain=add(earned or 0.0, fees or 0.0) if earned is not None else None,
-        gain_method="earned_return" if earned is not None else "unknown",
-        extra={"fees": fees, "earned_return": earned},
+    notes: list[str] = []
+    # A combined PDF has a new statement heading for each fund overview.
+    sections = re.split(
+        r"(?=^[ \t]*Flexible Cash Funds Statement[ \t]*$)", text, flags=re.I | re.M
     )
-    if fact.capital_gain is None:
-        fact.compute_capital_gain()
-    facts.append(fact)
-    return ParseResult("revolut", "savings_statement", year, facts=facts)
+    for section in sections:
+        if "Opening Balance" not in section:
+            continue
+        period = re.search(r"Period Jan 1, (20\d{2})\s*-\s*Dec 31, \1", section, re.I)
+        if not period or int(period.group(1)) != year:
+            notes.append("Flexible Cash Funds overview does not cover the requested full year")
+            continue
+        closing = re.search(r"^Closing Balance[^\n]*", section, re.I | re.M)
+        if not closing:
+            notes.append("Flexible Cash Funds overview has no closing balance")
+            continue
+        overview = section[:closing.end()]
+        portfolio = re.search(r"Portfolio Number[ \t]+([0-9a-f-]{20,})", overview, re.I)
+        identifiers = re.findall(
+            r"\b(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\b",
+            overview, re.I,
+        )
+        portfolio_number = normalize_account_id(portfolio.group(1)) if portfolio else None
+        account_numbers = sorted({
+            normalize_account_id(n) for n in identifiers
+            if normalize_account_id(n) != portfolio_number
+        })
+        # Older overviews provide a single account UUID, newer ones a portfolio
+        # UUID and several underlying fund accounts. Never repeat aggregate totals
+        # once per underlying account.
+        identity = portfolio_number or (account_numbers[0] if len(account_numbers) == 1 else None)
+        header = overview.split("Opening Balance", 1)[0]
+        currencies = re.findall(r"Value,[ \t]*(EUR|USD|GBP)\b", header, re.I)
+        currencies = [c.upper() for c in currencies]
+        if not identity or currencies not in (["EUR"], ["USD", "EUR"], ["GBP", "EUR"]):
+            notes.append("Flexible Cash Funds overview lacks identity or supported EUR columns")
+            continue
+        fund_currency = currencies[0]
+        labels = {
+            "opening": "Opening Balance", "closing": "Closing Balance",
+            "purchased": "Total Value purchased", "sold": "Total Value sold",
+            "earned": "Total Earned Return", "fees": "Total Fees",
+            "withdrawn_return": "Total Withdrawn Return",
+            "reinvested_return": "Total Reinvested Return",
+        }
+        values: dict[str, list[Decimal] | None] = {}
+        token = r"(?:-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2,4}|-)"
+        for key, label in labels.items():
+            row = re.search(
+                rf"^{label}[ \t]+({token}(?:[ \t]+{token})*)[ \t]*$",
+                overview, re.I | re.M,
+            )
+            raw = row.group(1).split() if row else []
+            values[key] = (
+                [Decimal(v.replace(",", "")) if v != "-" else Decimal(0) for v in raw]
+                if len(raw) == len(currencies) else None
+            )
+        eur = {key: row[-1] if row is not None else None for key, row in values.items()}
+        complete = all(row is not None for row in values.values())
+        actual_return = None
+        fx_gain = None
+        # Reconcile in the fund currency first. Purchases include reinvested
+        # returns; withdrawn/reinvested return rows are negative transfers.
+        if complete:
+            native = {key: row[0] for key, row in values.items()}
+            expected = (
+                native["opening"] + native["purchased"] + native["sold"]
+                + native["earned"] + native["fees"]
+                + native["withdrawn_return"] + native["reinvested_return"]
+            )
+            complete = abs(expected - native["closing"]) <= Decimal("0.02")
+            complete = complete and all(
+                summary[k] <= 0
+                for summary in (native, eur)
+                for k in ("sold", "fees", "withdrawn_return", "reinvested_return")
+            ) and native["purchased"] >= 0 and eur["purchased"] >= 0
+            if complete:
+                # EUR value change plus external payouts, adding back separately
+                # charged (non-deductible) service fees. This includes FX changes.
+                actual_return = (
+                    eur["closing"] - eur["opening"] - eur["purchased"]
+                    - eur["sold"] - eur["withdrawn_return"]
+                    - eur["reinvested_return"] - eur["fees"]
+                )
+                fx_gain = actual_return - eur["earned"]
+        if not complete:
+            notes.append(f"Flexible Cash Funds {fund_currency} overview is incomplete or does not reconcile")
+        holders = _holders(section)
+        facts.append(AccountYearFact(
+            tax_year=year, issuer="revolut",
+            account_key=f"{identity}:fund:{fund_currency.lower()}",
+            account_label=f"Revolut Flexible Cash Funds ({fund_currency})",
+            holder_names=holders, ownership="individual" if len(holders) == 1 else "unknown",
+            currency="EUR", start_balance=float(eur["opening"]) if eur["opening"] is not None else None,
+            end_balance=float(eur["closing"]) if eur["closing"] is not None else None,
+            deposits=float(eur["purchased"] + eur["reinvested_return"]) if complete else None,
+            withdrawals=float(-eur["sold"] - eur["withdrawn_return"]) if complete else None,
+            capital_gain=float(actual_return) if actual_return is not None else None,
+            gain_method="earned_return" if actual_return is not None else "unknown",
+            extra={
+                "portfolio_number": portfolio_number, "account_numbers": account_numbers,
+                "fund_currency": fund_currency, "summary_currencies": currencies,
+                "summary": {
+                    key: [float(v) for v in row] if row is not None else None
+                    for key, row in values.items()
+                },
+                "earned_return": float(eur["earned"]) if eur["earned"] is not None else None,
+                "fees": float(eur["fees"]) if eur["fees"] is not None else None,
+                "net_earned_return": (
+                    float(eur["earned"] + eur["fees"])
+                    if eur["earned"] is not None and eur["fees"] is not None else None
+                ),
+                "fx_gain": float(fx_gain) if fx_gain is not None else None,
+                "return_source": "eur_summary_reconciliation" if complete else "incomplete_summary",
+                "fees_treatment": "non_deductible_service_fees",
+            },
+        ))
+    return ParseResult("revolut", "savings_statement", year, facts=facts, notes=notes)
 
 
 def _parse_account_statement(text: str, year: int) -> ParseResult:
@@ -246,6 +321,10 @@ def _holders(text: str) -> list[str]:
     last = re.search(r"Last Name[ \t]+(\S+)", text)
     if first and last:
         return [f"{first.group(1)} {last.group(1)}"]
+    # Fund overviews place the holder immediately after the generation date.
+    fund_holder = re.search(r"Generation date:[^\n]*\n([^\n]+)", text, re.I)
+    if fund_holder and re.fullmatch(r"[A-ZÀ-Ÿ][A-ZÀ-Ÿ \'’.-]+", fund_holder.group(1).strip()):
+        return [fund_holder.group(1).strip()]
     # Personal account statements print the holder immediately after the bank.
     holder = re.search(r"Revolut Bank UAB[^\n]*\n([^\n]+)", text)
     if holder and re.fullmatch(r"[A-ZÀ-Ÿ][A-ZÀ-Ÿ \'’.-]+", holder.group(1).strip()):

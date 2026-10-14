@@ -67,6 +67,10 @@ def _enrich_fact_holders(conn: sqlite3.Connection) -> None:
         holders = by_account[(row["issuer"], _account_family(row["account_key"]))]
         if not holders:
             holders = by_issuer[row["issuer"]]
+            # Different names elsewhere at one institution do not establish
+            # joint ownership: they may be aliases or different customers.
+            if len(holders) != 1:
+                continue
         if len(holders) == 1:
             conn.execute(
                 "UPDATE account_year_facts SET holder_names = ?, ownership = 'individual' WHERE id = ?",

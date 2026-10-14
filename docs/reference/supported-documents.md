@@ -16,7 +16,7 @@ affect classification.
 | SNS | `Jaaroverzicht Betalen, Sparen & Lenen`, `Financieel overzicht`, and `Totaaloverzicht Rekeningen` | The total overview supplies balances; savings accounts without a reported interest figure remain incomplete. |
 | Raisin | `Raisin Financieel Jaaroverzicht` | Supplies savings-product balances, interest, and withholding tax. |
 | Revolut | `Annual Financial Summary` | Supplies annual account data. |
-| Revolut | Annual Flexible Cash Funds savings statement | Supplies earned return for the savings product. |
+| Revolut | Annual `Flexible Cash Funds Statement` | Parses each fund overview separately, using portfolio number and fund currency for identity and retaining all underlying account numbers. Supports EUR-only and USD/GBP plus EUR columns, signed amounts, and four-decimal returns/fees. Complete, reconciled summaries supply gross return including EUR currency value changes; missing or inconsistent summaries remain incomplete. Service fees are retained separately and are not deducted. |
 | Revolut | Personal current-account statement covering 1 January through 31 December | Parses Current Account and Deposit separately; interest credits are separated from transfers. Amounts retain their source currency. Foreign-currency accounts require EUR conversion (including currency gains/losses) and remain incomplete for tax comparison. Revolut Business statements are not supported. |
 
 ## General limitations
@@ -30,3 +30,28 @@ affect classification.
 
 To add another institution or statement layout, follow the parser workflow in
 [Contributing](../development/contributing.md) and include synthetic fixtures.
+
+## Flexible Cash Funds return calculation
+
+The overview's earned return is gross; service fees, sold value, withdrawn
+return, and reinvested return are signed negative amounts. Purchases include
+reinvested returns. Each overview must reconcile in its fund currency:
+
+`closing = opening + purchased + sold + earned + fees + withdrawn return + reinvested return`
+
+Using the overview's EUR column, the taxable return is calculated as:
+
+`closing - opening - purchased - sold - withdrawn return - reinvested return - fees`
+
+This removes internal reinvestment from external contributions, includes
+withdrawn income, and adds back separately charged service fees. The difference
+between this result and the EUR gross earned return is retained as the currency
+value change. Original summary amounts retain their precision; year totals are
+rounded to cents. The generic `earned_return` method stores the complete return,
+while `extra` retains gross income, fees, net income, currency value change, and
+the original summary columns for audit.
+
+This follows the Belastingdienst's [investment return calculation](https://www.belastingdienst.nl/wps/wcm/connect/nl/box-3/content/rekenvoorbeelden-berekening-werkelijk-rendement)
+and [2025 rule excluding expense deductions](https://www.belastingdienst.nl/wps/wcm/connect/fisin/fisin2025/Box_3_Werkelijk_rendement).
+The updated processing profile requires existing imports to be scanned again;
+reprocessing replaces the obsolete combined account record.

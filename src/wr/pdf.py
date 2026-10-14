@@ -21,7 +21,7 @@ _PDF_LOCK = threading.Lock()
 
 def extraction_profile() -> str:
     """Version the native extractor and layout algorithm for safe reprocessing."""
-    return f"pdfium-layout-v2/parsers-v3/pypdfium2-{version('pypdfium2')}"
+    return f"pdfium-layout-v2/parsers-v4/pypdfium2-{version('pypdfium2')}"
 
 
 def extract_text(path: Path, max_pages: int | None = None) -> tuple[str, int]:
