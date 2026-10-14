@@ -7,6 +7,7 @@ LANGUAGES = {"nl": "Nederlands", "en": "English"}
 
 # English messages are the keys, so no external locale files need bundling.
 DUTCH = {
+    "PDF extraction has been updated. Scan your document folder again to refresh {count} previously imported documents before reviewing the calculation.": "De PDF-verwerking is bijgewerkt. Scan uw documentenmap opnieuw om {count} eerder geïmporteerde documenten te vernieuwen voordat u de berekening beoordeelt.",
     "Closing the browser tab leaves the application running. Use Exit application to stop it.": "Als u het browsertabblad sluit, blijft de applicatie actief. Gebruik Applicatie afsluiten om deze te stoppen.",
     "The application is stopping. You can close this browser tab.": "De applicatie wordt afgesloten. U kunt dit browsertabblad sluiten.",
     "Another instance is still starting. Wait and reopen the application. See {log}.": "Een andere instantie start nog. Wacht en open de applicatie opnieuw. Raadpleeg {log}.",
@@ -158,7 +159,6 @@ DUTCH = {
     "Stopped": "Gestopt",
     "Done": "Gereed",
     "{status}: {parsed} processed, {duplicate} duplicate, {skipped} unrecognized, {failed} failed.": "{status}: {parsed} verwerkt, {duplicate} dubbel, {skipped} niet herkend, {failed} mislukt.",
-    "Refresh dashboard": "Dashboard bijwerken",
     "File": "Bestand",
     "Status": "Status",
     "Institution": "Instelling",

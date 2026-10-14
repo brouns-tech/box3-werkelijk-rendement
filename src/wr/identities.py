@@ -20,11 +20,22 @@ def name_tokens(name: str) -> tuple[str, ...]:
     return tuple(tokens)
 
 
+def name_key(name: str) -> tuple[str, ...]:
+    """Ignore case and dots/spaces between leading initials, retaining name boundaries."""
+    tokens = name_tokens(name)
+    initials = 0
+    while initials < len(tokens) and len(tokens[initials]) == 1:
+        initials += 1
+    if initials > 1:
+        return ("".join(tokens[:initials]), *tokens[initials:])
+    return tokens
+
+
 def similarity(left: str, right: str) -> float:
     a, b = name_tokens(left), name_tokens(right)
     if not a or not b:
         return 0.0
-    if a == b:
+    if name_key(left) == name_key(right):
         return 1.0
     if len(a) == 1 or len(b) == 1:
         short, long = (a, b) if len(a) == 1 else (b, a)
@@ -67,7 +78,8 @@ def suggest_identities(conn: sqlite3.Connection) -> IdentitySuggestions:
     groups: list[list[str]] = []
     unresolved = []
     for name in ranked:
-        candidates = [group for group in groups if similarity(name, group[0]) >= 0.8]
+        exact = [group for group in groups if any(name_key(name) == name_key(alias) for alias in group)]
+        candidates = exact or [group for group in groups if similarity(name, group[0]) >= 0.8]
         if len(candidates) == 1:
             candidates[0].append(name)
         elif len(candidates) > 1:
@@ -114,7 +126,7 @@ def effective_partners(conn: sqlite3.Connection, configured: PartnerSettings | N
             child for child in detected.children
             if len(name_tokens(child.canonical_name)) >= 2
             and identity_slot(child.canonical_name, configured) is None
-            and not any(name_tokens(child.canonical_name) == name_tokens(n) for n in configured.unassigned_names)
+            and not any(name_key(child.canonical_name) == name_key(n) for n in configured.unassigned_names)
             and not any(similarity(child.canonical_name, name) >= 0.8 for _, name in configured.identities() if name)
         )
         return replace(configured, children=configured.children + additions) if additions else configured
@@ -124,7 +136,7 @@ def effective_partners(conn: sqlite3.Connection, configured: PartnerSettings | N
 def identity_slot(name: str | None, partners: PartnerSettings) -> str | None:
     if not name:
         return None
-    if any(name_tokens(name) == name_tokens(excluded) for excluded in partners.unassigned_names):
+    if any(name_key(name) == name_key(excluded) for excluded in partners.unassigned_names):
         return None
     scores = []
     for slot, canonical in partners.identities():
@@ -134,6 +146,8 @@ def identity_slot(name: str | None, partners: PartnerSettings) -> str | None:
     scores.sort(reverse=True)
     if not scores or scores[0][0] < 0.8:
         return None
+    if scores[0][0] == 1.0 and (len(scores) == 1 or scores[1][0] < 1.0):
+        return scores[0][1]
     if len(scores) > 1 and scores[0][0] - scores[1][0] < 0.1:
         return None
     return scores[0][1]
@@ -146,7 +160,7 @@ def validate_partners(partners: PartnerSettings) -> None:
         if aliases and not canonical:
             raise ValueError("Provide a taxpayer name before assigning aliases.")
         for name in ((canonical,) if canonical else ()) + aliases:
-            key = name_tokens(name)
+            key = name_key(name)
             if not key:
                 raise ValueError("Names must contain letters.")
             if key in seen and seen[key] != slot:

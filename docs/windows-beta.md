@@ -21,6 +21,11 @@ You do not need to install Python or Poppler. The intended platforms are Windows
 10 and 11, 64-bit. The availability of a ZIP does not prove that all compatibility
 checks have been completed; consult the release information.
 
+After an extraction update, scan the saved document folder again. The app
+reprocesses older imports, preserves your taxpayer settings, and refreshes the
+dashboard automatically. A warning replaces the comparison until older parsed
+documents have been refreshed.
+
 Opening the application again reuses the existing dashboard. If a problem occurs,
 the launcher tells you where to find the log file. You can cancel folder selection.
 During import, you can stop after the current document; documents already imported

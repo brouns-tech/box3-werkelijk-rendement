@@ -39,7 +39,6 @@ def smoke_test(directory: Path) -> None:
     from dashboard.explorer_compat import DirPicker
     from wr.config import load_settings
     assert callable(DirPicker)
-    import shutil
     from wr.desktop_storage import app_version, prepare_workspace, remember_language, remembered_language
     from wr.i18n import currency, translator
     from wr.export import write_audit_export
@@ -57,6 +56,19 @@ def smoke_test(directory: Path) -> None:
         assert remembered_language(directory) == language
         assert translator(language)("Select folder") == ("Map selecteren" if language == "nl" else "Select folder")
         assert currency(1234.56, language) == ("€ 1.234,56" if language == "nl" else "€ 1,234.56")
+    layout_directory = directory / "layout-fixtures"
+    layout_directory.mkdir(exist_ok=True)
+    for issuer, fragments, expected_holders in (
+        ("revolut", REVOLUT, [["Alex Example"]]),
+        ("sns", SNS, [["A. Example", "B. Example"], ["C. Example"]]),
+    ):
+        fixture = layout_directory / f"{issuer}.pdf"
+        synthetic_column_pdf(fixture, fragments)
+        layout_text, _ = extract_text(fixture)
+        identified = classify(layout_text)
+        assert identified and identified.issuer == issuer
+        decoded = parse_document(issuer, identified.doc_type, layout_text, 2024)
+        assert [fact.holder_names for fact in decoded.facts] == expected_holders
     documents = directory / "synthetic-documents"
     documents.mkdir(exist_ok=True)
     pdf = documents / "arbitrary-name.PDF"
@@ -72,7 +84,7 @@ def smoke_test(directory: Path) -> None:
         decoded = parse_document(issuer, identified.doc_type, extracted, year)
         assert original.facts or original.tax_return
         assert asdict(decoded) == asdict(original), issuer
-    # CI runs with no pdftotext in PATH. Frozen desktop always uses pypdf.
+    # Both CLI and frozen desktop use bundled PDFium without external tools.
     text, pages = extract_text(pdf)
     assert "ING Jaaroverzicht 2024" in text and pages == 1
     assert {p.issuer for p in PLUGINS} == {"ing", "rabobank", "sns", "raisin", "revolut", "degiro", "flatex", "belastingdienst"}
@@ -84,7 +96,7 @@ def smoke_test(directory: Path) -> None:
         row = conn.execute("SELECT interest_received FROM account_year_facts WHERE issuer='ing'").fetchone()
         assert row and row[0] == 12.34
     write_audit_export(db, directory / "audit.zip")
-    (directory / "smoke-result.json").write_text(json.dumps({"version": app_version(), "parsers": len(PLUGINS), "pdf_backend": "pypdf" if not shutil.which("pdftotext") else "pdftotext", "config": str(config)}))
+    (directory / "smoke-result.json").write_text(json.dumps({"version": app_version(), "parsers": len(PLUGINS), "pdf_backend": "pdfium", "config": str(config)}))
 
 # Fictional layouts exercise the extraction boundary, not just parser strings.
 SAMPLES = {
@@ -149,3 +161,43 @@ Burgerservicenummer 123456789
 Waarde van bezittingen 100.000 120.000
 """,
 }
+
+
+def synthetic_column_pdf(path: Path, fragments):
+    """Synthetic cells written column-first, so stream order is not row order."""
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=900, height=900)
+    font = DictionaryObject({NameObject('/Type'): NameObject('/Font'),
+                             NameObject('/Subtype'): NameObject('/Type1'),
+                             NameObject('/BaseFont'): NameObject('/Courier'),
+                             NameObject('/Encoding'): NameObject('/WinAnsiEncoding')})
+    page[NameObject('/Resources')] = DictionaryObject({NameObject('/Font'): DictionaryObject({NameObject('/F1'): writer._add_object(font)})})
+    commands = []
+    for x, y, text in fragments:
+        escaped = text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+        commands.append(f'BT /F1 10 Tf {x} {y} Td ({escaped}) Tj ET')
+    stream = DecodedStreamObject()
+    stream.set_data('\n'.join(commands).encode('cp1252'))
+    page[NameObject('/Contents')] = writer._add_object(stream)
+    writer.write(path)
+
+
+REVOLUT = [
+    (20, 850, 'Revolut Annual Financial Summary 2024'),
+    (20, 820, 'First Name'), (20, 800, 'Last Name'), (20, 780, 'Email'),
+    (220, 820, 'Alex'), (220, 800, 'Example'), (220, 780, 'fictional@example.invalid'),
+    (20, 740, 'Account Number'),
+    (20, 720, 'NL00 REVO 0000000000'),
+    (280, 720, '1,000.00'), (430, 720, '1,012.34'), (580, 720, '12.34'), (680, 720, '0.00'),
+]
+SNS = [
+    (20, 850, 'SNS Totaaloverzicht Rekeningen 2024'),
+    (20, 820, 'Rekening Rekeninghouder Saldo per 01-01-2024 Saldo per 31-12-2024'),
+    (20, 780, 'Shared checking'), (20, 760, 'NL00SNSB0000000000'),
+    (20, 730, 'Child checking'), (20, 710, 'NL00SNSB0000000001'),
+    (210, 780, 'A. Example e/o B. Example'), (210, 730, 'C. Example'),
+    (540, 780, '1.000,00'), (690, 780, '900,00'),
+    (540, 730, '100,00'), (690, 730, '150,00'),
+]

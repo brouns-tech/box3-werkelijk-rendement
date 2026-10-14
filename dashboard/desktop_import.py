@@ -69,17 +69,13 @@ def render(cfg, language: str):
             st.session_state.import_job = job
             threading.Thread(target=job.run, args=(folder, cfg), daemon=True).start()
     if job:
-        _render_job(job, language)
+        # Poll only while active. Completion requests one full dashboard rerun,
+        # replacing the progress fragment with the refreshed analysis.
+        st.fragment(run_every=0.5 if not job.done.is_set() else None)(_render_job)(job, language)
         if not job.done.is_set() or job.error or job.busy:
             st.stop()
-        if not job.editor_refreshed:
-            # Even a duplicate-only scan hides taxpayer widgets while active.
-            # Give restored widgets a fresh generation before showing analysis.
-            refresh_taxpayer_editor()
-            job.editor_refreshed = True
 
 
-@st.fragment(run_every=0.5)
 def _render_job(job, language: str):
     t = translator(language)
     outcomes = list(job.outcomes)
@@ -97,14 +93,17 @@ def _render_job(job, language: str):
     elif job.error:
         st.error(t("Import failed: {error}", error=job.error))
     else:
+        if not job.editor_refreshed:
+            # A fragment rerun cannot render the overview or restore widgets
+            # hidden during import. Refresh the entire app once, including for
+            # cancelled or duplicate-only scans, and retain the import report.
+            refresh_taxpayer_editor()
+            job.editor_refreshed = True
+            st.rerun(scope="app")
         report = job.report
         st.success(t("{status}: {parsed} processed, {duplicate} duplicate, {skipped} unrecognized, {failed} failed.",
                      status=t("Stopped") if report.cancelled else t("Done"), parsed=report.parsed,
                      duplicate=report.duplicate, skipped=report.skipped, failed=report.failed))
-        if st.button(t("Refresh dashboard"), key="refresh_dashboard"):
-            refresh_taxpayer_editor()
-            st.session_state.pop("import_job", None)
-            st.rerun()
     if outcomes:
         st.caption(t("Technical details from the source or parser are shown as recorded."))
         st.dataframe([{t("File"): str(o.path), t("Status"): status_label(o.status.value, language),

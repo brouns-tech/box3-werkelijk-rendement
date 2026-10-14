@@ -30,6 +30,7 @@ def _is_supported_document(text: str) -> bool:
 
 
 def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
+    text = re.sub(r"[ \t]+", " ", text)
     assessment_year = re.search(r"\bAanslag\s+(20\d{2})\b", text, re.I)
     year = int(assessment_year.group(1)) if assessment_year else tax_year or guess_tax_year(text)
     if year is None:
@@ -100,7 +101,7 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         pass
 
     grondslag = _single_amount(
-        text, r"Grondslag sparen en beleggen\s+(?:€\s*)?([\d.]+)"
+        text, r"Grondslag sparen en beleggen[ \t]+(?:€[ \t]*)?([\d.]+)"
     )
 
     # Allocation — order of names varies by filer
@@ -217,7 +218,7 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         m = re.search(r"Totaal box 3 belasting\s+([\d.]+)", text)
     if not m:
         m = re.search(
-            r"Inkomstenbelasting box 3\s*\n\s*€?\s*([\d.]+)",
+            r"Inkomstenbelasting box 3[ \t]*\n?[ \t]*€?[ \t]*([\d.]+)",
             text,
             re.I,
         )
@@ -333,7 +334,7 @@ def _partner_box3_figures(text: str, partner_name: str) -> tuple[float | None, f
     taxes = [
         parse_nl_amount(match.group(1))
         for match in re.finditer(
-            r"Inkomstenbelasting box 3\s*\n\s*€?\s*([\d.]+)",
+            r"Inkomstenbelasting box 3[ \t]*\n?[ \t]*€?[ \t]*([\d.]+)",
             block,
             re.I,
         )

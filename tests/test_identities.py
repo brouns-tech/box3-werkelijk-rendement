@@ -9,6 +9,73 @@ from wr.identities import effective_partners, identity_slot, similarity, suggest
 from wr.recommend import rebuild_recommendations
 
 
+INITIAL_VARIANTS = (
+    "A B C Example", "A.B.C. Example", "A.B.C. EXAMPLE", "ABC Example",
+    "ABC EXAMPLE", "a. b. c. example", "  A  B  C   Example  ",
+)
+
+
+@pytest.mark.parametrize("left", INITIAL_VARIANTS)
+@pytest.mark.parametrize("right", INITIAL_VARIANTS)
+def test_initial_formatting_variants_are_exact_matches(left, right):
+    assert similarity(left, right) == 1.0
+
+
+@pytest.mark.parametrize("variant", INITIAL_VARIANTS)
+def test_initial_variants_match_configured_aliases_for_parents_and_children(variant):
+    parent = PartnerSettings(partner_a="Alex Example", partner_a_aliases=("ABC Example",))
+    child = PartnerSettings(partner_a="Robin Example", children=(ChildSettings("Alex Example", ("ABC Example",)),))
+    assert identity_slot(variant, parent) == "a"
+    assert identity_slot(variant, child) == "child_0"
+
+
+def test_formatting_variants_form_one_suggestion_group():
+    conn = identity_db(INITIAL_VARIANTS)
+    suggestions = suggest_identities(conn)
+    assert suggestions.partners.partner_b is None
+    assert not suggestions.unresolved
+    assert {identity_slot(name, suggestions.partners) for name in INITIAL_VARIANTS} == {"a"}
+
+
+def test_case_variants_prefer_exact_identity_over_similar_first_name():
+    configured = PartnerSettings(partner_a="Alex Example", partner_b="Alexa Example")
+    assert identity_slot("ALEX EXAMPLE", configured) == "a"
+    assert identity_slot("ALEXA EXAMPLE", configured) == "b"
+    assert identity_slot("A. Example", configured) is None
+    suggestions = suggest_identities(identity_db(["Alex Example", "ALEX EXAMPLE", "Alexa Example"]))
+    assert not suggestions.unresolved
+
+
+def test_unassigned_initial_variants_remain_unassigned_after_import():
+    configured = PartnerSettings(partner_a="Robin Example", unassigned_names=("ABC Example",))
+    assert identity_slot("A.B.C. Example", configured) is None
+    effective = effective_partners(identity_db(["A.B.C. Example"], ["Robin Example"]), configured)
+    assert effective == configured
+
+
+def test_initial_variants_cannot_be_assigned_to_different_people(tmp_path):
+    configured = PartnerSettings(partner_a="ABC Example", children=(ChildSettings("A.B.C. Example"),))
+    with pytest.raises(ValueError, match="multiple people"):
+        save_settings(load_settings(tmp_path), configured)
+    assert identity_slot("A B C Example", configured) is None
+
+
+def test_name_boundaries_and_distinct_initials_are_preserved():
+    assert similarity("ABC Example", "ABD Example") == 0.0
+    assert similarity("Ann Abel Example", "Anna Bel Example") == 0.0
+    assert similarity("Example", "A.B.C. Example") == 0.0
+
+
+def test_initial_alias_variants_flow_into_recommendations():
+    conn = identity_db(INITIAL_VARIANTS, ["Alex Example"])
+    configured = PartnerSettings(partner_a="Alex Example", partner_a_aliases=("ABC Example",))
+    rebuild_recommendations(conn, configured)
+    row = conn.execute("SELECT * FROM partner_tax_results").fetchone()
+    assert row["allocated_actual_return"] == 50 * len(INITIAL_VARIANTS)
+    assert row["coverage_status"] == "COMPLETE"
+    assert conn.execute("SELECT holder_names FROM account_year_facts WHERE account_key = '1'").fetchone()[0] == json.dumps([INITIAL_VARIANTS[1]])
+
+
 def identity_db(names, filers=()):
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row

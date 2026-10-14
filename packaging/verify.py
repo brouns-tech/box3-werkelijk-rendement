@@ -103,7 +103,7 @@ def main():
             if smoke.poll() is None:
                 smoke.kill()
                 smoke.wait(timeout=10)
-        assert json.loads((directory / "smoke/smoke-result.json").read_text())["pdf_backend"] == "pypdf"
+        assert json.loads((directory / "smoke/smoke-result.json").read_text())["pdf_backend"] == "pdfium"
         assert (directory / "smoke/audit.zip").exists()
         if os.name != "nt" and not args.desktop:
             # Linux verifies the frozen server without requiring a graphical desktop.

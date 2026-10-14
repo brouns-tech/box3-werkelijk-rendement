@@ -62,10 +62,10 @@ been found; retain it. See the [PyInstaller spec documentation](https://pyinstal
    A process-wide lock prevents
    overlapping imports across browser sessions. Cancellation does not interrupt
    extraction of the current PDF. Parser and calculation code remain UI independent.
-6. Frozen builds use bundled `pypdf`, regardless of executables on PATH. Developer
-   CLI runs retain optional Poppler and automatic pypdf fallback; Poppler invocation
-   now has a timeout and suppresses a console on Windows. No Poppler binaries are
-   redistributed, avoiding their additional license and packaging obligations.
+6. CLI and frozen builds use the same pinned PDFium binary and position-based
+   text layout. No external PDF tool or alternate extraction fallback is used.
+   Its binary, metadata, and license notices are bundled explicitly. See
+   [PDF extraction parity](pdf-extraction-parity.md) for validation and upgrades.
 7. Hash-locked release dependencies, Windows Actions build, versioned ZIP, SHA-256,
    release-note artifact, and a verifier for the actual executable. Ordinary
    development dependencies do not include PyInstaller.
@@ -255,3 +255,11 @@ remains available. Editor generations discard stale save callbacks, and complete
 scans refresh taxpayer widgets once, including duplicate-only scans.
 Synthetic regression tests cover empty selections and English imports from a
 remembered folder without reopening the native folder picker.
+
+### Automatic refresh after import
+
+Completed and cancelled scans request one full Streamlit application rerun from
+the progress fragment. This restores taxpayer widgets and updates the overview
+without a separate refresh button, while retaining the import summary and document
+outcomes. Progress polling stops after completion. Regression tests cover a single
+app-scope refresh, cancellation, and remembered-folder/duplicate-only scans.

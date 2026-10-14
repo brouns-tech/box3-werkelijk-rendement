@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from wr.parsers import classification_rules
 from wr.parsers.base import ClassificationRule
@@ -19,7 +20,7 @@ CLASSIFICATION_RULES: tuple[ClassificationRule, ...] = classification_rules()
 
 def classify(text: str) -> Classification | None:
     """Classify a document through the registered institution plugins."""
-    normalized = text.lower()
+    normalized = re.sub(r"[ \t]+", " ", text.lower())
     for rule in CLASSIFICATION_RULES:
         if rule.detector(normalized):
             return Classification(rule.issuer, rule.doc_type) if rule.supported else None

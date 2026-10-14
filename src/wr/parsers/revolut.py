@@ -218,8 +218,8 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
 
 
 def _holders(text: str) -> list[str]:
-    first = re.search(r"First Name\s+(\S+)", text)
-    last = re.search(r"Last Name\s+(\S+)", text)
+    first = re.search(r"First Name[ \t]+(\S+)", text)
+    last = re.search(r"Last Name[ \t]+(\S+)", text)
     if first and last:
         return [f"{first.group(1)} {last.group(1)}"]
     return []

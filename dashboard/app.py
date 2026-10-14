@@ -10,7 +10,7 @@ import streamlit as st
 
 from wr.config import PartnerSettings, load_settings, resolve_db_path
 from wr.db import connect, init_db
-from wr.identities import identity_slot, observed_names, name_tokens
+from wr.identities import identity_slot, observed_names, name_key
 from wr.recommend import rebuild_recommendations
 from dashboard.settings import documents_ui, taxpayers_ui
 from dashboard.workspace_settings import workspace_settings_ui
@@ -19,6 +19,7 @@ from wr.money import subtract
 from wr.i18n import currency, coverage_details, status_label, translator
 from dashboard.localization import select_language
 from wr.portfolio import _fact_return, is_box3_fact
+from wr.import_pipeline import pending_reprocessing
 
 
 def _currency(value: float | None, language: str = "en") -> str:
@@ -52,7 +53,7 @@ def _decision_rows(results, language: str = "en") -> list[dict[str, str]]:
 
 
 def _person_key(name: str | None) -> str:
-    return " ".join(name_tokens(name or ""))
+    return " ".join(name_key(name or ""))
 
 
 def _holder_label(value: str | None, canonical_names: dict[str, str] | None = None, language: str = "en") -> str:
@@ -168,6 +169,9 @@ def main() -> None:
 def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     t = translator(language)
     money = partial(_currency, language=language)
+    if pending := pending_reprocessing(conn):
+        st.warning(t("PDF extraction has been updated. Scan your document folder again to refresh {count} previously imported documents before reviewing the calculation.", count=pending))
+        return
 
     years = [
         r[0]

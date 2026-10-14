@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import re
-import shutil
-import subprocess
-import sys
+from importlib.metadata import version
+from contextlib import closing
+import threading
 from pathlib import Path
 
 
@@ -16,34 +16,34 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def extract_text(path: Path, max_pages: int | None = None) -> tuple[str, int | None]:
-    """Extract PDF text. Prefer pdftotext; fall back to pypdf."""
-    if not getattr(sys, "frozen", False) and shutil.which("pdftotext"):
-        cmd = ["pdftotext", "-layout", str(path), "-"]
-        if max_pages is not None:
-            cmd = ["pdftotext", "-layout", "-f", "1", "-l", str(max_pages), str(path), "-"]
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=False,
-                                  timeout=60,
-                                  creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
-            if proc.returncode == 0 and proc.stdout.strip():
-                page_count = _count_form_feeds(proc.stdout)
-                return proc.stdout, page_count or None
-        except (OSError, subprocess.TimeoutExpired, UnicodeError):
-            pass
-
-    from pypdf import PdfReader
-
-    reader = PdfReader(str(path))
-    pages = reader.pages
-    if max_pages is not None:
-        pages = pages[:max_pages]
-    text = "\n".join((p.extract_text() or "") for p in pages)
-    return text, len(reader.pages)
+_PDF_LOCK = threading.Lock()
 
 
-def _count_form_feeds(text: str) -> int:
-    return text.count("\x0c") + (1 if text.strip() else 0)
+def extraction_profile() -> str:
+    """Version the native extractor and layout algorithm for safe reprocessing."""
+    return f"pdfium-layout-v1/pypdfium2-{version('pypdfium2')}"
+
+
+def extract_text(path: Path, max_pages: int | None = None) -> tuple[str, int]:
+    """Use the same bundled, position-based extractor in CLI and desktop builds.
+
+    PDFium is not thread-safe. Keep all native handles inside this lock and
+    release them explicitly. Extraction errors are reported, never replaced by
+    an unvalidated fallback with different financial-data semantics.
+    """
+    import pypdfium2 as pdfium
+    from wr.pdf_layout import layout_page
+
+    if max_pages is not None and max_pages < 0:
+        raise ValueError("max_pages must be non-negative")
+    with _PDF_LOCK, pdfium.PdfDocument(path) as document:
+        count = len(document)
+        selected = count if max_pages is None else min(count, max_pages)
+        texts = []
+        for index in range(selected):
+            with closing(document[index]) as page:
+                texts.append(layout_page(page))
+        return "\n\f\n".join(texts), count
 
 
 _NL_AMOUNT = re.compile(
