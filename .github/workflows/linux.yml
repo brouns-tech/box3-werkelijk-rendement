@@ -35,12 +35,14 @@ jobs:
         run: |
           python -m pip install --require-hashes -r packaging/requirements.lock
           python -m pip install --no-deps --no-build-isolation -e .
-      - name: Test and freeze shared desktop application
-        run: |
-          python -m pytest -q
-          xvfb-run -a python -c "import tkinter as tk; root=tk.Tk(); tk.Label(root, text='GUI preflight').pack(); root.update(); root.destroy()"
-          python -m PyInstaller --noconfirm --clean packaging/desktop.spec
-          xvfb-run -a python packaging/verify.py dist/WerkelijkRendement/WerkelijkRendement --desktop
+      - name: Run regression tests
+        run: python -m pytest -q --junitxml=build/test-results/pytest.xml
+      - name: Verify native Tk startup
+        run: xvfb-run -a python -c "import tkinter as tk; root=tk.Tk(); tk.Label(root, text='GUI preflight').pack(); root.update(); root.destroy()"
+      - name: Freeze shared desktop application
+        run: python -m PyInstaller --noconfirm --clean packaging/desktop.spec
+      - name: Verify frozen application lifecycle
+        run: xvfb-run -a python packaging/verify.py dist/WerkelijkRendement/WerkelijkRendement --desktop
       - name: Package AppImage and portable archive
         run: |
           export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
@@ -53,6 +55,15 @@ jobs:
           mkdir -p build/archive-verification
           tar -xzf "dist/WerkelijkRendement-$version-linux-x86_64.tar.gz" -C build/archive-verification
           xvfb-run -a python packaging/verify.py build/archive-verification/WerkelijkRendement/AppRun --desktop
+      - name: Preserve failed test and verification diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-verification-logs
+          path: |
+            build/test-results/
+            build/verification-logs/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: Linux-beta

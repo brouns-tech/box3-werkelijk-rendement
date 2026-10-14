@@ -152,10 +152,37 @@ def test_server_bootstrap_applies_security_options_before_run(monkeypatch, tmp_p
     serve(tmp_path, 9876)
 
 
-def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch):
+@pytest.mark.parametrize("finish_before_poll", [False, True])
+def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch, finish_before_poll):
     import sys
     from pathlib import Path
     from streamlit.testing.v1 import AppTest
+    from dashboard.desktop_import import ImportJob
+
+    release = threading.Event()
+    if finish_before_poll:
+        from types import SimpleNamespace
+        class JoinedThread:
+            def __init__(self, **kwargs):
+                self.thread = threading.Thread(**kwargs)
+
+            def start(self):
+                self.thread.start()
+                self.thread.join(timeout=10)
+                assert not self.thread.is_alive()
+
+        monkeypatch.setattr("dashboard.desktop_import.threading", SimpleNamespace(Thread=JoinedThread))
+    else:
+        run = ImportJob.run
+
+        def delayed_import(job, folder, cfg):
+            if release.wait(timeout=10):
+                run(job, folder, cfg)
+            else:
+                job.error = "Test did not release the background import"
+                job.done.set()
+
+        monkeypatch.setattr(ImportJob, "run", delayed_import)
 
     config = prepare_workspace(tmp_path)
     documents = tmp_path / "statements"
@@ -167,11 +194,28 @@ def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert not app.exception
     next(b for b in app.button if b.label == "Map selecteren").click().run()
-    next(b for b in app.button if b.label == "Documenten scannen en berekenen").click().run()
-    assert app.session_state["import_job"].done.wait(timeout=10)
+    try:
+        next(b for b in app.button if b.label == "Documenten scannen en berekenen").click().run()
+        assert not app.exception
+    finally:
+        # AppTest does not emulate browser polling. Keep the asynchronous import
+        # pending until its first script render has settled, then render completion.
+        # The joined-thread case separately covers finishing before the first poll.
+        release.set()
+    job = app.session_state["import_job"]
+    assert job.done.wait(timeout=10)
+    assert job.error is None
+    assert not job.busy
+    assert job.report.parsed == 1 and job.report.failed == 0
     app.run()
     assert not app.exception
-    assert any("1 verwerkt" in result.value for result in app.success)
+    assert app.session_state["import_job"] is job
+    assert any("1 verwerkt" in result.value for result in app.success), {
+        "success": [result.value for result in app.success],
+        "errors": [result.value for result in app.error],
+        "same_job": app.session_state["import_job"] is job,
+        "editor_refreshed": job.editor_refreshed,
+    }
 
 
 @pytest.mark.parametrize("already_imported", [False, True])
