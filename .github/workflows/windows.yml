@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: ['feat/**']
   pull_request:
     paths:
       - 'src/**'
