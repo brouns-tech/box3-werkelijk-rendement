@@ -11,6 +11,6 @@
 
 Windows 10/11 x64 are intended targets. This candidate is unsigned. Do not disable
 Windows protection. Windows CI, clean-machine usability, full PDF-layout parity,
-and license/network review are release gates; consult `windows-packaging.md`.
+and license/network review are release gates; consult [Windows builds](../development/windows-builds.md).
 No calculation rules or institution coverage have changed. No public release or
 website update is performed by the build workflow.

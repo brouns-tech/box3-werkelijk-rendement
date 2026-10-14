@@ -22,7 +22,7 @@ No Python installation or separate PDF tools are needed.
 The dashboard opens in your browser. Check the release notes and SHA-256 checksum
 for your download. **No public release has been published yet**; this is the
 intended download route once binaries are released.
-See the [Windows](docs/windows-beta.md) and [Linux](docs/linux-beta.md) guides
+See the [Windows](docs/getting-started/windows.md) and [Linux](docs/getting-started/linux.md) guides
 for platform requirements and troubleshooting.
 
 ## Import, review, compare
@@ -41,12 +41,12 @@ Use **Language / Taal** to switch between Dutch and English. Your selected folde
 settings, and imported data are remembered. Use **Exit application** in the sidebar
 to stop the app; closing the browser tab leaves it running.
 
-See the [user guide](docs/user-guide.md) for detailed instructions.
+See the [user guide](docs/guide/index.md) for detailed instructions.
 
 ## Coverage and privacy
 
 Supported layouts include **ING, Rabobank, SNS, Raisin, Revolut, DEGIRO, flatex,
-and Belastingdienst** documents. Check the [compatibility matrix](docs/supported-documents.md)
+and Belastingdienst** documents. Check the [compatibility matrix](docs/reference/supported-documents.md)
 for exact layouts and limitations. Tax comparison policies cover **2017–2025**.
 
 Importing all selected files does not prove your financial situation is complete.
@@ -60,5 +60,5 @@ and audit exports contain sensitive information and are not encrypted by the app
 ## Develop and contribute
 
 See [Contributing](CONTRIBUTING.md) for source installation, tests, and parser
-contributions, and the [CLI guide](docs/cli.md) for developer commands and synthetic
+contributions, and the [CLI guide](docs/development/cli.md) for developer commands and synthetic
 demo data. Never submit real financial documents or personal data.

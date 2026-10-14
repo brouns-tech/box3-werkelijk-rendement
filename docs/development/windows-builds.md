@@ -65,7 +65,7 @@ been found; retain it. See the [PyInstaller spec documentation](https://pyinstal
 6. CLI and frozen builds use the same pinned PDFium binary and position-based
    text layout. No external PDF tool or alternate extraction fallback is used.
    Its binary, metadata, and license notices are bundled explicitly. See
-   [PDF extraction parity](pdf-extraction-parity.md) for validation and upgrades.
+   [PDF extraction parity](pdf-extraction.md) for validation and upgrades.
 7. Hash-locked release dependencies, Windows Actions build, versioned ZIP, SHA-256,
    release-note artifact, and a verifier for the actual executable. Ordinary
    development dependencies do not include PyInstaller.

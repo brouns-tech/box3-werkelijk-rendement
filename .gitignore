@@ -26,3 +26,6 @@ language-*.tmp
 *.log
 .DS_Store
 .idea/
+.venv-docs/
+site/
+.cache/

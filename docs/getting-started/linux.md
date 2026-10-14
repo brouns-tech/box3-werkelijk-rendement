@@ -41,7 +41,7 @@ Other architectures and musl-based systems such as Alpine are not release target
 
 Build artifacts must pass CI and clean-desktop verification before a public
 compatibility claim is made. A local build made on a newer distribution can require
-a newer glibc than the release baseline. See [Linux packaging](linux-packaging.md)
+a newer glibc than the release baseline. See [Linux packaging](../development/linux-builds.md)
 for the validation record and release gates.
 
 ## Using the application

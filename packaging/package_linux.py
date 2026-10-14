@@ -45,7 +45,11 @@ def stage_appdir(bundle: Path, destination: Path) -> Path:
     for filename in ("AppRun", "tech.brouns.WerkelijkRendement.desktop", "tech.brouns.WerkelijkRendement.svg"):
         shutil.copy2(ROOT / "packaging/linux" / filename, destination / filename)
     (destination / "AppRun").chmod(0o755)
-    shutil.copy2(ROOT / "docs/linux-beta.md", destination / "README.md")
+    shutil.copytree(ROOT / "docs", destination / "docs")
+    guide = (ROOT / "docs/getting-started/linux.md").read_text(encoding="utf-8")
+    (destination / "README.md").write_text(
+        guide.replace("(../development/", "(docs/development/"), encoding="utf-8"
+    )
     shutil.copy2(ROOT / "packaging/requirements.lock", destination / "dependencies.lock")
     notices = destination / "usr/share/doc/werkelijk-rendement"
     notices.mkdir(parents=True)

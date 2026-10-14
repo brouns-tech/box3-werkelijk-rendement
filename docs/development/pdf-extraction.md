@@ -36,6 +36,14 @@ partially written financial records. Retry and cancellation remain supported.
 Original files, content hashes, initial provenance, and workspace profiles remain
 intact. Current successful imports deduplicate normally on subsequent scans.
 
+Profile `pdfium-layout-v2` also refreshes tax returns affected by a taxable-base
+parser correction: official returns can put the amount on the next line, prefixed
+with € rather than beside the label. The prefix is required on that next line so
+a following heading or page number cannot become a taxable base. Missing bases
+remain missing, never zero. Both fiscal partners stay visible with review-required
+decisions when the combined base or allocation is absent; an explicit zero base
+produces two not-applicable rows without allocating the combined return twice.
+
 The dashboard withholds the comparison while older parsed documents still need
 refreshing. Audit manifests report the pending count and processing profiles;
 source-fact CSV rows include the extractor profile. Synthetic demo records are

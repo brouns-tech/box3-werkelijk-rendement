@@ -11,7 +11,8 @@ on:
       - 'dashboard/**'
       - 'packaging/**'
       - 'tests/**'
-      - 'docs/linux-*.md'
+      - 'docs/getting-started/linux.md'
+      - 'docs/development/linux-builds.md'
       - 'pyproject.toml'
       - '.github/workflows/linux.yml'
 

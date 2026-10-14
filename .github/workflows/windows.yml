@@ -49,13 +49,15 @@ jobs:
         run: |
           $version = python -c "from importlib.metadata import version; print(version('box3-werkelijk-rendement'))"
           if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") { throw 'Tag must match pyproject.toml version' }
-          Copy-Item docs/windows-beta.md dist/WerkelijkRendement/README.md
+          Copy-Item -Recurse docs dist/WerkelijkRendement/docs
+          Copy-Item docs/getting-started/windows.md dist/WerkelijkRendement/README.md
           Copy-Item packaging/requirements.lock dist/WerkelijkRendement/dependencies.lock
           $archive = "WerkelijkRendement-$version-windows-x64.zip"
           Compress-Archive -Path dist/WerkelijkRendement -DestinationPath "dist/$archive"
           $hash = (Get-FileHash "dist/$archive" -Algorithm SHA256).Hash.ToLower()
           "$hash  $archive" | Set-Content -Encoding ascii "dist/$archive.sha256"
-          Copy-Item docs/windows-release-notes.md dist/RELEASE-NOTES.md
+          $notes = Get-Content -Raw docs/releases/windows-beta.md
+          $notes.Replace('(../development/', '(WerkelijkRendement/docs/development/') | Set-Content -Encoding utf8 dist/RELEASE-NOTES.md
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-beta

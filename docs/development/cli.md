@@ -1,6 +1,6 @@
 # Source installation and CLI
 
-Desktop users should use the binaries described in the [README](../README.md).
+Desktop users should use the binaries described in the [README](../index.md).
 The CLI remains available for developers and contributors.
 
 ## Install from source
@@ -14,7 +14,7 @@ python -m pip install -e .
 ```
 
 On Windows, activate the environment with `.venv\Scripts\activate` instead.
-See [Contributing](../CONTRIBUTING.md) for development dependencies and tests.
+See [Contributing](contributing.md) for development dependencies and tests.
 
 ## Try synthetic data
 
@@ -39,7 +39,7 @@ Import scans recursively and deduplicates PDFs by content hash. The default
 workspace database is `data/wr.sqlite`; the default audit output is
 `exports/wr-audit.zip`. The dashboard and CLI share saved taxpayer and institution
 settings in `.wr-settings.json` within that workspace. Read the
-[user guide](user-guide.md) before relying on a result.
+[user guide](../guide/index.md) before relying on a result.
 
 The current directory defines the source-mode workspace. To select another:
 
