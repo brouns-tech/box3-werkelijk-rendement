@@ -132,3 +132,53 @@ def test_prefers_sent_tax_return_over_unsent_draft():
     result = _results_for_year(conn, 2025, PartnerSettings())
 
     assert result[0].fictitious_return == 100
+
+
+def test_missing_base_keeps_both_partner_decisions_without_zero_tax_claim(tmp_path):
+    from wr.config import load_settings
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    cfg = load_settings(tmp_path)
+    with connect(cfg.resolved_db_path) as conn:
+        # A stale ZERO_BASE marker must not override an absent input figure.
+        conn.execute("UPDATE tax_returns SET grondslag = NULL, allocation_a = NULL, allocation_b = NULL, allocation_status = 'ZERO_BASE'")
+        results = _results_for_year(conn, 2024, cfg.partners)
+    assert [r.partner for r in results] == ['a', 'b']
+    assert [r.partner_name for r in results] == [cfg.partners.partner_a, cfg.partners.partner_b]
+    assert all(r.recommendation == 'NEEDS_MANUAL_RSAMW' for r in results)
+    assert all(r.estimated_box3_tax_actual is None and r.estimated_tax_savings is None for r in results)
+
+
+def test_explicit_zero_base_keeps_both_partners_without_allocating_combined_return_twice(tmp_path):
+    from wr.config import load_settings
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    cfg = load_settings(tmp_path)
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute("UPDATE tax_returns SET grondslag = 0, allocation_a = NULL, allocation_b = NULL, allocation_status = 'ZERO_BASE'")
+        # The filed ordering is the reverse of the configured taxpayer ordering.
+        conn.execute("UPDATE tax_returns SET partner_a_name = ?, partner_b_name = ?", (cfg.partners.partner_b, cfg.partners.partner_a))
+        results = _results_for_year(conn, 2024, cfg.partners)
+    assert [r.partner_name for r in results] == [cfg.partners.partner_a, cfg.partners.partner_b]
+    assert all(r.recommendation == 'NOT_APPLICABLE' for r in results)
+    assert all(r.estimated_box3_tax_actual == 0 and r.estimated_tax_savings == 0 for r in results)
+    assert all(r.allocated_actual_return is None and r.allocation_ratio is None for r in results)
+
+
+def test_statements_without_returns_keep_all_configured_taxpayers_visible(tmp_path):
+    from wr.config import load_settings
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    cfg = load_settings(tmp_path)
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute('DELETE FROM tax_returns')
+        results = _results_for_year(conn, 2024, cfg.partners)
+    assert [r.partner for r in results] == ['a', 'b']
+    assert all(r.recommendation == 'NEEDS_MANUAL_RSAMW' for r in results)
+    assert all(r.fictitious_return is None and r.estimated_tax_savings is None for r in results)

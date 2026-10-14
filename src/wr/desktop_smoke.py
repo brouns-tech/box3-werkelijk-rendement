@@ -95,6 +95,8 @@ def smoke_test(directory: Path) -> None:
     with sqlite3.connect(db) as conn:
         row = conn.execute("SELECT interest_received FROM account_year_facts WHERE issuer='ing'").fetchone()
         assert row and row[0] == 12.34
+        assert conn.execute("SELECT grondslag FROM tax_returns").fetchone()[0] == 160000
+        assert conn.execute("SELECT COUNT(*) FROM partner_tax_results WHERE tax_year=2024").fetchone()[0] == 2
     write_audit_export(db, directory / "audit.zip")
     (directory / "smoke-result.json").write_text(json.dumps({"version": app_version(), "parsers": len(PLUGINS), "pdf_backend": "pdfium", "config": str(config)}))
 
@@ -159,6 +161,12 @@ Formulierenversie IB 650E
 Persoonlijke gegevens van ALEX EXAMPLE
 Burgerservicenummer 123456789
 Waarde van bezittingen 100.000 120.000
+Naam echtgenoot SAM EXAMPLE
+ALEX EXAMPLE en partner zijn heel 2024 fiscale partners
+Grondslag sparen en beleggen
+€ 160.000
+Uw deel € 120.000
+Deel SAM EXAMPLE € 40.000
 """,
 }
 

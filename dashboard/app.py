@@ -18,6 +18,7 @@ from wr.export import create_audit_export
 from wr.money import subtract
 from wr.i18n import currency, coverage_details, status_label, translator
 from dashboard.localization import select_language
+from dashboard.ownership import PURPLE, UNKNOWN, slot_color, table_style
 from wr.portfolio import _fact_return, is_box3_fact
 from wr.import_pipeline import pending_reprocessing
 
@@ -93,29 +94,33 @@ def _canonical_name_map(partner_cfg: PartnerSettings) -> dict[str, str]:
     return names
 
 
-def _owner_style(value: str, colors: dict[str, str]) -> str:
+def _owner_style(value: str, colors: dict[str, str], *, muted: bool = False, joint: bool = False) -> str:
     holder_keys = [_person_key(holder) for holder in value.split(", ")]
     matches = {color for name, color in colors.items() if name in holder_keys}
-    if len(matches) == 1:
-        return f"background-color: {matches.pop()}; color: #f8fafc"
-    if len(matches) > 1:
-        return "background-color: #581c87; color: #f8fafc"
-    return "background-color: #334155; color: #f8fafc"
+    if joint or len(matches) > 1:
+        return table_style(PURPLE, muted=muted)
+    return table_style(matches.pop() if matches else UNKNOWN, muted=muted)
 
 
 def _owner_colors(partner_cfg: PartnerSettings, canonical_names: dict[str, str]) -> dict[str, str]:
-    colors = {"a": "#1e3a5f", "b": "#14532d"}
     return {
-        alias: colors.get(slot, "#581c87")
+        alias: slot_color(slot)
         for slot, canonical in partner_cfg.identities() if canonical
         for alias, name in canonical_names.items() if name == canonical
     }
 
 
-def _styled_table(rows: list[dict], owner_column: str, colors: dict[str, str]):
+def _styled_table(
+    rows: list[dict], owner_column: str, colors: dict[str, str], *,
+    muted_rows: list[bool] | None = None, joint_rows: list[bool] | None = None,
+):
     frame = pd.DataFrame(rows)
     return frame.style.apply(
-        lambda row: [_owner_style(str(row[owner_column]), colors)] * len(row), axis=1
+        lambda row: [_owner_style(
+            str(row[owner_column]), colors,
+            muted=muted_rows[row.name] if muted_rows is not None else False,
+            joint=joint_rows[row.name] if joint_rows is not None else False,
+        )] * len(row), axis=1
     )
 
 
@@ -215,7 +220,10 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
 
     col1, col2, col3 = st.columns(3)
     if portfolio:
-        col1.metric(t("Coverage"), status_label(portfolio["coverage_status"], language))
+        col1.metric(
+            t("Coverage"), status_label(portfolio["coverage_status"], language),
+            help=t("Coverage concerns imported statements only; it does not establish that all assets or partner documents are present."),
+        )
         col2.metric(t("Actual return"), money(portfolio["known_combined_actual_return"]))
         col3.metric(t("Statement sources"), portfolio["source_fact_count"] or 0)
         if portfolio["missing_asset_summary"]:
@@ -275,7 +283,11 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
             }
         )
     st.dataframe(
-        _styled_table(fact_rows, t("Account holder"), owner_colors),
+        _styled_table(
+            fact_rows, t("Account holder"), owner_colors,
+            muted_rows=[not is_box3_fact(fact) for fact in facts],
+            joint_rows=[row[t("Allocation")] == t("Joint") for row in fact_rows],
+        ),
         width="stretch",
         hide_index=True,
     )

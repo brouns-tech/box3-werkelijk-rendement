@@ -12,23 +12,14 @@ from dashboard.localization import ui_text as t
 
 from dashboard.folder_picker import folder_path_input
 from dashboard.ui_state import prepare_taxpayer_editor, refresh_taxpayer_editor, taxpayer_widget_key
+from dashboard.ownership import editor_key, editor_styles
 from wr.config import ChildSettings, PartnerSettings, resolve_db_path, save_settings
 from wr.identities import effective_partners, identity_slot, observed_names
 from wr.import_pipeline import run_import
 from wr.recommend import rebuild_recommendations
 
 
-_UNASSIGNED_STYLE = """
-<style>
-div[class*="st-key-unassigned_name_"] {
-    background-color: rgba(173, 106, 106, 0.4);
-    border-left: 3px solid #ad6a6a;
-    border-radius: 6px;
-    padding: 0.5rem 0.75rem;
-}
-div[class*="st-key-unassigned_name_"] [data-baseweb="select"] > div {
-    border-color: rgba(173, 106, 106, 0.5);
-}
+_EDITOR_STYLE = "<style>" + editor_styles() + """
 div[class*="st-key-taxpayer_actions_"] { margin-top: -0.6rem; }
 div[class*="st-key-save_field_"] button {
     color: #15803d; border-color: #15803d;
@@ -187,10 +178,11 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
                     st.session_state[key] = "unassigned"
 
     st.info(t("Tax returns identify primary taxpayers and fiscal partners. Other distinct account holders are suggested as minor children; review these guesses, especially missing adult returns and shared initials. Fiscal partnership and allocation come from each tax return."))
-    st.markdown(_UNASSIGNED_STYLE, unsafe_allow_html=True)
+    st.markdown(_EDITOR_STYLE, unsafe_allow_html=True)
     columns = st.columns(2)
     values = {}
     for slot, column in zip(("a", "b"), columns):
+        column = column.container(key=editor_key(slot, "profile"))
         fallback = t("First taxpayer") if slot == "a" else t("Second taxpayer (optional)")
         current = getattr(partners, f"partner_{slot}") or ""
         canonical_key = _editor_widget_key(f"canonical_{slot}", current)
@@ -213,6 +205,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     for start in range(0, len(child_slots), 2):
         columns = st.columns(2)
         for slot, column in zip(child_slots[start:start + 2], columns):
+            column = column.container(key=editor_key(slot, f"profile_{slot}"))
             index = int(slot.removeprefix("child_"))
             child = partners.children[index] if index < len(partners.children) else None
             canonical_key = _editor_widget_key(f"canonical_{slot}", child.canonical_name if child else "")
@@ -244,8 +237,8 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             # existing suggestion; explicit Unassigned remains a valid choice.
             if st.session_state.get(key) not in options:
                 st.session_state[key] = slot
-            unassigned = st.session_state.get(key, slot) == "unassigned"
-            with st.container(key=f"{'unassigned' if unassigned else 'assigned'}_name_{index}"):
+            assigned_slot = st.session_state.get(key, slot)
+            with st.container(key=editor_key(assigned_slot, f"name_{index}")):
                 selected = st.selectbox(
                     name, options, index=None, format_func=labels.get,
                     key=key, on_change=_assignment_changed,

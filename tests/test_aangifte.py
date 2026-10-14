@@ -114,3 +114,29 @@ def test_parses_official_box3_asset_aggregate_at_1_january_only():
     assert result.tax_return is not None
     assert result.tax_return.bezittingen_0101 == 260000.0
     assert result.tax_return.bezittingen_3112 is None
+
+
+def test_taxable_base_on_currency_prefixed_next_line():
+    result = parse_aangifte(
+        'Aangifte inkomstenbelasting 2024\n'
+        'Naam Alex Example\n'
+        'Naam echtgenoot Sam Example\n'
+        'Alex Example en partner zijn heel 2024 fiscale partners\n'
+        'Grondslag sparen en beleggen\n€ 160.000\n'
+        'Uw deel € 120.000\nDeel Sam Example € 40.000\n'
+    )
+    assert result.tax_return.grondslag == 160000
+    assert result.tax_return.allocation_a == 0.75
+    assert result.tax_return.allocation_b == 0.25
+    assert result.tax_return.allocation_status == 'ok'
+
+
+def test_missing_combined_base_has_incomplete_allocation_even_with_partner_shares():
+    result = parse_aangifte(
+        'Naam Alex Example\nNaam echtgenoot Sam Example\n'
+        'Alex Example en partner zijn heel 2024 fiscale partners\n'
+        'Grondslag sparen en beleggen\n3\nOther heading\n'
+        'Uw deel € 120.000\nDeel Sam Example € 40.000\n', 2024,
+    )
+    assert result.tax_return.grondslag is None
+    assert result.tax_return.allocation_status == 'incomplete'

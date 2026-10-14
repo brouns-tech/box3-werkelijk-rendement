@@ -101,7 +101,10 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
         pass
 
     grondslag = _single_amount(
-        text, r"Grondslag sparen en beleggen[ \t]+(?:€[ \t]*)?([\d.]+)"
+        text,
+        # Official returns can put the currency-prefixed amount on the next
+        # line. Require € there, so a following heading/page number is not read.
+        r"Grondslag sparen en beleggen(?:[ \t]+(?:€[ \t]*)?|[ \t]*\n[ \t]*€[ \t]*)([\d.]+)",
     )
 
     # Allocation — order of names varies by filer
@@ -228,7 +231,7 @@ def parse_aangifte(text: str, tax_year: int | None = None) -> ParseResult:
     allocation_status = "ok"
     if grondslag == 0:
         allocation_status = "ZERO_BASE"
-    elif grondslag_a is None or (full_year and grondslag_b is None):
+    elif grondslag is None or grondslag_a is None or (full_year and grondslag_b is None):
         allocation_status = "incomplete"
 
     tr = TaxReturnData(

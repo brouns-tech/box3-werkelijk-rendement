@@ -192,8 +192,9 @@ def test_children_dynamic_editor_assignments_and_purple_overview(tmp_path, monke
     assert cfg.partners.children[2].canonical_name == "Charlie Example"
     assert _holder_label('["Nickname Gamma"]', _canonical_name_map(cfg.partners)) == "Charlie Example"
     colors = _owner_colors(cfg.partners, _canonical_name_map(cfg.partners))
-    assert "#581c87" in _owner_style("Charlie Example", colors)
-    assert "#581c87" in _owner_style("Nickname Gamma", colors)
+    from dashboard.ownership import PURPLE, table_style
+    assert _owner_style("Charlie Example", colors) == table_style(PURPLE)
+    assert _owner_style("Nickname Gamma", colors) == table_style(PURPLE)
     account_table = next(table.value for table in app.dataframe if "Account holder" in table.value.columns)
     child_row = account_table[account_table["Account holder"] == "Charlie Example"].iloc[0]
     assert child_row["Allocation"] == "Joint"
@@ -592,3 +593,19 @@ def test_alias_assignments_save_and_recompute_immediately(tmp_path, monkeypatch)
     assert actual_return("b") is None
     restarted = AppTest.from_file(str(APP)).run()
     assert next(select for select in restarted.selectbox if select.label == "Fie").value == "unassigned"
+
+
+def test_overview_keeps_both_partners_when_combined_taxable_base_is_missing(tmp_path, monkeypatch):
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_settings()
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute('UPDATE tax_returns SET grondslag = NULL, allocation_a = NULL, allocation_b = NULL')
+    app = AppTest.from_file(str(APP)).run()
+    assert not app.exception
+    decision = next(table.value for table in app.dataframe if 'Taxpayer' in table.value.columns)
+    assert decision['Taxpayer'].tolist() == [cfg.partners.partner_a, cfg.partners.partner_b]
+    assert decision['Decision'].tolist() == ['Manual review needed', 'Manual review needed']
+    assert app.metric[0].value == 'Available evidence'
