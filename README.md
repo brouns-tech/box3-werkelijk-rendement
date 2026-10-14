@@ -76,6 +76,12 @@ rename taxpayers, and add aliases (including nicknames). Assignment dropdowns sh
 names of taxpayers and children and update as you edit them. Children have their
 own canonical names and aliases in a separate section; **Add child** supports any
 number of profiles. New distinct holders are also suggested after later imports.
+Each child has a **Delete child** button; deleting a profile leaves its source
+documents intact and makes its names unassigned. Child cards keep half-page width
+in a two-column grid, including rows with a single child.
+Edited name and alias fields show a green **✓** to save all pending profile edits
+and update the analysis, and a red **✕** to discard all pending edits. Document-name
+assignment dropdowns continue to save immediately.
 Ambiguous names remain available for manual assignment. Review these guesses:
 a missing return does not prove someone is a minor. Check the child's age and
 parental authority for each year; year-specific age or custody changes are not

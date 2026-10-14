@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sqlite3
+from dataclasses import replace
 
 import streamlit as st
 
@@ -25,6 +26,13 @@ div[class*="st-key-unassigned_name_"] {
 div[class*="st-key-unassigned_name_"] [data-baseweb="select"] > div {
     border-color: rgba(173, 106, 106, 0.5);
 }
+div[class*="st-key-taxpayer_actions_"] { margin-top: -0.6rem; }
+div[class*="st-key-save_field_"] button {
+    color: #15803d; border-color: #15803d;
+}
+div[class*="st-key-discard_field_"] button {
+    color: #dc2626; border-color: #dc2626;
+}
 </style>
 """
 
@@ -32,6 +40,57 @@ div[class*="st-key-unassigned_name_"] [data-baseweb="select"] > div {
 def _assignment_changed() -> None:
     # Process the change on the next script run, using its live DB connection.
     st.session_state["taxpayer_assignment_changed"] = True
+
+
+def _save_requested() -> None:
+    st.session_state["taxpayer_save_requested"] = True
+
+
+def _discard_requested() -> None:
+    refresh_taxpayer_editor()
+    st.session_state.pop("taxpayer_assignment_changed", None)
+    st.session_state.pop("taxpayer_save_requested", None)
+
+
+def _field_actions(column, field: str, value: str, saved: str) -> None:
+    if value == saved:
+        return
+    with column.container(key=f"taxpayer_actions_{field}", horizontal=True, horizontal_alignment="right", gap="small"):
+        st.button("✓", key=f"save_field_{field}", help="Save all changes and update analysis", on_click=_save_requested)
+        st.button("✕", key=f"discard_field_{field}", help="Discard all unsaved changes", on_click=_discard_requested)
+
+
+def _request_child_deletion(index: int) -> None:
+    st.session_state["taxpayer_delete_child"] = index
+
+
+def _preserve_other_drafts(indices: list[int], deleted: int, names: list[str]) -> None:
+    """Keep other edits when deleting a saved child compacts profile indices."""
+    remaining = [index for index in indices if index != deleted]
+    drafts = {
+        "child_indices": [index - (index > deleted) for index in remaining],
+        "next_child_index": st.session_state[taxpayer_widget_key("next_child_index")] - 1,
+    }
+    slots = [("a", "a"), ("b", "b")] + [
+        (f"child_{index}", f"child_{index - (index > deleted)}") for index in remaining
+    ]
+    for old, new in slots:
+        for field in ("canonical", "aliases"):
+            key = taxpayer_widget_key(f"{field}_{old}")
+            if key in st.session_state:
+                drafts[f"{field}_{new}"] = st.session_state[key]
+    for name in names:
+        key = taxpayer_widget_key(f"identity_{name}")
+        if key not in st.session_state:
+            continue
+        slot = st.session_state[key]
+        if slot == f"child_{deleted}":
+            slot = "unassigned"
+        elif slot.startswith("child_"):
+            index = int(slot.removeprefix("child_"))
+            slot = f"child_{index - (index > deleted)}"
+        drafts[f"identity_{name}"] = slot
+    st.session_state["_taxpayer_pending_drafts"] = drafts
 
 
 def documents_ui(cfg) -> None:
@@ -80,6 +139,37 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     partners = effective_partners(conn, cfg.partners)
     names = observed_names(conn)
     prepare_taxpayer_editor(str(cfg.resolved_db_path), partners, names)
+    for field, value in st.session_state.pop("_taxpayer_pending_drafts", {}).items():
+        st.session_state[taxpayer_widget_key(field)] = value
+    indices_key = taxpayer_widget_key("child_indices")
+    st.session_state.setdefault(indices_key, list(range(len(partners.children))))
+    next_index_key = taxpayer_widget_key("next_child_index")
+    st.session_state.setdefault(next_index_key, len(partners.children))
+    delete_index = st.session_state.pop("taxpayer_delete_child", None)
+    if delete_index is not None:
+        if delete_index < len(partners.children):
+            child = partners.children[delete_index]
+            removed_names = {child.canonical_name, *child.aliases}
+            removed_names.update(name for name in names if identity_slot(name, partners) == f"child_{delete_index}")
+            updated = replace(
+                partners, children=tuple(child for index, child in enumerate(partners.children) if index != delete_index),
+                unassigned_names=tuple(sorted(set(partners.unassigned_names) | removed_names)),
+            )
+            try:
+                save_settings(cfg, updated)
+                rebuild_recommendations(conn, updated)
+            except (ValueError, OSError, sqlite3.Error) as exc:
+                st.error(str(exc))
+            else:
+                _preserve_other_drafts(st.session_state[indices_key], delete_index, names)
+                refresh_taxpayer_editor()
+                st.rerun()
+        else:
+            st.session_state[indices_key].remove(delete_index)
+            for name in names:
+                key = taxpayer_widget_key(f"identity_{name}")
+                if st.session_state.get(key) == f"child_{delete_index}":
+                    st.session_state[key] = "unassigned"
 
     st.info("Tax returns identify primary taxpayers and fiscal partners. Other distinct account holders are suggested as minor children; review these guesses, especially missing adult returns and shared initials. Fiscal partnership and allocation come from each tax return.")
     st.markdown(_UNASSIGNED_STYLE, unsafe_allow_html=True)
@@ -91,34 +181,35 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
         canonical_key = taxpayer_widget_key(f"canonical_{slot}")
         column.markdown(f"**{st.session_state.get(canonical_key, current) or fallback}**")
         values[slot] = column.text_input("Canonical name", value=current, key=canonical_key)
+        _field_actions(column, f"canonical_{slot}", values[slot], current)
         values[f"aliases_{slot}"] = column.text_area(
             "Aliases (one per line)", value="\n".join(partners.aliases_for(slot)),
             key=taxpayer_widget_key(f"aliases_{slot}"),
         )
+        _field_actions(column, f"aliases_{slot}", values[f"aliases_{slot}"], "\n".join(partners.aliases_for(slot)))
     st.caption("For one identity, clear the second name and assign its spellings to the remaining person. Two identities do not imply full-year fiscal partnership.")
     st.subheader("Minor children (assets attributed to parents)")
     st.caption("Minderjarige kinderen: use this category for children whose Box 3 assets are attributed to the parents. Their documents appear as joint (purple) in the overview. Review ages and parental authority for the relevant tax year.")
-    count_key = taxpayer_widget_key("child_count")
-    st.session_state.setdefault(count_key, len(partners.children))
     if st.button("Add child", key="add_child"):
-        st.session_state[count_key] += 1
-    child_slots = [f"child_{index}" for index in range(st.session_state[count_key])]
-    # Rows of at most two cards support an arbitrary number of children.
+        st.session_state[indices_key].append(st.session_state[next_index_key])
+        st.session_state[next_index_key] += 1
+    child_slots = [f"child_{index}" for index in st.session_state[indices_key]]
+    # Always allocate two columns, including the last row with one child.
     for start in range(0, len(child_slots), 2):
-        columns = st.columns(min(2, len(child_slots) - start))
-        for index, column in enumerate(columns, start=start):
-            slot = f"child_{index}"
+        columns = st.columns(2)
+        for slot, column in zip(child_slots[start:start + 2], columns):
+            index = int(slot.removeprefix("child_"))
             child = partners.children[index] if index < len(partners.children) else None
             canonical_key = taxpayer_widget_key(f"canonical_{slot}")
             column.markdown(f"**{st.session_state.get(canonical_key, child.canonical_name if child else '') or f'Child {index + 1}'}**")
             values[slot] = column.text_input("Canonical name", value=child.canonical_name if child else "", key=canonical_key)
+            _field_actions(column, f"canonical_{slot}", values[slot], child.canonical_name if child else "")
             values[f"aliases_{slot}"] = column.text_area(
                 "Aliases (one per line)", value="\n".join(child.aliases) if child else "",
                 key=taxpayer_widget_key(f"aliases_{slot}"),
             )
-    if child_slots:
-        st.caption("To remove a child, clear the canonical name and aliases, and set its document names to Unassigned or another person.")
-    save = st.button("Save settings and update analysis", key="save_settings")
+            _field_actions(column, f"aliases_{slot}", values[f"aliases_{slot}"], "\n".join(child.aliases) if child else "")
+            column.button("Delete child", key=f"delete_{slot}", on_click=_request_child_deletion, args=(index,))
     labels = {
         "unassigned": "Unassigned",
         "a": values["a"].strip() or "First taxpayer (enter a name above)",
@@ -128,7 +219,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     slots = ["a", "b", *child_slots]
     assignments = {}
     if names:
-        st.markdown("**Names found in documents**")
+        st.subheader("Names found in documents")
         st.caption("Assignments save and update the analysis immediately, including any name or alias edits above. These assignments take precedence over the alias text. Source names are preserved.")
         for index, name in enumerate(names):
             options = ["unassigned", *slots]
@@ -141,6 +232,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
                     key=key, on_change=_assignment_changed,
                 )
     changed = st.session_state.pop("taxpayer_assignment_changed", False)
+    save = st.session_state.pop("taxpayer_save_requested", False)
     if save or changed:
         try:
             aliases = {

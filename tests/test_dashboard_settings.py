@@ -13,6 +13,110 @@ def taxpayer_input(app, field):
     return next(widget for widget in widgets if widget.key.endswith(f"_{field}"))
 
 
+def save_taxpayer_edits(app):
+    app.run()
+    buttons = [button for button in app.button if button.key.startswith("save_field_")]
+    if buttons:
+        buttons[0].click().run()
+
+
+def test_inline_save_and_discard_apply_to_all_drafts(tmp_path, monkeypatch):
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    app = AppTest.from_file(str(APP)).run()
+    assert not any(button.key.startswith(("save_field_", "discard_field_")) for button in app.button)
+    taxpayer_input(app, "canonical_a").set_value("Alex Example").run()
+    taxpayer_input(app, "aliases_b").set_value("Other nickname").run()
+    assert app.button(key="save_field_canonical_a").label == "✓"
+    assert app.button(key="discard_field_aliases_b").label == "✕"
+    assert load_settings().partners.partner_a == "Sophie de Vries"
+    app.button(key="discard_field_aliases_b").click().run()
+    assert not app.exception
+    assert taxpayer_input(app, "canonical_a").value == "Sophie de Vries"
+    assert taxpayer_input(app, "aliases_b").value == "D. Jansen"
+    assert not any(button.key.startswith(("save_field_", "discard_field_")) for button in app.button)
+    taxpayer_input(app, "canonical_a").set_value("Alex Example").run()
+    taxpayer_input(app, "aliases_b").set_value("Other nickname").run()
+    app.button(key="save_field_aliases_b").click().run()
+    assert not app.exception
+    assert load_settings().partners.partner_a == "Alex Example"
+    assert "Other nickname" in load_settings().partners.partner_b_aliases
+
+
+def test_delete_child_unassigns_documents_and_does_not_redetect(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from wr.config import ChildSettings, save_settings
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_settings()
+    save_settings(cfg, replace(cfg.partners, children=(ChildSettings("Charlie Example", ("Charlie",)), ChildSettings("Robin Example"))))
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute("UPDATE account_year_facts SET holder_names = '[\"Charlie\"]' WHERE account_key = 'NL22RABO0002345678'")
+    app = AppTest.from_file(str(APP)).run()
+    taxpayer_input(app, "canonical_a").set_value("Unsaved parent").run()
+    taxpayer_input(app, "canonical_child_1").set_value("Unsaved child").run()
+    app.button(key="delete_child_0").click().run()
+    assert not app.exception
+    cfg = load_settings()
+    assert [child.canonical_name for child in cfg.partners.children] == ["Robin Example"]
+    assert {"Charlie Example", "Charlie"} <= set(cfg.partners.unassigned_names)
+    assert next(select for select in app.selectbox if select.label == "Charlie").value == "unassigned"
+    assert taxpayer_input(app, "canonical_child_0").value == "Unsaved child"
+    assert taxpayer_input(app, "canonical_a").value == "Unsaved parent"
+    assert cfg.partners.partner_a == "Sophie de Vries"
+    restarted = AppTest.from_file(str(APP)).run()
+    assert len([button for button in restarted.button if button.label == "Delete child"]) == 1
+    with connect(cfg.resolved_db_path) as conn:
+        assert conn.execute("SELECT holder_names FROM account_year_facts WHERE account_key = 'NL22RABO0002345678'").fetchone()[0] == '["Charlie"]'
+
+
+def test_delete_unsaved_child_and_discard_new_child_draft(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    app = AppTest.from_file(str(APP)).run()
+    app.button(key="add_child").click().run()
+    taxpayer_input(app, "canonical_child_0").set_value("Charlie Example").run()
+    app.button(key="add_child").click().run()
+    taxpayer_input(app, "canonical_child_1").set_value("Robin Example").run()
+    app.button(key="delete_child_0").click().run()
+    assert not app.exception
+    assert taxpayer_input(app, "canonical_child_1").value == "Robin Example"
+    app.button(key="add_child").click().run()
+    assert taxpayer_input(app, "canonical_child_2").value == ""
+    app.button(key="discard_field_canonical_child_1").click().run()
+    assert not app.exception
+    assert not any(button.label == "Delete child" for button in app.button)
+    assert load_settings().partners.children == ()
+
+
+def test_child_columns_keep_half_width_and_section_headers_match(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from wr.config import ChildSettings, save_settings
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_settings()
+    save_settings(cfg, replace(cfg.partners, children=(ChildSettings("Charlie Example"),)))
+    app = AppTest.from_file(str(APP)).run()
+    assert [heading.value for heading in app.tabs[2].subheader] == [
+        "Taxpayers", "Minor children (assets attributed to parents)", "Names found in documents",
+    ]
+    for count in (1, 2, 3):
+        columns = app.tabs[2].get("column")
+        child_columns = columns[2:]
+        assert len(child_columns) == 2 * ((count + 1) // 2)
+        assert all(column.proto.weight == 0.5 for column in child_columns)
+        assert len(child_columns[-1].text_input) == (0 if count % 2 else 1)
+        if count < 3:
+            app.button(key="add_child").click().run()
+        assert not app.exception
+
+
 def test_children_dynamic_editor_assignments_and_purple_overview(tmp_path, monkeypatch):
     from dashboard.app import _canonical_name_map, _holder_label, _owner_colors, _owner_style
     from wr.config import ChildSettings, PartnerSettings, save_settings
@@ -34,7 +138,7 @@ def test_children_dynamic_editor_assignments_and_purple_overview(tmp_path, monke
     assert "Child Gamma Example" in select.options
     taxpayer_input(app, "canonical_child_2").set_value("Charlie Example").run()
     assert "Charlie Example" in next(select for select in app.selectbox if select.label == "Nickname Gamma").options
-    app.button(key="save_settings").click().run()
+    save_taxpayer_edits(app)
     assert not app.exception
     cfg = load_settings()
     assert cfg.partners.children[2].canonical_name == "Charlie Example"
@@ -47,7 +151,7 @@ def test_children_dynamic_editor_assignments_and_purple_overview(tmp_path, monke
     assert child_row["Allocation"] == "Joint"
     app.button(key="add_child").click().run()
     taxpayer_input(app, "canonical_child_3").set_value("Robin Example")
-    app.button(key="save_settings").click().run()
+    save_taxpayer_edits(app)
     assert not app.exception
     assert len(load_settings().partners.children) == 4
     restarted = AppTest.from_file(str(APP)).run()
@@ -60,7 +164,7 @@ def test_settings_can_be_saved_before_first_import(tmp_path, monkeypatch):
     assert not app.exception
     taxpayer_input(app, "canonical_a").set_value("Sophie de Vries")
     taxpayer_input(app, "aliases_a").set_value("Fie\nS. de Vries")
-    app.button(key="save_settings").click().run()
+    save_taxpayer_edits(app)
     assert not app.exception
     assert load_settings().partners.partner_a == "Sophie de Vries"
     assert load_settings().partners.partner_a_aliases == ("Fie", "S. de Vries")
@@ -85,7 +189,7 @@ def test_detected_name_assignment_updates_results_and_survives_restart(tmp_path,
     assert nickname.value == "unassigned"
     nickname.set_value("a")
     taxpayer_input(app, "canonical_a").set_value("Sophie Example")
-    app.button(key="save_settings").click().run()
+    save_taxpayer_edits(app)
     assert not app.exception
     assert load_settings().partners.partner_a == "Sophie Example"
     assert "Fie" in load_settings().partners.partner_a_aliases
@@ -98,7 +202,7 @@ def test_detected_name_assignment_updates_results_and_survives_restart(tmp_path,
     assert not restarted.exception
     assert next(select for select in restarted.selectbox if select.label == "Fie").value == "a"
     next(select for select in restarted.selectbox if select.label == "Fie").set_value("unassigned")
-    restarted.button(key="save_settings").click().run()
+    save_taxpayer_edits(restarted)
     assert not restarted.exception
     assert "Fie" in load_settings().partners.unassigned_names
 
@@ -112,7 +216,7 @@ def test_document_folder_controls_are_in_documents_tab(tmp_path, monkeypatch):
     assert app.tabs[1].text_input(key="document_folder").label == "Document folder"
     assert [button.label for button in app.tabs[1].button] == ["Save folder", "🗂️ Browse Folders", "Import documents"]
     assert taxpayer_input(app.tabs[2], "canonical_a").label == "Canonical name"
-    assert not app.tabs[2].button(key="save_settings").disabled
+    assert not any(button.key.startswith("save_field_") for button in app.tabs[2].button)
     assert not app.tabs[0].text_input
     assert not app.get("file_uploader")
 
@@ -164,7 +268,7 @@ def test_assignment_options_show_canonical_names_and_update_on_rename(tmp_path, 
     spelling = next(select for select in app.selectbox if select.label == "Sophie de Vries")
     assert spelling.options == ["Unassigned", "Sophie Example", "Daan Jansen"]
     assert spelling.value == "a"
-    app.button(key="save_settings").click().run()
+    save_taxpayer_edits(app)
     assert not app.exception
     assert load_settings().partners.partner_a == "Sophie Example"
 
@@ -187,7 +291,7 @@ def test_folder_path_saves_without_changing_taxpayers(tmp_path, monkeypatch):
     restarted = AppTest.from_file(str(APP)).run()
     assert restarted.text_input(key="document_folder").value == str(folder)
     taxpayer_input(restarted, "canonical_a").set_value("Sophie Example")
-    restarted.button(key="save_settings").click().run()
+    save_taxpayer_edits(restarted)
     assert load_settings().import_root == folder
 
 
@@ -345,7 +449,7 @@ def test_storage_and_institution_options_persist_across_tabs_and_sessions(tmp_pa
     app.text_input(key="document_folder").set_value(str(tmp_path))
     app.button(key="save_folder").click().run()
     taxpayer_input(app, "canonical_a").set_value("Sophie Example")
-    app.button(key="save_settings").click().run()
+    save_taxpayer_edits(app)
     assert not app.exception
     assert load_settings().db_path == loaded.db_path
     assert load_settings().institution_options == loaded.institution_options
