@@ -190,6 +190,26 @@ def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_pat
     assert "synthetic extraction failure" in (tmp_path / "smoke-error.log").read_text()
 
 
+def test_desktop_sidebar_controls_open_storage_and_stop_without_launcher_window(tmp_path, monkeypatch):
+    import sys
+    from pathlib import Path
+    from streamlit.testing.v1 import AppTest
+    prepare_workspace(tmp_path)
+    actions = []
+    monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
+    monkeypatch.setattr("wr.desktop.desktop_request", lambda action: actions.append(action) or {})
+    monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
+    assert not app.exception
+    app.sidebar.button(key="open_local_data").click().run()
+    assert actions == ["data"]
+    assert not app.exception
+    app.sidebar.button(key="exit_application").click().run()
+    assert actions == ["data", "stop"]
+    assert not app.exception
+    assert any("afgesloten" in message.value for message in app.info)
+
+
 def test_instance_lock_contention_from_another_process_is_not_a_startup_error(tmp_path):
     import subprocess
     import sys

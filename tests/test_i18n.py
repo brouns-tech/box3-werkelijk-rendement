@@ -1,5 +1,6 @@
 import ast
 import io
+import json
 import sqlite3
 import zipfile
 from pathlib import Path
@@ -153,65 +154,65 @@ def test_upstream_child_editor_survives_language_switch_and_reset(tmp_path, monk
 
 
 @pytest.mark.parametrize("verification_mode", [False, True])
-def test_native_launcher_updates_from_selector_and_dashboard_preference(tmp_path, monkeypatch, verification_mode):
+def test_hidden_supervisor_opens_browser_and_handles_native_actions(tmp_path, monkeypatch, verification_mode):
+    import threading
+    import time
     import tkinter as tk
-    from tkinter import ttk
+    from tkinter import filedialog, messagebox
     from wr import desktop
 
-    widgets = []
-
-    class Widget:
-        def __init__(self, *args, **kwargs):
-            self.options = kwargs
-            self.callback = None
-            widgets.append(self)
-
-        def pack(self, **kwargs):
-            pass
-
-        def config(self, **kwargs):
-            self.options.update(kwargs)
-
-        def bind(self, _, callback):
-            self.callback = callback
-
-    class Variable:
-        def __init__(self, value):
-            self.value = value
-
-        def set(self, value):
-            self.value = value
-
-        def get(self):
-            return self.value
+    opened = []
+    failures = []
+    worker = None
 
     class Window:
-        def title(self, value):
-            pass
+        hidden = False
+        destroyed = False
 
-        def geometry(self, value):
-            pass
+        def __init__(self):
+            self.callbacks = []
+
+        def withdraw(self):
+            self.hidden = True
+
+        def title(self, value):
+            assert self.hidden
 
         def protocol(self, *args):
             pass
 
         def destroy(self):
-            pass
+            self.destroyed = True
 
         def after(self, _, callback):
-            self.tick = callback
+            self.callbacks.append(callback)
 
         def mainloop(self):
-            selector = next(w for w in widgets if w.callback)
-            selector.options["textvariable"].set("English")
-            selector.callback(None)
-            assert remembered_language(tmp_path) == "en"
-            assert any(w.options.get("text") == "Open dashboard" for w in widgets)
-            # The dashboard writes the same preference file; the launcher polls it.
-            remember_language(tmp_path, "nl")
-            self.tick()
-            assert any(w.options.get("text") == "Dashboard openen" for w in widgets)
-            assert selector.options["textvariable"].get() == "Nederlands"
+            nonlocal worker
+            assert self.hidden
+            remember_language(tmp_path, "en")
+            self.callbacks.pop(0)()
+            instance = json.loads((tmp_path / "instance.json").read_text())
+
+            def request_actions():
+                try:
+                    request = lambda action: desktop.control_request(instance["endpoint"], instance["token"], action, 5)
+                    assert request("folder") == {"folder": str(tmp_path)}
+                    assert request("data") == {"opened": True}
+                    assert request("stop") == {"stopping": True}
+                except Exception as exc:
+                    failures.append(exc)
+
+            worker = threading.Thread(target=request_actions)
+            worker.start()
+            deadline = time.monotonic() + 10
+            while not self.destroyed and time.monotonic() < deadline:
+                self.callbacks.pop(0)()
+                time.sleep(0.01)
+            assert self.destroyed
+            worker.join(timeout=5)
+            assert not failures
+            assert not worker.is_alive()
 
     class Child:
         returncode = None
@@ -238,17 +239,40 @@ def test_native_launcher_updates_from_selector_and_dashboard_preference(tmp_path
         def open(self, *args, **kwargs):
             return self
 
+    def folder_picker(**kwargs):
+        assert kwargs["parent"].hidden
+        assert kwargs["title"] == "Select folder"
+        return str(tmp_path)
+
+    def unexpected_widget(*args, **kwargs):
+        pytest.fail("The supervisor must not create persistent widgets")
+
+    def unexpected_error(*args, **kwargs):
+        pytest.fail("Healthy startup must not show an error dialog")
+
     monkeypatch.setattr(tk, "Tk", Window)
     for name in ("Frame", "Label", "Button"):
-        monkeypatch.setattr(tk, name, Widget)
-    monkeypatch.setattr(tk, "StringVar", Variable)
-    monkeypatch.setattr(ttk, "Combobox", Widget)
+        monkeypatch.setattr(tk, name, unexpected_widget)
+    monkeypatch.setattr(filedialog, "askdirectory", folder_picker)
+    monkeypatch.setattr(messagebox, "showerror", unexpected_error)
     monkeypatch.setattr(desktop, "app_data_dir", lambda: tmp_path)
     monkeypatch.setattr(desktop.sys, "argv", ["desktop", "--verify-launcher"] if verification_mode else ["desktop"])
-    monkeypatch.setattr(desktop.subprocess, "Popen", lambda *args, **kwargs: Child())
-    def external_open(_target):
-        if verification_mode:
-            pytest.fail("Verification must not launch host applications")
-    monkeypatch.setattr(desktop, "open_external", external_open)
-    monkeypatch.setattr(desktop.urllib.request, "build_opener", lambda *args: Health())
+    child = Child()
+    monkeypatch.setattr(desktop.subprocess, "Popen", lambda *args, **kwargs: child)
+    monkeypatch.setattr(desktop, "open_external", opened.append)
+    # Replace only the health check opener; control_request still uses real IPC.
+    real_opener = desktop.urllib.request.build_opener
+    class Opener:
+        def open(self, target, **kwargs):
+            if isinstance(target, str):
+                return Health()
+            return real_opener(desktop.urllib.request.ProxyHandler({})).open(target, **kwargs)
+    monkeypatch.setattr(desktop.urllib.request, "build_opener", lambda *args: Opener())
     assert desktop.main() == 0
+    assert child.returncode == 0
+    assert not (tmp_path / "instance.json").exists()
+    if verification_mode:
+        assert opened == []
+    else:
+        assert opened[0].startswith("http://127.0.0.1:")
+        assert opened[1] == str(tmp_path)

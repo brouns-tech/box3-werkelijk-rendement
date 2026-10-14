@@ -67,9 +67,6 @@ def render(cfg, language: str):
             job = ImportJob()
             st.session_state.import_job = job
             threading.Thread(target=job.run, args=(folder, cfg), daemon=True).start()
-    if st.button(t("Exit application"), disabled=active, key="exit_application"):
-        desktop_request("stop")
-        st.stop()
     if job:
         _render_job(job, language)
         if not job.done.is_set() or job.error or job.busy:

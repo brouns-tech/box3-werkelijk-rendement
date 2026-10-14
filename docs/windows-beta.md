@@ -3,18 +3,18 @@
 This beta reconstructs Box 3 returns from supported financial documents.
 Processing takes place locally. The application is free and open-source.
 
-Use **Language / Taal** in the launcher or dashboard to choose **Nederlands** or
+Use **Language / Taal** in the dashboard to choose **Nederlands** or
 **English**. The desktop starts in Dutch unless a language preference has been
 saved. The CLI-launched dashboard defaults to English. This guide uses English
 labels and includes Dutch equivalents where helpful.
 
 1. Extract the entire ZIP into a folder of your choice.
 2. Open `WerkelijkRendement.exe`. Keep its accompanying `_internal` folder.
-3. The launcher opens the dashboard in your default browser.
+3. The application opens the dashboard in your default browser, with no launcher window.
 4. Open **Documents** (`Documenten`), choose **Select folder** (`Map selecteren`), then **Scan documents and calculate**
    (`Documenten scannen en berekenen`).
 5. Review import messages, document coverage, calculations, and the audit export.
-6. Close the application using **Exit** (`Afsluiten`) in the launcher window.
+6. Use **Exit application** (`Applicatie afsluiten`) in the dashboard sidebar to stop the application.
    Closing the browser tab alone does not stop the application.
 
 You do not need to install Python or Poppler. The intended platforms are Windows
@@ -29,15 +29,14 @@ remain stored. Source PDFs are not modified.
 ## Local data
 
 Data is stored in `%LOCALAPPDATA%\WerkelijkRendement`. Use **Open local data**
-(`Lokale gegevens openen`) in the launcher to locate this folder. The database,
+(`Lokale gegevens openen`) in the dashboard sidebar to locate this folder. The database,
 configuration, folder preference, and logs are retained across updates and after
 removing the extracted application. They can contain personal and financial
 information. The application does not encrypt the database. Your language
 preference is saved separately in `language.json` in this folder.
 
 Changing language in the dashboard updates its controls, tables, and amount
-formatting immediately. The launcher follows the saved preference automatically.
-If you change language in the launcher, reload the dashboard to apply it there.
+formatting immediately. Native dialogs follow the saved preference automatically.
 Changing language does not change stored financial facts or calculations.
 Source document text, technical parser errors, and audit exports retain their
 original content. Windows system dialogs and Streamlit's built-in controls may

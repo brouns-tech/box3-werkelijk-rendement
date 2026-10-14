@@ -42,15 +42,17 @@ for the validation record and release gates.
 
 ## Using the application
 
-The launcher opens the dashboard in your default browser. Use **Language / Taal**
+The application opens the dashboard in your default browser without a launcher window. Use **Language / Taal**
 to select **Nederlands** or **English**. Open **Documents**, choose **Select folder**, then **Scan
 documents and calculate**. Review unsupported files, document coverage, and the
 underlying source evidence before relying on a result. You can cancel importing
 after the current document. Original documents are never modified.
 
-A second launch opens the existing dashboard. Use **Exit** in the launcher to
-stop the local server. Closing the browser tab alone leaves the launcher running.
-**Open local data** opens your file manager. No application service is installed.
+A second launch opens the existing dashboard. Use **Exit application** in the
+dashboard sidebar to stop the local server. Closing the browser tab alone leaves
+the application running in the background. **Open local data** in the sidebar
+opens your file manager. Native dialogs appear only for folder selection or errors.
+No application service is installed.
 
 Data is stored in `$XDG_DATA_HOME/WerkelijkRendement`, normally
 `~/.local/share/WerkelijkRendement`. The database, configuration, selected folder,

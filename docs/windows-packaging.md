@@ -44,9 +44,10 @@ been found; retain it. See the [PyInstaller spec documentation](https://pyinstal
    Startup failures retry with another port (up to three attempts); readiness and
    a timeout govern browser launch. A random per-launch Streamlit URL prefix also
    prevents accepting another service's health response after a port race.
-3. A visible native control window opens the browser, opens local storage, and
-   shuts down the managed server. Closing the browser alone leaves this window
-   running. Normal shutdown waits for the child and escalates if needed. A child
+3. A hidden native supervisor opens the browser and handles on-demand dialogs.
+   Dashboard sidebar controls open local storage and stop the application.
+   Closing the browser alone leaves the supervisor running. Normal shutdown
+   waits for the child and escalates if needed. A child
    watches its supervisor's process lifetime so forced supervisor termination
    does not leave a server running.
 4. The native folder dialog executes on the supervisor's Tk main thread, requested
@@ -140,7 +141,7 @@ On Linux it checks the frozen server directly without requiring a graphical desk
 - Partner configuration still uses the persistent TOML file; an accessible editor
   and fuller Dutch onboarding belong to Phase 2. No tax rules were changed.
 - Provide a UI for export/reset of the entire workspace. For now users can locate
-  storage from the native launcher, download audit exports, and delete local data
+  storage from the dashboard sidebar, download audit exports, and delete local data
   after shutting down (see the user guide).
 - Installer/signing follow ZIP validation. Consider a per-user Inno Setup install
   without administrator elevation. Compare signing providers' current costs only
@@ -180,8 +181,8 @@ language; the developer CLI dashboard defaults to English. The selected language
 is stored atomically in a separate `language.json` beside the configuration,
 preserving the existing folder preferences and financial database.
 
-The launcher polls this shared preference to update its labels. Dashboard changes
-apply on rerun; changing language in the launcher requires a dashboard reload.
+The hidden supervisor polls this shared preference for native dialogs.
+Dashboard changes apply on rerun.
 Each browser session formats amounts independently, without a process-wide locale
 change. Import jobs retain their progress and cancellation state during switching.
 Known decision, coverage, document-type, and calculation-method labels are
@@ -191,8 +192,8 @@ for complete coverage explicitly refers to available statements.
 Evidence identifiers, names, account labels, raw source/parser errors, and audit
 exports are not translated. System-owned Windows dialogs and Streamlit built-in
 controls may retain their own language settings. Documentation remains English.
-Automated tests exercise both languages, persisted settings, native label updates
-with a test window, import cancellation after switching, and an unchanged financial
+Automated tests exercise both languages, persisted settings, on-demand native dialog language,
+import cancellation after switching, and an unchanged financial
 database. Native Windows rendering still requires the Windows verification gate.
 
 Localization validation on Linux: 76 tests passed, including unchanged audit CSV
@@ -231,3 +232,16 @@ At commit `17acf51`, the [Windows workflow](https://github.com/brouns-tech/box3-
 passed regression tests, executable creation, frozen import/launcher verification,
 versioned ZIP/checksum generation, and artifact upload. This resolves the reported
 build failure; clean Windows 10/11 checks remain a separate public-release gate.
+
+### Browser-first startup
+
+The supervisor withdraws its Tk root before starting the server, so normal launch
+opens only the browser. Native folder and error dialogs remain available on demand.
+Dashboard sidebar controls open the data directory and stop the application;
+closing the browser tab leaves it running, and launching again reopens the same
+instance. The supervisor retains the authenticated loopback API, instance lock,
+startup timeout, port retries, and parent watchdog.
+
+The local regression suite passes 134 tests, including hidden-root startup,
+authenticated folder/data/stop requests, dialog language changes, sidebar actions,
+and suppression of external applications during frozen verification.

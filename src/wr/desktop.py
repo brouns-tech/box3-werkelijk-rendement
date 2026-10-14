@@ -15,9 +15,9 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from wr.desktop_storage import (app_data_dir, app_version, prepare_workspace, selected_folder,
-                                remember_language, remembered_language)
-from wr.i18n import LANGUAGES, translator
+from wr.desktop_storage import (app_data_dir, prepare_workspace, selected_folder,
+                                remembered_language)
+from wr.i18n import translator
 from wr.desktop_platform import open_external
 
 
@@ -74,7 +74,7 @@ def make_control_server(token: str, dispatch):
                 self.send_error(403)
                 return
             action = self.path.removeprefix("/")
-            if action not in {"status", "folder", "stop"}:
+            if action not in {"status", "folder", "data", "stop"}:
                 self.send_error(404)
                 return
             try:
@@ -188,14 +188,15 @@ def main() -> int:
         return 0
 
     import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
+    from tkinter import filedialog, messagebox
     # CI exercises the real launcher lifecycle without starting host applications
     # that can retain a browser profile inside its isolated LOCALAPPDATA directory.
     launch_external = (lambda _target: None) if sys.argv[1:] == ["--verify-launcher"] else open_external
 
     window = tk.Tk()
-    window.title(f"Werkelijk Rendement {app_version()}")
-    window.geometry("560x310")
+    # Keep Tk alive for on-demand native dialogs without mapping a launcher window.
+    window.withdraw()
+    window.title("Werkelijk Rendement")
     directory = app_data_dir()
     language = remembered_language(directory)
     t = translator(language)
@@ -244,7 +245,7 @@ def main() -> int:
                 except (OSError, ValueError, KeyError):
                     pass
                 time.sleep(0.2)
-            raise RuntimeError(t("Another instance is still starting. Close it through its launcher and try again."))
+            raise RuntimeError(t("Another instance is still starting. Wait and reopen the application. See {log}.", log=directory / "server.log"))
 
         url = ""
         token = secrets.token_urlsafe(32)
@@ -265,50 +266,12 @@ def main() -> int:
                        "WR_PARENT_PID": str(os.getpid())}
         environment["WR_DASHBOARD_PATH"] = dashboard_path
         # Do not inherit a repository's Streamlit configuration.
-        language_frame = tk.Frame(window)
-        language_frame.pack(pady=8)
-        tk.Label(language_frame, text="Language / Taal").pack(side="left", padx=8)
-        language_choice = tk.StringVar(value=LANGUAGES[language])
-        language_selector = ttk.Combobox(language_frame, textvariable=language_choice,
-                                         values=list(LANGUAGES.values()), state="readonly", width=16)
-        language_selector.pack(side="left")
-        language_hint = tk.Label(window, text=t("Refresh the dashboard after changing language here."))
-        language_hint.pack()
-        status_label = tk.Label(window, text=t("Starting dashboard…"), wraplength=520)
-        status_label.pack(pady=15)
         def open_target(target):
             try:
                 launch_external(str(target))
             except OSError as exc:
                 messagebox.showerror("Werkelijk Rendement", t("Could not open {target}: {error}", target=target, error=exc), parent=window)
 
-        open_button = tk.Button(window, text=t("Open dashboard"), command=lambda: ready and open_target(url))
-        open_button.pack()
-        data_button = tk.Button(window, text=t("Open local data"), command=lambda: open_target(directory))
-        data_button.pack(pady=5)
-        exit_button = tk.Button(window, text=t("Exit"), command=shutdown)
-        exit_button.pack()
-
-        def update_language(value):
-            nonlocal language, t
-            language = value
-            t = translator(language)
-            language_choice.set(LANGUAGES[language])
-            language_hint.config(text=t("Refresh the dashboard after changing language here."))
-            status_label.config(text=t("Dashboard running. Close this window to exit.") if ready else t("Starting dashboard…"))
-            open_button.config(text=t("Open dashboard"))
-            data_button.config(text=t("Open local data"))
-            exit_button.config(text=t("Exit"))
-
-        def choose_language(_event):
-            value = next(code for code, label in LANGUAGES.items() if label == language_choice.get())
-            try:
-                remember_language(directory, value)
-                update_language(value)
-            except OSError as exc:
-                messagebox.showerror("Werkelijk Rendement", t("Could not save language preference: {error}", error=exc), parent=window)
-
-        language_selector.bind("<<ComboboxSelected>>", choose_language)
         window.protocol("WM_DELETE_WINDOW", shutdown)
         attempts = 0
         deadline = 0.0
@@ -323,11 +286,12 @@ def main() -> int:
             deadline = time.monotonic() + 40
 
         def tick():
-            nonlocal ready
+            nonlocal ready, language, t
             try:
                 saved_language = remembered_language(directory)
                 if saved_language != language:
-                    update_language(saved_language)
+                    language = saved_language
+                    t = translator(language)
                 if child.poll() is not None:
                     if not ready and attempts < 3:
                         start_child()
@@ -340,7 +304,6 @@ def main() -> int:
                             healthy = response.read() == b"ok"
                         if healthy and child.poll() is None:
                             ready = True
-                            status_label.config(text=t("Dashboard running. Close this window to exit."))
                             open_target(url)
                     except OSError:
                         pass
@@ -351,6 +314,9 @@ def main() -> int:
                     if action == "folder":
                         folder = filedialog.askdirectory(parent=window, title=t("Select folder"), initialdir=selected_folder(directory) or str(Path.home()), mustexist=True)
                         response.put({"folder": folder or None})
+                    elif action == "data":
+                        open_target(directory)
+                        response.put({"opened": True})
                     else:
                         response.put({"stopping": True})
                         window.after(100, shutdown)

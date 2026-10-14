@@ -133,6 +133,17 @@ def main() -> None:
     st.caption(t("Database: `{name}`", name=db_path.name))
 
     job = st.session_state.get("import_job")
+    if os.environ.get("WR_CONTROL_URL"):
+        from wr.desktop import desktop_request
+        with st.sidebar:
+            st.caption(t("Closing the browser tab leaves the application running. Use Exit application to stop it."))
+            if st.button(t("Open local data"), key="open_local_data"):
+                desktop_request("data")
+            active = job is not None and not job.done.is_set()
+            if st.button(t("Exit application"), disabled=active, key="exit_application"):
+                desktop_request("stop")
+                st.info(t("The application is stopping. You can close this browser tab."))
+                st.stop()
     if os.environ.get("WR_CONTROL_URL") and job is not None and not job.done.is_set():
         documents_ui(cfg)
         st.stop()
