@@ -29,7 +29,8 @@ for platform requirements and troubleshooting.
 
 1. **Documents:** choose **Select folder**, then **Scan documents and calculate**.
    PDFs in subfolders are included; filenames do not matter. Review recognized,
-   unsupported, and failed imports. Your original documents are never modified.
+   unsupported, and failed imports. **All processing stays on your computer—nothing
+   is uploaded or parsed by an LLM.** Your original documents are never modified.
 2. **Taxpayers:** review detected names and their assignments, aliases, and any
    suggested minor children. Correct mistaken matches and leave uncertain names
    unassigned. Two taxpayer profiles do not establish fiscal partnership.
