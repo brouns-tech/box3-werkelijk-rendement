@@ -5,6 +5,10 @@ Dutch/English interface, and audit exports as the Windows application.
 Python and Poppler are bundled or unnecessary; no separate installation of either
 is required.
 
+After an extraction update, scan the saved document folder again. Older imports
+are reprocessed with the shared PDFium backend; taxpayer settings are retained.
+The comparison is withheld until older parsed documents have been refreshed.
+
 ## Download formats
 
 **AppImage** is the main single-file download. Make it executable using your file

@@ -105,7 +105,6 @@ def test_child_command_uses_frozen_executable(monkeypatch, tmp_path):
 
 
 def test_native_pdf_import_and_audit_smoke_without_poppler(tmp_path, monkeypatch):
-    monkeypatch.setattr("wr.pdf.shutil.which", lambda _: None)
     smoke_test(tmp_path)
     result = json.loads((tmp_path / "smoke-result.json").read_text())
     assert result["parsers"] == 8
@@ -113,7 +112,6 @@ def test_native_pdf_import_and_audit_smoke_without_poppler(tmp_path, monkeypatch
 
 
 def test_cancel_between_documents_preserves_imported_data(tmp_path, monkeypatch):
-    monkeypatch.setattr("wr.pdf.shutil.which", lambda _: None)
     documents = tmp_path / "documents"
     documents.mkdir()
     synthetic_pdf(documents / "one.PDF")
@@ -163,7 +161,6 @@ def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch):
     documents = tmp_path / "statements"
     documents.mkdir()
     synthetic_pdf(documents / "statement.pdf")
-    monkeypatch.setattr("wr.pdf.shutil.which", lambda _: None)
     monkeypatch.setattr("dashboard.desktop_import.desktop_request", lambda _: {"folder": str(documents)})
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(config)])
@@ -192,7 +189,6 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
     synthetic_pdf(documents / "statement.pdf")
     remember_folder(tmp_path, str(documents))
     remember_language(tmp_path, "en")
-    monkeypatch.setattr("wr.pdf.shutil.which", lambda _: None)
     if already_imported:
         run_import(documents, load_settings(tmp_path).resolved_db_path)
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")

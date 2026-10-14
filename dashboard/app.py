@@ -19,6 +19,7 @@ from wr.money import subtract
 from wr.i18n import currency, coverage_details, status_label, translator
 from dashboard.localization import select_language
 from wr.portfolio import _fact_return, is_box3_fact
+from wr.import_pipeline import pending_reprocessing
 
 
 def _currency(value: float | None, language: str = "en") -> str:
@@ -168,6 +169,9 @@ def main() -> None:
 def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     t = translator(language)
     money = partial(_currency, language=language)
+    if pending := pending_reprocessing(conn):
+        st.warning(t("PDF extraction has been updated. Scan your document folder again to refresh {count} previously imported documents before reviewing the calculation.", count=pending))
+        return
 
     years = [
         r[0]

@@ -43,10 +43,10 @@ def amount_after_label(
     parser: Callable[[str], float | None] = parse_nl_amount,
 ) -> float | None:
     flexible_label = r"\s*".join(re.escape(character) for character in label)
-    match = re.search(rf"{flexible_label}\s*:?\s*(-?[\d\s.,]+)", text, re.I)
+    match = re.search(rf"{flexible_label}\s*:?\s*(-?[\d \t.,]+)", text, re.I)
     return parser(match.group(1).replace(" ", "")) if match else None
 
 
 def first_holder(text: str, pattern: str) -> list[str]:
     match = re.search(pattern, text, re.I)
-    return [match.group(1).strip()] if match else []
+    return [re.sub(r"[ \t]+", " ", match.group(1)).strip()] if match else []

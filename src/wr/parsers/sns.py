@@ -68,7 +68,7 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
     )
     for m in row.finditer(text):
         iban = normalize_iban(_clean_ocr_iban(m.group(1)))
-        label = re.sub(r"\s*\*.*$", "", m.group(2)).strip()
+        label = re.sub(r"[ \t]+", " ", re.sub(r"\s*\*.*$", "", m.group(2))).strip()
         start = parse_nl_amount(m.group(3))
         end = parse_nl_amount(m.group(4))
         paid = parse_nl_amount(m.group(5))
@@ -130,7 +130,7 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
     pattern = re.compile(
         r"^[ \t]*(?P<label>\S[^\n]*?)[ \t]{2,}(?P<holders>\S[^\n]*?)[ \t]{2,}"
         r"(?P<start>[\d.]+,\d{2})[ \t]{2,}(?P<end>[\d.]+,\d{2})[ \t]*$\n"
-        r"^\s*(?P<iban>NL\d{2}SNSB\d+)(?:\s+(?P<holder_tail>[^\n]+))?\s*$",
+        r"^[ \t]*(?P<iban>NL\d{2}SNSB\d+)(?:[ \t]+(?P<holder_tail>[^\n]+))?[ \t]*$",
         re.M,
     )
     for m in pattern.finditer(text):

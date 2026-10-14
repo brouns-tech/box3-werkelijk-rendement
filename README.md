@@ -44,8 +44,8 @@ and [format assessment and build instructions](docs/linux-packaging.md). Public
 distribution remains subject to CI and clean-desktop validation.
 
 - Python 3.10 or newer
-- Optional but recommended: Poppler's `pdftotext` executable for more reliable
-  layout-preserving extraction. The tool falls back to `pypdf`.
+- PDFium is installed with the Python package and bundled in desktop releases.
+  Both use the same layout-preserving extraction; Poppler is not required.
 
 ## Quickstart
 
