@@ -16,8 +16,8 @@ The application supports Dutch and English; these guides are written in English.
 3. [Review taxpayers](guide/taxpayers.md), name assignments, and partner evidence.
 4. [Inspect coverage, compare returns, and export the audit](guide/overview.md).
 
-No public release has been published yet. Python and separate PDF tools are
-unnecessary for desktop binaries.
+If the release list is empty, public binaries are not available yet. Python and
+separate PDF tools are unnecessary for desktop binaries.
 
 ## Check compatibility
 

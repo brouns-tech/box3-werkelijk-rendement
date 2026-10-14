@@ -129,3 +129,9 @@ AppImage/archive packaging, and both final-artifact GUI checks. The `Linux-beta`
 artifact contains the versioned AppImage, portable archive, and checksums. These
 are tested beta artifacts; manual clean-desktop/FUSE checks and the remaining
 license/network review still precede stable public distribution.
+
+## Automated publication
+
+The shared build workflow is also called by the version-tag Release workflow.
+See [Release publication](releases.md) for dry runs, prerequisites, and uploading
+both platforms' verified downloads to GitHub Releases.

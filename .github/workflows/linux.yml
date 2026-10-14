@@ -1,9 +1,9 @@
 name: Linux application
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
-    tags: ['v*']
     branches: ['feat/**']
   pull_request:
     paths:
@@ -15,6 +15,7 @@ on:
       - 'docs/development/linux-builds.md'
       - 'pyproject.toml'
       - '.github/workflows/linux.yml'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: read
