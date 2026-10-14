@@ -263,3 +263,9 @@ the progress fragment. This restores taxpayer widgets and updates the overview
 without a separate refresh button, while retaining the import summary and document
 outcomes. Progress polling stops after completion. Regression tests cover a single
 app-scope refresh, cancellation, and remembered-folder/duplicate-only scans.
+
+## Automated publication
+
+The shared build workflow is also called by the version-tag Release workflow.
+See [Release publication](releases.md) for dry runs, prerequisites, and uploading
+both platforms' verified downloads to GitHub Releases.

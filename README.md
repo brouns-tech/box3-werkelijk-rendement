@@ -20,8 +20,7 @@ No Python installation or separate PDF tools are needed.
   `.tar.gz` and open `AppRun`.
 
 The dashboard opens in your browser. Check the release notes and SHA-256 checksum
-for your download. **No public release has been published yet**; this is the
-intended download route once binaries are released.
+for your download. If the release list is empty, public binaries are not available yet.
 See the [Windows](docs/getting-started/windows.md) and [Linux](docs/getting-started/linux.md) guides
 for platform requirements and troubleshooting.
 
@@ -62,4 +61,5 @@ and audit exports contain sensitive information and are not encrypted by the app
 
 See [Contributing](CONTRIBUTING.md) for source installation, tests, and parser
 contributions, and the [CLI guide](docs/development/cli.md) for developer commands and synthetic
-demo data. Never submit real financial documents or personal data.
+demo data. See [release publication](docs/development/releases.md) for automated
+version-tag releases. Never submit real financial documents or personal data.

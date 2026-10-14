@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a release (select a version tag; otherwise this is a dry run)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate version, tag, and release notes
+        id: metadata
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          PUBLISH_REQUESTED: ${{ inputs.publish || false }}
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import os
+          import tomllib
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location('release_tools', 'packaging/prepare_release.py')
+          tools = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(tools)
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          if os.environ['PUBLISH_REQUESTED'] == 'true' and os.environ['REF_TYPE'] != 'tag':
+              raise ValueError('Publication requires selecting an existing version tag')
+          tag = os.environ['REF_NAME'] if os.environ['REF_TYPE'] == 'tag' else None
+          metadata = tools.release_metadata(version, tag)
+          notes = Path('docs/releases') / f'{version}.md'
+          if not notes.is_file() or not notes.read_text().strip():
+              raise ValueError(f'Add release notes at {notes} before building a release')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for key, value in metadata.items():
+                  output.write(f'{key}={value}\n')
+          PY
+
+  windows:
+    needs: metadata
+    uses: ./.github/workflows/windows.yml
+
+  linux:
+    needs: metadata
+    uses: ./.github/workflows/linux.yml
+
+  assets:
+    needs: [metadata, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-beta'
+          merge-multiple: true
+          path: artifacts
+      - name: Validate and assemble release downloads
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          python packaging/prepare_release.py --version "$VERSION" --artifacts artifacts \
+            --notes "docs/releases/$VERSION.md" --output release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release/
+          if-no-files-found: error
+
+  publish:
+    needs: [metadata, assets]
+    if: github.ref_type == 'tag' && (github.event_name == 'push' || inputs.publish)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release
+      - name: Publish verified downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          PRERELEASE: ${{ needs.metadata.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="Werkelijk Rendement $VERSION"
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' > existing-release.txt; then
+            if [[ "$(cat existing-release.txt)" == 'false' ]]; then
+              echo "Release $TAG is already published; existing downloads are unchanged."
+              exit 0
+            fi
+          else
+            gh release create "$TAG" --verify-tag --draft --title "$title" \
+              --notes-file release/RELEASE-NOTES.md --prerelease="$PRERELEASE"
+          fi
+          gh release upload "$TAG" release/* --clobber
+          latest=true
+          if [[ "$PRERELEASE" == 'true' ]]; then latest=false; fi
+          gh release edit "$TAG" --draft=false --prerelease="$PRERELEASE" --latest="$latest"

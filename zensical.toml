@@ -28,9 +28,11 @@ nav = [
     { "PDF extraction and migrations" = "development/pdf-extraction.md" },
     { "Windows builds" = "development/windows-builds.md" },
     { "Linux builds" = "development/linux-builds.md" },
+    { "Release publication" = "development/releases.md" },
     { "Documentation" = "development/documentation.md" },
   ] },
   { "Releases" = [
+    { "0.1.0 desktop beta" = "releases/0.1.0.md" },
     { "Windows beta candidate" = "releases/windows-beta.md" },
     { "Downloads" = "https://github.com/brouns-tech/box3-werkelijk-rendement/releases" },
   ] },
