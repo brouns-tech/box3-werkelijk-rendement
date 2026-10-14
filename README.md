@@ -54,22 +54,39 @@ This creates a temporary database with entirely synthetic financial data for
 Sophie de Vries and Daan Jansen, then opens the populated dashboard. Nothing is
 imported from your computer, and the demo data is removed when the process stops.
 
-### 3. Configure your workspace (optional)
+### 3. Set up your workspace in the dashboard
 
-No configuration file is required when you pass the statement directory to the
-import command. For persistent paths and other settings, start from the example:
+Run `wr dashboard` and open the **Documents** tab. Paste or type a
+**Document folder** path.
+Alternatively, **Browse Folders** opens a Streamlit Explorer dialog with clickable
+folders, search, and Back/Up navigation. Choose **Select** to fill in and save the path.
+For manual path edits, click **Save folder** beside the field, or **Import documents** to save and import
+in one step. PDFs in subfolders are included. No configuration file
+is required, and settings are available even before the first import.
 
-```bash
-cp config.example.toml config.toml
-```
+When no taxpayers are configured, the application suggests up to two identities
+from the taxpayer and account-holder names found in supported documents. It groups
+initials, first names, and small spelling differences where possible. A shared
+surname alone does not establish a match; ambiguous initials remain unassigned.
+Open the **Taxpayers** tab to review each detected spelling, change its assignment,
+rename taxpayers, and add aliases (including nicknames). Assignment dropdowns show the canonical
+names and update as you edit them. Additional names remain available for
+manual assignment. These are lexical guesses: fiscal partnership and allocations
+are still taken from each year's tax return.
 
-Relative database paths are resolved from the configuration file. Use a different
-file with `wr --config /path/to/config.toml <command>`.
+Saved taxpayer settings and the document-folder path are stored locally in
+`.wr-settings.json` in the workspace. They are reused by the dashboard and CLI
+and survive `wr import --fresh`. Source names in the database are preserved.
+Settings are specific to the workspace you launch from.
+Imported data is kept in the database across sessions. Imports read files directly
+from the computer running the app; documents are not uploaded through the browser.
+Relative folder paths start at the workspace, and `~` refers to your home folder.
 
-Fiscal-partner configuration is optional. For an individual return, omit the
-`[partners]` section: the taxpayer name is read from the imported tax return.
-Configure `partner_a` only when aliases are needed to match differently formatted
-account-holder names. Add `partner_b` only for full-year fiscal partners.
+Existing `config.toml` files remain supported for compatibility and advanced
+database/institution options; see `config.example.toml`. Saved UI taxpayer
+settings take precedence. Relative database paths are resolved from the
+configuration file. Use another file with
+`wr --config /path/to/config.toml <command>`; its directory defines the workspace.
 
 ### 4. Import your documents
 
@@ -104,7 +121,7 @@ use `wr import --fresh` so previously admitted rows cannot affect the result.
 
 The SQLite database contains source paths, extracted PDF text excerpts, account
 identifiers, holder names, balances, and tax figures. Audit exports can also
-contain identifying financial data. `config.toml`, the default `data/` directory,
+contain identifying financial data. `config.toml`, `.wr-settings.json`, the default `data/` directory,
 SQLite files, and `exports/` are ignored by Git; rSAMw files before sharing them.
 
 For full-year fiscal partners, combined Box 3 return is allocated using the filed

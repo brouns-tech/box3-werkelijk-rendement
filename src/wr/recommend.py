@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 
 from wr.compare.base import BOX3_RATE_BY_YEAR, compare_partner
 from wr.config import PartnerSettings
+from wr.identities import effective_partners, identity_slot, similarity
 from wr.money import add, multiply, subtract
 from wr.models import CoverageStatus, PartnerTaxResult, Recommendation
 from wr.portfolio import _fact_return, is_box3_fact
@@ -22,7 +22,7 @@ def rebuild_recommendations(
         r[0] for r in conn.execute("SELECT DISTINCT tax_year FROM yearly_portfolio").fetchall()
     }
 
-    partner_cfg = partner_cfg or PartnerSettings()
+    partner_cfg = effective_partners(conn, partner_cfg)
 
     for year in sorted(y for y in years if y):
         for result in _results_for_year(conn, year, partner_cfg):
@@ -73,7 +73,6 @@ def _results_for_year(
     coverage = portfolio["coverage_status"] if portfolio else CoverageStatus.UNKNOWN.value
     known_actual = portfolio["known_combined_actual_return"] if portfolio else None
     missing = portfolio["missing_asset_summary"] if portfolio else "no portfolio"
-    preferred_a = partner_cfg.partner_a or "partner_a"
 
     if not returns:
         return [
@@ -102,7 +101,7 @@ def _results_for_year(
             1 if r["allocation_a"] is not None else 0,
             1 if r["filer_name"] and "unknown" not in (r["filer_name"] or "").lower() else 0,
             1 if r["filer_name"] and "datum" not in (r["filer_name"] or "").lower() else 0,
-            1 if _same_person(r["filer_name"], preferred_a) else 0,
+            1 if identity_slot(r["filer_name"], partner_cfg) == "a" else 0,
             abs(r["grondslag"] or 0),
         ),
     )
@@ -143,15 +142,19 @@ def _results_for_year(
         alloc_a = abs(primary["grondslag_a"]) / abs(g)
         alloc_b = abs(primary["grondslag_b"]) / abs(g)
 
-    if name_a and not _same_person(name_a, preferred_a) and _same_person(name_b, preferred_a):
+    fict_a, fict_b = primary["voordeel_a"], primary["voordeel_b"]
+    tax_a, tax_b = primary["box3_tax_a"], primary["box3_tax_b"]
+    if identity_slot(name_b, partner_cfg) == "a" and identity_slot(name_a, partner_cfg) != "a":
         name_a, name_b = name_b, name_a
         alloc_a, alloc_b = alloc_b, alloc_a
+        fict_a, fict_b = fict_b, fict_a
+        tax_a, tax_b = tax_b, tax_a
 
     incomplete = coverage != CoverageStatus.COMPLETE.value
     results = []
     for slot, name, ratio, fict, filed_tax in (
-        ("a", name_a, alloc_a, primary["voordeel_a"], primary["box3_tax_a"]),
-        ("b", name_b, alloc_b, primary["voordeel_b"], primary["box3_tax_b"]),
+        ("a", name_a, alloc_a, fict_a, tax_a),
+        ("b", name_b, alloc_b, fict_b, tax_b),
     ):
         allocated = (
             None if known_actual is None or ratio is None else multiply(known_actual, ratio)
@@ -175,7 +178,7 @@ def _results_for_year(
             PartnerTaxResult(
                 tax_year=year,
                 partner=slot,
-                partner_name=name or slot,
+                partner_name=getattr(partner_cfg, f"partner_{identity_slot(name, partner_cfg)}", None) or name or slot,
                 allocation_ratio=ratio,
                 allocated_actual_return=allocated,
                 fictitious_return=fict,
@@ -206,9 +209,7 @@ def _submission_rank(excerpt: str | None) -> int:
 def _same_person(a: str | None, b: str | None) -> bool:
     if not a or not b:
         return False
-    al = re.sub(r"[^a-z]", "", a.lower())
-    bl = re.sub(r"[^a-z]", "", b.lower())
-    return al in bl or bl in al
+    return similarity(a, b) >= 0.8
 
 
 def _individual_results(
@@ -221,7 +222,11 @@ def _individual_results(
         configured = [(chr(ord("a") + index), row["filer_name"]) for index, row in enumerate(returns)]
     results = []
     for slot, name in configured:
-        matching = [row for row in returns if _same_person(row["filer_name"], name)]
+        matching = [row for row in returns if (
+            identity_slot(row["filer_name"], partner_cfg) == slot
+            if any(n for _, n in partner_cfg.configured())
+            else _same_person(row["filer_name"], name)
+        )]
         tax_return = max(matching, key=lambda row: _submission_rank(row["raw_text_excerpt"])) if matching else None
         known_actual, coverage, missing = _individual_portfolio(conn, year, name, partner_cfg)
         if tax_return is None:
@@ -262,6 +267,7 @@ def _individual_portfolio(
     partner_cfg: PartnerSettings,
 ) -> tuple[float | None, str, str | None]:
     aliases = _aliases_for_filer(filer_name, partner_cfg)
+    filer_slot = identity_slot(filer_name, partner_cfg)
     facts = conn.execute(
         "SELECT * FROM account_year_facts WHERE tax_year = ? AND is_canonical = 1", (year,)
     ).fetchall()
@@ -272,15 +278,17 @@ def _individual_portfolio(
         if not is_box3_fact(fact):
             continue
         holders = json.loads(fact["holder_names"] or "[]")
-        matches = [_matches_alias(holder, aliases) for holder in holders]
+        matches = [identity_slot(holder, partner_cfg) == filer_slot if filer_slot else _matches_alias(holder, aliases) for holder in holders]
         if len(holders) == 1 and matches[0]:
             portion = 1.0
-        elif fact["ownership"] == "joint" and len(holders) >= 2:
+        elif fact["ownership"] == "joint" and len(holders) >= 2 and any(matches):
             portion = 0.5
         elif not holders:
             missing.append(f"{fact['issuer']} {fact['account_key']} (holder unknown)")
             continue
         else:
+            if any(identity_slot(holder, partner_cfg) is None for holder in holders):
+                missing.append(f"{fact['issuer']} {fact['account_key']} (holder needs review)")
             continue
         value = _fact_return(fact)
         if value is None:
@@ -308,8 +316,4 @@ def _aliases_for_filer(
 
 
 def _matches_alias(name: str, aliases: list[str]) -> bool:
-    normalized = re.sub(r"[^a-z]", "", name.lower())
-    return any(
-        alias and re.sub(r"[^a-z]", "", alias.lower()) in normalized
-        for alias in aliases
-    )
+    return any(similarity(name, alias) >= 0.8 for alias in aliases)

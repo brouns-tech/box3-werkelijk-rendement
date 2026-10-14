@@ -2,23 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
-import sqlite3
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from wr.config import PartnerSettings, load_config, resolve_db_path
+from wr.db import connect, init_db
+from wr.identities import identity_slot, observed_names, name_tokens
+from wr.recommend import rebuild_recommendations
+from dashboard.settings import documents_ui, taxpayers_ui
 from wr.export import create_audit_export
 from wr.money import subtract
 from wr.portfolio import _fact_return, is_box3_fact
-
-
-def _connect(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _currency(value: float | None) -> str:
@@ -58,7 +54,7 @@ def _decision_rows(results) -> list[dict[str, str]]:
 
 
 def _person_key(name: str | None) -> str:
-    return re.sub(r"[^a-z]", "", (name or "").lower())
+    return " ".join(name_tokens(name or ""))
 
 
 def _holder_label(value: str | None, canonical_names: dict[str, str] | None = None) -> str:
@@ -76,7 +72,7 @@ def _holder_label(value: str | None, canonical_names: dict[str, str] | None = No
             (
                 name
                 for alias, name in canonical_names.items()
-                if alias and (alias in holder_key or holder_key in alias)
+                if alias and alias == holder_key
             ),
             holder,
         )
@@ -127,12 +123,22 @@ def main() -> None:
     st.title("Werkelijk rendement — Box 3")
     st.caption(f"Database: `{db_path.name}`")
 
-    if not db_path.exists():
-        st.warning("Database not found. Run `wr import` first.")
-        return
+    conn = connect(db_path)
+    init_db(conn)
+    overview, documents, taxpayers = st.tabs(["Overview", "Documents", "Taxpayers"])
+    try:
+        with documents:
+            documents_ui(cfg)
+        with taxpayers:
+            partner_cfg = taxpayers_ui(cfg, conn)
+        with overview:
+            rebuild_recommendations(conn, partner_cfg)
+            _overview(conn, partner_cfg)
+    finally:
+        conn.close()
 
-    conn = _connect(db_path)
 
+def _overview(conn, partner_cfg: PartnerSettings) -> None:
     years = [
         r[0]
         for r in conn.execute(
@@ -147,7 +153,7 @@ def main() -> None:
             ).fetchall()
         ]
     if not years:
-        st.info("No tax years in database yet.")
+        st.info("No tax years in database yet. Open Documents to choose a folder and import documents.")
         return
 
     year = st.selectbox("Tax year", years, index=0)
@@ -167,8 +173,11 @@ def main() -> None:
         (year,),
     ).fetchall()
     owner_colors = {}
-    partner_cfg = cfg.partners
     canonical_names = _canonical_name_map(partner_cfg)
+    for name in observed_names(conn):
+        slot = identity_slot(name, partner_cfg)
+        if slot:
+            canonical_names[_person_key(name)] = getattr(partner_cfg, f"partner_{slot}")
     for slot, color in (("partner_a", "#1e3a5f"), ("partner_b", "#14532d")):
         canonical = getattr(partner_cfg, slot)
         for alias, name in canonical_names.items():

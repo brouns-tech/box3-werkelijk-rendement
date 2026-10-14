@@ -78,7 +78,7 @@ def run_import(
 
     report = ImportReport()
 
-    pdfs = sorted(root.rglob("*.pdf"))
+    pdfs = sorted(path for path in root.rglob("*") if path.is_file() and path.suffix.lower() == ".pdf")
     if limit is not None:
         pdfs = pdfs[:limit]
     for index, path in enumerate(pdfs, start=1):
@@ -212,6 +212,7 @@ def run_import(
     canonicalize_facts(conn, institution_options)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, partner_config)
+    conn.close()
 
     return report
 

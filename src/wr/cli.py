@@ -59,8 +59,10 @@ def main(argv: list[str] | None = None) -> int:
             db_path.unlink()
         root = Path(args.root) if args.root else cfg.import_root
         if not root:
-            print("Provide --root or set import_root in config.toml", file=sys.stderr)
+            print("Provide --root with the document folder, or import using the dashboard", file=sys.stderr)
             return 2
+        if not root.is_absolute() and not args.root:
+            root = cfg.project_root / root
         if not Path(root).is_dir():
             print(f"Import root is not a directory: {root}", file=sys.stderr)
             return 2

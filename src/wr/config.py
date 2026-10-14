@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +18,7 @@ class PartnerSettings:
     partner_b: str | None = None
     partner_a_aliases: tuple[str, ...] = field(default_factory=tuple)
     partner_b_aliases: tuple[str, ...] = field(default_factory=tuple)
+    unassigned_names: tuple[str, ...] = field(default_factory=tuple)
 
     def configured(self) -> tuple[tuple[str, str | None], ...]:
         return (("a", self.partner_a), ("b", self.partner_b))
@@ -48,11 +52,37 @@ def load_config(path: str | Path | None = None) -> Settings:
     if not candidate.is_file():
         if path is not None:
             raise FileNotFoundError(f"Config file not found: {candidate}")
-        return Settings(project_root=Path.cwd().resolve())
+        return _load_saved_settings(Settings(project_root=Path.cwd().resolve()))
 
     with candidate.open("rb") as config_file:
         raw = tomllib.load(config_file)
-    return _settings_from_mapping(raw, candidate.resolve())
+    return _load_saved_settings(_settings_from_mapping(raw, candidate.resolve()))
+
+
+def _load_saved_settings(settings: Settings) -> Settings:
+    path = settings.project_root / ".wr-settings.json"
+    if not path.exists():
+        return settings
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    saved = _settings_from_mapping(raw, path)
+    return replace(settings, partners=saved.partners, import_root=saved.import_root)
+
+
+def save_settings(settings: Settings, partners: PartnerSettings, import_root: str) -> None:
+    """Persist UI preferences independently of the database (including fresh imports)."""
+    from wr.identities import validate_partners
+
+    validate_partners(partners)
+    payload = {"partners": asdict(partners), "import_root": import_root.strip() or None}
+    path = settings.project_root / ".wr-settings.json"
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".wr-settings-", suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(payload, output, indent=2, ensure_ascii=False)
+            output.write("\n")
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def _settings_from_mapping(raw: dict[str, Any], config_path: Path) -> Settings:
@@ -72,6 +102,7 @@ def _settings_from_mapping(raw: dict[str, Any], config_path: Path) -> Settings:
             partner_b_aliases=_string_tuple(
                 partner_raw.get("partner_b_aliases"), "partners.partner_b_aliases"
             ),
+            unassigned_names=_string_tuple(partner_raw.get("unassigned_names"), "partners.unassigned_names"),
         ),
         institution_options={
             name: _mapping(options, f"institutions.{name}")

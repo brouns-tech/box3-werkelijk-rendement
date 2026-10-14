@@ -16,6 +16,8 @@ exports/
 .ruff_cache/
 .streamlit/secrets.toml
 config.toml
+.wr-settings.json
+.wr-settings-*.tmp
 .env
 .env.*
 !.env.example
