@@ -158,7 +158,6 @@ DUTCH = {
     "Stopped": "Gestopt",
     "Done": "Gereed",
     "{status}: {parsed} processed, {duplicate} duplicate, {skipped} unrecognized, {failed} failed.": "{status}: {parsed} verwerkt, {duplicate} dubbel, {skipped} niet herkend, {failed} mislukt.",
-    "Refresh dashboard": "Dashboard bijwerken",
     "File": "Bestand",
     "Status": "Status",
     "Institution": "Instelling",

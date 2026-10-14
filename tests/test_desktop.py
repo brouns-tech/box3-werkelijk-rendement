@@ -226,9 +226,42 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
     assert load_settings(tmp_path).partners == before
     assignments = [widget for widget in app.selectbox if "_identity_" in (widget.key or "")]
     assert assignments and all(widget.value is not None for widget in assignments)
-    app.button(key="refresh_dashboard").click().run()
-    assert not app.exception
+    assert not any(button.key == "refresh_dashboard" for button in app.button)
+    assert any(header.value == "Decision overview" for header in app.subheader)
+    assert job.editor_refreshed
     assert load_settings(tmp_path).import_root == documents
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_completed_import_fragment_requests_one_full_dashboard_refresh(monkeypatch, cancelled):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    requests = []
+    rerun = st.rerun
+
+    def track_rerun(**kwargs):
+        requests.append(kwargs)
+        rerun(**kwargs)
+
+    monkeypatch.setattr(st, "rerun", track_rerun)
+    app = AppTest.from_string(f'''
+import streamlit as st
+from dashboard.desktop_import import ImportJob, _render_job
+from wr.import_pipeline import ImportReport
+if "job" not in st.session_state:
+    job = ImportJob(report=ImportReport(cancelled={cancelled}))
+    job.done.set()
+    st.session_state.job = job
+    st.session_state.taxpayer_assignment_changed = True
+_render_job(st.session_state.job, "en")
+''').run()
+    assert not app.exception
+    assert requests == [{"scope": "app"}]
+    assert "taxpayer_assignment_changed" not in app.session_state
+    assert app.success[0].value.startswith("Stopped:" if cancelled else "Done:")
+    app.run()
+    assert not app.exception
+    assert requests == [{"scope": "app"}]
 
 
 def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_path, monkeypatch):

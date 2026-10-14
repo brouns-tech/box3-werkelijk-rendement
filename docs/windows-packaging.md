@@ -255,3 +255,11 @@ remains available. Editor generations discard stale save callbacks, and complete
 scans refresh taxpayer widgets once, including duplicate-only scans.
 Synthetic regression tests cover empty selections and English imports from a
 remembered folder without reopening the native folder picker.
+
+### Automatic refresh after import
+
+Completed and cancelled scans request one full Streamlit application rerun from
+the progress fragment. This restores taxpayer widgets and updates the overview
+without a separate refresh button, while retaining the import summary and document
+outcomes. Progress polling stops after completion. Regression tests cover a single
+app-scope refresh, cancellation, and remembered-folder/duplicate-only scans.
