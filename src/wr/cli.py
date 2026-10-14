@@ -118,6 +118,11 @@ def _launch_dashboard(workspace: Path, port: int) -> int:
         str(app),
         "--server.port",
         str(port),
+        "--server.address", "127.0.0.1",
+        "--browser.serverAddress", "127.0.0.1",
+        "--server.enableCORS", "true",
+        "--server.enableXsrfProtection", "true",
+        "--browser.gatherUsageStats", "false",
     ]
     cmd.extend(["--", "--workspace", str(workspace)])
     try:

@@ -26,8 +26,8 @@ def _is_supported_document(text: str) -> bool:
                 and "op het overzicht vindt u de gegevens van uw eigen" in text
             )
         )
-        and ("saldo 01-01" in text or "sa l do 01 - 01" in text)
-        and ("saldo 31-12" in text or "sa l do 31 - 12" in text)
+        and bool(re.search(r"s\s*a\s*l\s*d\s*o\s*0\s*1\s*-\s*0\s*1", text))
+        and bool(re.search(r"s\s*a\s*l\s*d\s*o\s*3\s*1\s*-\s*1\s*2", text))
     )
 
 

@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from wr.db import connect
+from wr.db import connect, init_db
 from wr.portfolio import _fact_has_actual_return, _fact_return, _is_excluded_box3_fact
+from wr.import_pipeline import pending_reprocessing
 
 
 def create_audit_export(
@@ -54,6 +55,11 @@ def create_audit_export(
     manifest = {
         "format": "werkelijk-rendement-audit",
         "version": 1,
+        "pending_pdf_reprocessing": pending_reprocessing(conn),
+        "document_processing_profiles": [
+            row[0] or "legacy-unknown"
+            for row in conn.execute("SELECT DISTINCT processing_profile FROM documents ORDER BY processing_profile")
+        ],
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "tax_years": selected_years,
         "files": {
@@ -97,6 +103,7 @@ def write_audit_export(
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with connect(db_path) as conn:
+        init_db(conn)
         payload = create_audit_export(conn, years)
     destination.write_bytes(payload)
     return destination
@@ -175,7 +182,7 @@ def _asset_and_fact_rows(
     assets = []
     facts = conn.execute(
         """
-        SELECT f.*, d.first_seen_path, d.doc_type, d.parse_status
+        SELECT f.*, d.first_seen_path, d.doc_type, d.parse_status, d.processing_profile
         FROM account_year_facts AS f
                  JOIN documents AS d ON d.content_sha256 = f.document_sha256
         WHERE f.tax_year = ?
@@ -351,6 +358,7 @@ def _asset_and_fact_rows(
                 else None,
                 "document_sha256": fact["document_sha256"],
                 "source_path": fact["first_seen_path"],
+                "processing_profile": fact["processing_profile"],
                 "document_type": fact["doc_type"],
                 "parse_status": fact["parse_status"],
                 "extra": fact["extra"],

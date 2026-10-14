@@ -1,0 +1,68 @@
+name: Windows application
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+    branches: ['feat/**']
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'dashboard/**'
+      - 'packaging/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+          cache: pip
+          cache-dependency-path: packaging/requirements.lock
+      - name: Install locked build dependencies
+        run: |
+          python -m pip install --require-hashes -r packaging/requirements.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+      - name: Run regressions and build one-folder executable
+        run: |
+          python -m pytest -q
+          python -m PyInstaller --noconfirm --clean packaging/desktop.spec
+      - name: Verify frozen import, launch, reuse and shutdown
+        run: python packaging/verify.py dist/WerkelijkRendement/WerkelijkRendement.exe
+      - name: Preserve failed verification diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-verification-logs
+          path: build/verification-logs/
+          if-no-files-found: ignore
+      - name: Package versioned ZIP and checksum
+        shell: pwsh
+        run: |
+          $version = python -c "from importlib.metadata import version; print(version('box3-werkelijk-rendement'))"
+          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") { throw 'Tag must match pyproject.toml version' }
+          Copy-Item -Recurse docs dist/WerkelijkRendement/docs
+          Copy-Item docs/getting-started/windows.md dist/WerkelijkRendement/README.md
+          Copy-Item packaging/requirements.lock dist/WerkelijkRendement/dependencies.lock
+          $archive = "WerkelijkRendement-$version-windows-x64.zip"
+          Compress-Archive -Path dist/WerkelijkRendement -DestinationPath "dist/$archive"
+          $hash = (Get-FileHash "dist/$archive" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $archive" | Set-Content -Encoding ascii "dist/$archive.sha256"
+          $notes = Get-Content -Raw docs/releases/windows-beta.md
+          $notes.Replace('(../development/', '(WerkelijkRendement/docs/development/') | Set-Content -Encoding utf8 dist/RELEASE-NOTES.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-beta
+          path: |
+            dist/*.zip
+            dist/*.sha256
+            dist/RELEASE-NOTES.md
+          if-no-files-found: error

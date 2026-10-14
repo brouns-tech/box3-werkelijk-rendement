@@ -1,0 +1,56 @@
+[project]
+site_name = "Werkelijk Rendement"
+site_description = "Local reconstruction of Dutch Box 3 returns from financial documents."
+site_url = "https://brouns-tech.github.io/box3-werkelijk-rendement/"
+repo_url = "https://github.com/brouns-tech/box3-werkelijk-rendement"
+repo_name = "brouns-tech/box3-werkelijk-rendement"
+docs_dir = "docs"
+site_dir = "site"
+nav = [
+  { "Home" = "index.md" },
+  { "Get started" = [
+    { "Windows" = "getting-started/windows.md" },
+    { "Linux" = "getting-started/linux.md" },
+  ] },
+  { "User guide" = [
+    { "Workflow" = "guide/index.md" },
+    { "Import documents" = "guide/importing.md" },
+    { "Review taxpayers" = "guide/taxpayers.md" },
+    { "Overview and audit export" = "guide/overview.md" },
+    { "Local data and privacy" = "guide/local-data.md" },
+  ] },
+  { "Reference" = [
+    { "Supported documents" = "reference/supported-documents.md" },
+  ] },
+  { "Development" = [
+    { "Contribute" = "development/contributing.md" },
+    { "Source installation and CLI" = "development/cli.md" },
+    { "PDF extraction and migrations" = "development/pdf-extraction.md" },
+    { "Windows builds" = "development/windows-builds.md" },
+    { "Linux builds" = "development/linux-builds.md" },
+    { "Documentation" = "development/documentation.md" },
+  ] },
+  { "Releases" = [
+    { "Windows beta candidate" = "releases/windows-beta.md" },
+    { "Downloads" = "https://github.com/brouns-tech/box3-werkelijk-rendement/releases" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+font = false
+features = ["navigation.tabs", "navigation.sections", "navigation.path", "navigation.footer", "content.code.copy", "search.highlight"]
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "material/brightness-7"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "material/brightness-4"
+toggle.name = "Switch to light mode"

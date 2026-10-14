@@ -18,9 +18,14 @@ exports/
 config.toml
 .wr-settings.json
 .wr-settings-*.tmp
+language.json
+language-*.tmp
 .env
 .env.*
 !.env.example
 *.log
 .DS_Store
 .idea/
+.venv-docs/
+site/
+.cache/

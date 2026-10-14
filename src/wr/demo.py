@@ -194,4 +194,5 @@ def _insert_demo_data(conn) -> None:
         )
         """
     )
+    conn.execute("UPDATE documents SET processing_profile = 'synthetic-demo-v1'")
     conn.commit()

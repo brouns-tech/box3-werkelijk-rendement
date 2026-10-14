@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+import sqlite3
 from typing import Callable
 
 from wr.classify import Classification, classify, guess_tax_year
@@ -19,7 +20,7 @@ from wr.db import (
 from wr.dedupe import canonicalize_facts
 from wr.parsers import parse_document
 from wr.parsers.base import InstitutionOptions
-from wr.pdf import extract_text, sha256_file
+from wr.pdf import extract_text, extraction_profile, sha256_file
 from wr.portfolio import rebuild_portfolio
 from wr.recommend import rebuild_recommendations
 
@@ -52,6 +53,7 @@ class ImportReport:
     skipped: int = 0
     failed: int = 0
     outcomes: list[DocumentImportOutcome] = field(default_factory=list)
+    cancelled: bool = False
 
     def add(self, outcome: DocumentImportOutcome, *, inserted: bool = False) -> None:
         self.seen += 1
@@ -63,6 +65,14 @@ class ImportReport:
 ProgressCallback = Callable[[DocumentImportOutcome], None]
 
 
+def pending_reprocessing(conn: sqlite3.Connection) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM documents WHERE parse_status = 'parsed' "
+        "AND (processing_profile IS NULL OR processing_profile NOT IN (?, 'synthetic-demo-v1'))",
+        (extraction_profile(),),
+    ).fetchone()[0]
+
+
 def run_import(
     root: str | Path,
     db_path: str | Path,
@@ -71,17 +81,39 @@ def run_import(
     partner_config: PartnerSettings | None = None,
     institution_options: InstitutionOptions | None = None,
     progress: ProgressCallback | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> ImportReport:
     root = Path(root)
+    if not root.is_dir():
+        raise ValueError(f"Import root is not a directory: {root}")
     conn = connect(db_path)
+    try:
+        return _run_import(root, conn, limit, partner_config, institution_options, progress, cancelled)
+    finally:
+        conn.close()
+
+
+def _run_import(
+    root: Path,
+    conn: sqlite3.Connection,
+    limit: int | None,
+    partner_config: PartnerSettings | None,
+    institution_options: InstitutionOptions | None,
+    progress: ProgressCallback | None,
+    cancelled: Callable[[], bool] | None,
+) -> ImportReport:
     init_db(conn)
 
     report = ImportReport()
+    profile = extraction_profile()
 
     pdfs = sorted(path for path in root.rglob("*") if path.is_file() and path.suffix.lower() == ".pdf")
     if limit is not None:
         pdfs = pdfs[:limit]
     for index, path in enumerate(pdfs, start=1):
+        if cancelled and cancelled():
+            report.cancelled = True
+            break
         inserted = False
         try:
             sha = sha256_file(path)
@@ -110,9 +142,9 @@ def run_import(
         )
         if not inserted:
             existing = conn.execute(
-                "SELECT parse_status FROM documents WHERE content_sha256 = ?", (sha,)
+                "SELECT parse_status, processing_profile FROM documents WHERE content_sha256 = ?", (sha,)
             ).fetchone()
-            if existing is None or existing["parse_status"] != "skipped":
+            if existing is not None and existing["parse_status"] == "parsed" and existing["processing_profile"] == profile:
                 _record(
                     report,
                     DocumentImportOutcome(
@@ -124,11 +156,13 @@ def run_import(
         try:
             text, page_count = extract_text(path)
         except Exception as exc:  # noqa: BLE001
+            _clear_document_records(conn, sha)
             update_document(
                 conn,
                 sha,
                 parse_status="failed",
                 raw_text_excerpt=str(exc)[:500],
+                processing_profile=profile,
             )
             conn.commit()
             _record(
@@ -146,6 +180,9 @@ def run_import(
             continue
 
         excerpt = text[:4000]
+        # A refreshed document replaces its complete old parse, including
+        # accounts/years that no longer appear. Never accumulate stale holders.
+        _clear_document_records(conn, sha)
         classification = classify(text)
         if classification is None:
             update_document(
@@ -156,6 +193,7 @@ def run_import(
                 parse_status="skipped",
                 issuer="unknown",
                 doc_type="other",
+                processing_profile=profile,
             )
             conn.commit()
             _record(
@@ -168,6 +206,7 @@ def run_import(
 
         year = guess_tax_year(text, classification.doc_type)
         try:
+            conn.execute("SAVEPOINT document_parse")
             result = parse_document(
                 classification.issuer,
                 classification.doc_type,
@@ -176,6 +215,8 @@ def run_import(
                 institution_options=institution_options,
             )
             _persist_parse(conn, sha, classification, result, page_count, excerpt)
+            update_document(conn, sha, processing_profile=profile)
+            conn.execute("RELEASE document_parse")
             outcome = DocumentImportOutcome(
                 index,
                 len(pdfs),
@@ -186,6 +227,8 @@ def run_import(
                 result.tax_year or year,
             )
         except Exception as exc:  # noqa: BLE001
+            conn.execute("ROLLBACK TO document_parse")
+            conn.execute("RELEASE document_parse")
             update_document(
                 conn,
                 sha,
@@ -195,6 +238,7 @@ def run_import(
                 tax_year=year,
                 raw_text_excerpt=excerpt,
                 parse_status="failed",
+                processing_profile=profile,
             )
             outcome = DocumentImportOutcome(
                 index,
@@ -212,9 +256,12 @@ def run_import(
     canonicalize_facts(conn, institution_options)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, partner_config)
-    conn.close()
-
     return report
+
+
+def _clear_document_records(conn: sqlite3.Connection, sha: str) -> None:
+    conn.execute("DELETE FROM account_year_facts WHERE document_sha256 = ?", (sha,))
+    conn.execute("DELETE FROM tax_returns WHERE document_sha256 = ?", (sha,))
 
 
 def _record(
@@ -320,8 +367,11 @@ def recompute(
     institution_options: InstitutionOptions | None = None,
 ) -> None:
     conn = connect(db_path)
-    init_db(conn)
-    clear_canonical_flags(conn)
-    canonicalize_facts(conn, institution_options)
-    rebuild_portfolio(conn)
-    rebuild_recommendations(conn, partner_config)
+    try:
+        init_db(conn)
+        clear_canonical_flags(conn)
+        canonicalize_facts(conn, institution_options)
+        rebuild_portfolio(conn)
+        rebuild_recommendations(conn, partner_config)
+    finally:
+        conn.close()

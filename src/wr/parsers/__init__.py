@@ -20,7 +20,7 @@ _INFRASTRUCTURE_MODULES = {"base", "common"}
 
 def _discover_plugins() -> tuple[InstitutionPlugin, ...]:
     discovered: list[tuple[str, InstitutionPlugin]] = []
-    for module_info in pkgutil.iter_modules([str(Path(__file__).parent)]):
+    for module_info in pkgutil.iter_modules(__path__):
         if module_info.name.startswith("_") or module_info.name in _INFRASTRUCTURE_MODULES:
             continue
         module = importlib.import_module(f"{__name__}.{module_info.name}")

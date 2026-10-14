@@ -29,4 +29,4 @@ affect classification.
   statement name remains the same.
 
 To add another institution or statement layout, follow the parser workflow in
-[CONTRIBUTING.md](../CONTRIBUTING.md) and include synthetic, anonymized fixtures.
+[Contributing](../development/contributing.md) and include synthetic fixtures.

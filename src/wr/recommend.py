@@ -75,6 +75,8 @@ def _results_for_year(
     missing = portfolio["missing_asset_summary"] if portfolio else "no portfolio"
 
     if not returns:
+        if any(name for _, name in partner_cfg.configured()):
+            return _individual_results(conn, year, returns, partner_cfg)
         return [
             PartnerTaxResult(
                 tax_year=year,
@@ -110,24 +112,9 @@ def _results_for_year(
     if not full_year:
         return _individual_results(conn, year, returns, partner_cfg)
 
-    if primary["allocation_status"] == "ZERO_BASE" or (primary["grondslag"] or 0) == 0:
-        return [
-            PartnerTaxResult(
-                tax_year=year,
-                partner="a",
-                partner_name=primary["partner_a_name"] or "a",
-                allocation_ratio=None,
-                allocated_actual_return=known_actual,
-                fictitious_return=0.0,
-                estimated_box3_tax_actual=0.0,
-                estimated_box3_tax_fictitious=0.0,
-                estimated_tax_savings=0.0,
-                recommendation=Recommendation.NOT_APPLICABLE.value,
-                coverage_status=coverage,
-                notes="Grondslag sparen en beleggen is zero; actual return cannot reduce Box 3 further",
-            )
-        ]
-
+    # Absence of a parsed base is not evidence of a zero base. Keep both
+    # partners visible even when allocation or comparison cannot be established.
+    zero_base = primary["grondslag"] == 0
     name_a = primary["partner_a_name"]
     name_b = primary["partner_b_name"]
     alloc_a = primary["allocation_a"]
@@ -156,12 +143,22 @@ def _results_for_year(
         ("a", name_a, alloc_a, fict_a, tax_a),
         ("b", name_b, alloc_b, fict_b, tax_b),
     ):
+        name = name or getattr(partner_cfg, f"partner_{slot}")
         allocated = (
             None if known_actual is None or ratio is None else multiply(known_actual, ratio)
         )
-        if incomplete:
+        if zero_base:
+            ratio, allocated, fict, filed_tax = None, None, 0.0, 0.0
+            rec = Recommendation.NOT_APPLICABLE.value
+            notes = "Grondslag sparen en beleggen is zero; actual return cannot reduce Box 3 further"
+            tax_actual = 0.0
+        elif incomplete:
             rec = Recommendation.INDETERMINATE_MISSING_DATA.value
             notes = f"Partial coverage. Missing: {missing or 'unknown'}"
+            tax_actual = None
+        elif primary["grondslag"] is None or ratio is None:
+            rec = Recommendation.NEEDS_MANUAL_RSAMW.value
+            notes = "Missing combined taxable base or fiscal-partner allocation; review tax-return evidence"
             tax_actual = None
         else:
             cmp = compare_partner(year, allocated, fict, filed_tax)
