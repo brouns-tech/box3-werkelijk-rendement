@@ -10,7 +10,7 @@ import streamlit as st
 
 from wr.config import PartnerSettings, load_settings, resolve_db_path
 from wr.db import connect, init_db
-from wr.identities import identity_slot, observed_names, name_tokens
+from wr.identities import identity_slot, observed_names, name_key
 from wr.recommend import rebuild_recommendations
 from dashboard.settings import documents_ui, taxpayers_ui
 from dashboard.workspace_settings import workspace_settings_ui
@@ -52,7 +52,7 @@ def _decision_rows(results, language: str = "en") -> list[dict[str, str]]:
 
 
 def _person_key(name: str | None) -> str:
-    return " ".join(name_tokens(name or ""))
+    return " ".join(name_key(name or ""))
 
 
 def _holder_label(value: str | None, canonical_names: dict[str, str] | None = None, language: str = "en") -> str:

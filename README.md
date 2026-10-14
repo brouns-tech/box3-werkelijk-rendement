@@ -86,6 +86,9 @@ tax returns, it falls back to suggesting up to two taxpayers from account holder
 It groups
 initials, first names, and small spelling differences where possible. A shared
 surname alone does not establish a match; ambiguous initials remain unassigned.
+Capitalization and dots or spaces between initials do not require separate alias
+assignments: `A B C Example`, `A.B.C. Example`, and `ABC EXAMPLE` match the
+same configured name or alias, as do `Alex Example` and `ALEX EXAMPLE`.
 Open the **Taxpayers** tab to review each detected spelling, change its assignment,
 rename taxpayers, and add aliases (including nicknames). Assignment dropdowns show the canonical
 names of taxpayers and children and update as you edit them. Children have their

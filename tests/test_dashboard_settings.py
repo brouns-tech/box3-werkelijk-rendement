@@ -8,6 +8,29 @@ from wr.config import load_settings
 APP = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
 
 
+def test_initial_variants_are_assigned_and_labeled_without_manual_assignments(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from dashboard.app import _canonical_name_map, _holder_label
+    from wr.config import save_settings
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_settings()
+    partners = replace(cfg.partners, partner_a_aliases=("ABC Example",))
+    save_settings(cfg, partners)
+    holders = '["A.B.C. EXAMPLE", "A B C Example"]'
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute("UPDATE account_year_facts SET holder_names = ? WHERE account_key = 'NL22RABO0002345678'", (holders,))
+    app = AppTest.from_file(str(APP)).run()
+    assert not app.exception
+    for name in ("A.B.C. EXAMPLE", "A B C Example"):
+        assert next(widget for widget in app.selectbox if widget.label == name).value == "a"
+    assert load_settings().partners == partners
+    assert _holder_label(holders, _canonical_name_map(partners)) == partners.partner_a
+
+
 def test_empty_assignment_does_not_crash_or_change_existing_ownership(tmp_path, monkeypatch):
     from wr.demo import create_demo_workspace
     from wr.identities import identity_slot
