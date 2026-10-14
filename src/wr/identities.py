@@ -5,10 +5,10 @@ import json
 import re
 import sqlite3
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 
-from wr.config import PartnerSettings
+from wr.config import ChildSettings, PartnerSettings
 
 
 def name_tokens(name: str) -> tuple[str, ...]:
@@ -77,20 +77,47 @@ def suggest_identities(conn: sqlite3.Connection) -> IdentitySuggestions:
         else:
             groups.append([name])
     # Prefer tax-return identities over incidental statement holders.
-    tax_names = {row[0] for row in conn.execute("SELECT filer_name FROM tax_returns")}
-    groups.sort(key=lambda g: (not any(n in tax_names for n in g), name_tokens(g[0])))
-    chosen = groups[:2]
-    unresolved.extend(n for g in groups[2:] for n in g)
+    tax_names = {
+        name for row in conn.execute("SELECT filer_name, partner_a_name, partner_b_name FROM tax_returns")
+        for name in row if name and name_tokens(name) and name.casefold() not in {"unknown", "onbekend", "partner_a", "partner_b"}
+    }
+    filer_names = {row[0] for row in conn.execute("SELECT filer_name FROM tax_returns")}
+    groups.sort(key=lambda g: (
+        not any(n in filer_names for n in g),
+        not any(n in tax_names for n in g), name_tokens(g[0]),
+    ))
+    primary = [g for g in groups if any(n in tax_names for n in g)] if tax_names else groups
+    chosen = primary[:2]
+    unresolved.extend(n for g in primary[2:] for n in g)
+    children = [g for g in groups if g not in primary] if tax_names else []
     values = {}
     for slot, group in zip(("a", "b"), chosen):
         values[f"partner_{slot}"] = group[0]
         values[f"partner_{slot}_aliases"] = tuple(group[1:])
+    values["children"] = tuple(ChildSettings(g[0], tuple(g[1:])) for g in children)
     return IdentitySuggestions(PartnerSettings(**values), tuple(sorted(unresolved)))
 
 
 def effective_partners(conn: sqlite3.Connection, configured: PartnerSettings | None) -> PartnerSettings:
+    if configured and configured.children and not any(name for _, name in configured.configured()):
+        detected = suggest_identities(conn).partners
+        primary = [(slot, name) for slot, name in detected.configured() if name and identity_slot(name, configured) is None]
+        values = {}
+        for new_slot, (slot, name) in zip(("a", "b"), primary):
+            values[f"partner_{new_slot}"] = name
+            values[f"partner_{new_slot}_aliases"] = detected.aliases_for(slot)
+        return replace(configured, **values)
     if configured and any(name for _, name in configured.configured()):
-        return configured
+        # Preserve reviewed profiles; suggest newly imported, distinct holders only.
+        detected = suggest_identities(conn).partners
+        additions = tuple(
+            child for child in detected.children
+            if len(name_tokens(child.canonical_name)) >= 2
+            and identity_slot(child.canonical_name, configured) is None
+            and not any(name_tokens(child.canonical_name) == name_tokens(n) for n in configured.unassigned_names)
+            and not any(similarity(child.canonical_name, name) >= 0.8 for _, name in configured.identities() if name)
+        )
+        return replace(configured, children=configured.children + additions) if additions else configured
     return suggest_identities(conn).partners
 
 
@@ -100,7 +127,7 @@ def identity_slot(name: str | None, partners: PartnerSettings) -> str | None:
     if any(name_tokens(name) == name_tokens(excluded) for excluded in partners.unassigned_names):
         return None
     scores = []
-    for slot, canonical in partners.configured():
+    for slot, canonical in partners.identities():
         if canonical:
             score = max(similarity(name, alias) for alias in (canonical, *partners.aliases_for(slot)))
             scores.append((score, slot))
@@ -114,7 +141,7 @@ def identity_slot(name: str | None, partners: PartnerSettings) -> str | None:
 
 def validate_partners(partners: PartnerSettings) -> None:
     seen: dict[tuple[str, ...], str] = {}
-    for slot, canonical in partners.configured():
+    for slot, canonical in partners.identities():
         aliases = partners.aliases_for(slot)
         if aliases and not canonical:
             raise ValueError("Provide a taxpayer name before assigning aliases.")
@@ -123,5 +150,6 @@ def validate_partners(partners: PartnerSettings) -> None:
             if not key:
                 raise ValueError("Names must contain letters.")
             if key in seen and seen[key] != slot:
-                raise ValueError(f"Name or alias assigned to both taxpayers: {name}")
+                description = "both taxpayers" if {slot, seen[key]} <= {"a", "b"} else "multiple people"
+                raise ValueError(f"Name or alias assigned to {description}: {name}")
             seen[key] = slot

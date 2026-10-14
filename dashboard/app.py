@@ -83,7 +83,7 @@ def _holder_label(value: str | None, canonical_names: dict[str, str] | None = No
 
 def _canonical_name_map(partner_cfg: PartnerSettings) -> dict[str, str]:
     names = {}
-    for slot, canonical in partner_cfg.configured():
+    for slot, canonical in partner_cfg.identities():
         if not canonical:
             continue
         surname = _person_key(canonical.split()[-1])
@@ -96,12 +96,21 @@ def _canonical_name_map(partner_cfg: PartnerSettings) -> dict[str, str]:
 
 def _owner_style(value: str, colors: dict[str, str]) -> str:
     holder_keys = [_person_key(holder) for holder in value.split(", ")]
-    matches = {color for name, color in colors.items() if any(name in holder for holder in holder_keys)}
+    matches = {color for name, color in colors.items() if name in holder_keys}
     if len(matches) == 1:
         return f"background-color: {matches.pop()}; color: #f8fafc"
     if len(matches) > 1:
         return "background-color: #581c87; color: #f8fafc"
     return "background-color: #334155; color: #f8fafc"
+
+
+def _owner_colors(partner_cfg: PartnerSettings, canonical_names: dict[str, str]) -> dict[str, str]:
+    colors = {"a": "#1e3a5f", "b": "#14532d"}
+    return {
+        alias: colors.get(slot, "#581c87")
+        for slot, canonical in partner_cfg.identities() if canonical
+        for alias, name in canonical_names.items() if name == canonical
+    }
 
 
 def _styled_table(rows: list[dict], owner_column: str, colors: dict[str, str]):
@@ -174,17 +183,12 @@ def _overview(conn, partner_cfg: PartnerSettings) -> None:
         "SELECT * FROM partner_tax_results WHERE tax_year = ? ORDER BY partner",
         (year,),
     ).fetchall()
-    owner_colors = {}
     canonical_names = _canonical_name_map(partner_cfg)
     for name in observed_names(conn):
         slot = identity_slot(name, partner_cfg)
         if slot:
-            canonical_names[_person_key(name)] = getattr(partner_cfg, f"partner_{slot}")
-    for slot, color in (("partner_a", "#1e3a5f"), ("partner_b", "#14532d")):
-        canonical = getattr(partner_cfg, slot)
-        for alias, name in canonical_names.items():
-            if name == canonical:
-                owner_colors[alias] = color
+            canonical_names[_person_key(name)] = partner_cfg.canonical_for(slot)
+    owner_colors = _owner_colors(partner_cfg, canonical_names)
 
     col1, col2, col3 = st.columns(3)
     if portfolio:
@@ -221,9 +225,14 @@ def _overview(conn, partner_cfg: PartnerSettings) -> None:
     st.subheader("Account overview")
     fact_rows = []
     for fact in facts:
+        child_account = any(
+            (identity_slot(holder, partner_cfg) or "").startswith("child_")
+            for holder in json.loads(fact["holder_names"] or "[]")
+        )
         fact_rows.append(
             {
                 "Account holder": _holder_label(fact["holder_names"], canonical_names),
+                "Allocation": "Joint" if child_account or fact["ownership"] == "joint" else "Individual",
                 "Box 3": is_box3_fact(fact),
                 "Source": fact["issuer"].upper(),
                 "Account label": fact["account_label"],

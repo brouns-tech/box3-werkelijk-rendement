@@ -278,8 +278,16 @@ def _individual_portfolio(
         if not is_box3_fact(fact):
             continue
         holders = json.loads(fact["holder_names"] or "[]")
+        holder_slots = [identity_slot(holder, partner_cfg) for holder in holders]
         matches = [identity_slot(holder, partner_cfg) == filer_slot if filer_slot else _matches_alias(holder, aliases) for holder in holders]
-        if len(holders) == 1 and matches[0]:
+        has_child = any(slot and slot.startswith("child_") for slot in holder_slots)
+        child_pool = has_child and all(holder_slots) and (
+            all(slot.startswith("child_") for slot in holder_slots) or fact["ownership"] == "joint"
+        )
+        if child_pool:
+            # Child assets belong to the parents' joint pool, never a child tax result.
+            portion = 1.0 / len([name for _, name in partner_cfg.configured() if name])
+        elif len(holders) == 1 and matches[0]:
             portion = 1.0
         elif fact["ownership"] == "joint" and len(holders) >= 2 and any(matches):
             portion = 0.5

@@ -11,12 +11,27 @@ SETTINGS_VERSION = 2
 
 
 @dataclass(frozen=True)
+class ChildSettings:
+    canonical_name: str
+    aliases: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
 class PartnerSettings:
     partner_a: str | None = None
     partner_b: str | None = None
     partner_a_aliases: tuple[str, ...] = field(default_factory=tuple)
     partner_b_aliases: tuple[str, ...] = field(default_factory=tuple)
     unassigned_names: tuple[str, ...] = field(default_factory=tuple)
+    children: tuple[ChildSettings, ...] = field(default_factory=tuple)
+
+    def identities(self) -> tuple[tuple[str, str | None], ...]:
+        return self.configured() + tuple(
+            (f"child_{index}", child.canonical_name) for index, child in enumerate(self.children)
+        )
+
+    def canonical_for(self, slot: str) -> str | None:
+        return dict(self.identities()).get(slot)
 
     def configured(self) -> tuple[tuple[str, str | None], ...]:
         return (("a", self.partner_a), ("b", self.partner_b))
@@ -26,6 +41,8 @@ class PartnerSettings:
             return self.partner_a_aliases
         if slot == "b":
             return self.partner_b_aliases
+        if slot.startswith("child_"):
+            return self.children[int(slot.removeprefix("child_"))].aliases
         raise ValueError(f"Unknown partner slot: {slot}")
 
 
@@ -122,6 +139,7 @@ def _settings_from_mapping(raw: dict[str, Any], root: Path) -> Settings:
             partner_a_aliases=_string_tuple(partner_raw.get("partner_a_aliases"), "partners.partner_a_aliases"),
             partner_b_aliases=_string_tuple(partner_raw.get("partner_b_aliases"), "partners.partner_b_aliases"),
             unassigned_names=_string_tuple(partner_raw.get("unassigned_names"), "partners.unassigned_names"),
+            children=_children(partner_raw.get("children", [])),
         ),
         institution_options={name: _mapping(options, f"institutions.{name}") for name, options in institution_raw.items()},
     )
@@ -133,6 +151,19 @@ def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{name} must be an object")
     return value
+
+
+def _children(value: Any) -> tuple[ChildSettings, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("partners.children must be an array")
+    children = []
+    for item in value:
+        raw = _mapping(item, "child")
+        name = _optional_string(raw.get("canonical_name"), "child.canonical_name")
+        if name is None:
+            raise ValueError("Provide a child canonical name.")
+        children.append(ChildSettings(name, _string_tuple(raw.get("aliases"), "child.aliases")))
+    return tuple(children)
 
 
 def _optional_string(value: Any, name: str) -> str | None:
