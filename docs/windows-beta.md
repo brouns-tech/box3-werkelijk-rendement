@@ -11,7 +11,7 @@ labels and includes Dutch equivalents where helpful.
 1. Extract the entire ZIP into a folder of your choice.
 2. Open `WerkelijkRendement.exe`. Keep its accompanying `_internal` folder.
 3. The launcher opens the dashboard in your default browser.
-4. Choose **Select folder** (`Map selecteren`), then **Scan documents and calculate**
+4. Open **Documents** (`Documenten`), choose **Select folder** (`Map selecteren`), then **Scan documents and calculate**
    (`Documenten scannen en berekenen`).
 5. Review import messages, document coverage, calculations, and the audit export.
 6. Close the application using **Exit** (`Afsluiten`) in the launcher window.
@@ -49,8 +49,12 @@ launch creates a new empty workspace. Your original PDFs remain untouched.
 Downloaded audit exports are stored separately; delete them separately if you
 want to remove all derived financial data.
 
-Optional fiscal-partner names, aliases, and institution-specific settings can be
-configured in `config.toml` in this data folder. See the repository documentation.
+Review taxpayer names, aliases, and minor-child profiles in **Taxpayers**.
+Manage the database and institution options in **Settings**. Workspace settings
+and the selected folder are stored in `.wr-settings.json`; beta `config.toml`
+and `preferences.json` values migrate once. The retired files are ignored afterward.
+**Settings → Reset workspace** removes imported data and profiles while retaining
+the database location, original PDFs, and separately downloaded audit exports.
 
 ## Limitations
 

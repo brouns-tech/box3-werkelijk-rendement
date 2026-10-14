@@ -35,7 +35,7 @@ been found; retain it. See the [PyInstaller spec documentation](https://pyinstal
 ## Implemented increments
 
 1. Independent desktop storage and launcher. `%LOCALAPPDATA%\WerkelijkRendement`
-   holds `config.toml`, `wr.sqlite`, `preferences.json`, server logs rotated at startup, and
+   holds `.wr-settings.json`, `wr.sqlite`, `language.json`, server logs rotated at startup, and
    ephemeral instance metadata. CLI defaults remain unchanged. Updating/extracting
    another ZIP retains this directory; removing the ZIP does not delete it.
 2. Loopback-only supervisor control API and Streamlit server on dynamically

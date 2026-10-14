@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import streamlit as st
+
+from dashboard.localization import ui_text as t
 from dashboard.explorer_compat import DirPicker
 
 
@@ -32,7 +34,7 @@ def folder_path_input(project_root: Path) -> tuple[str, bool]:
     try:
         selected = DirPicker(key=key, start_path=str(start))
     except OSError as exc:
-        st.error(f"Cannot browse this folder: {exc}")
+        st.error(t("Cannot browse this folder: {error}", error=exc))
         _reset_picker()
         selected = None
     if selected:
@@ -43,8 +45,8 @@ def folder_path_input(project_root: Path) -> tuple[str, bool]:
     with path_row:
         field, action, _ = st.columns([4, 1.5, 4.5], vertical_alignment="bottom")
         root = field.text_input(
-            "Document folder", key="document_folder", on_change=_reset_picker,
-            help="Paste a folder path or browse. Relative paths start at this workspace; ~ refers to your home folder.",
+            t("Document folder"), key="document_folder", on_change=_reset_picker,
+            help=t("Paste a folder path or browse. Relative paths start at this workspace; ~ refers to your home folder."),
         )
-        save = action.button("Save folder", key="save_folder")
+        save = action.button(t("Save folder"), key="save_folder")
     return root, save

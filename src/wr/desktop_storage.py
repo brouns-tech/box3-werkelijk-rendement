@@ -18,29 +18,40 @@ def app_data_dir() -> Path:
 
 
 def prepare_workspace(directory: Path | None = None) -> Path:
-    directory = directory or app_data_dir()
+    from dataclasses import replace
+    from wr.config import load_settings, save_settings
+
+    directory = (directory or app_data_dir()).resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    config = directory / "config.toml"
-    if not config.exists():
-        config.write_text('db_path = "wr.sqlite"\n', encoding="utf-8")
-    return config
+    settings_path = directory / ".wr-settings.json"
+    existing = settings_path.exists()
+    fresh = not existing and not (directory / "config.toml").exists()
+    settings = load_settings(directory)
+    if fresh:
+        settings = replace(settings, db_path=Path("wr.sqlite"))
+    if not existing:
+        # Retired beta preferences migrate once; reset must not resurrect them.
+        try:
+            raw = json.loads((directory / "preferences.json").read_text(encoding="utf-8"))
+            folder = raw.get("selected_folder") if isinstance(raw, dict) else None
+        except (OSError, ValueError):
+            folder = None
+        save_settings(settings, import_root=folder if isinstance(folder, str) else None)
+    return directory
 
 
 def selected_folder(directory: Path) -> str | None:
-    try:
-        value = json.loads((directory / "preferences.json").read_text(encoding="utf-8"))
-        return value.get("selected_folder")
-    except (OSError, ValueError):
-        return None
+    from wr.config import load_settings
+    folder = load_settings(directory).import_root
+    return str(folder) if folder else None
 
 
 def remember_folder(directory: Path, folder: str) -> None:
     path = Path(folder).resolve(strict=True)
     if not path.is_dir():
         raise ValueError("Select an existing folder")
-    temporary = directory / "preferences.tmp"
-    temporary.write_text(json.dumps({"selected_folder": str(path)}), encoding="utf-8")
-    temporary.replace(directory / "preferences.json")
+    from wr.config import load_settings, save_settings
+    save_settings(load_settings(directory), import_root=str(path))
 
 
 def app_version() -> str:

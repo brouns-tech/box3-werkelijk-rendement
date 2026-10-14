@@ -40,7 +40,7 @@ def test_preference_survives_folder_changes_and_invalid_files(tmp_path):
 
 def test_catalog_covers_ui_and_preserves_format_fields():
     root = Path(__file__).resolve().parents[1]
-    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop.py"]:
+    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop.py", "dashboard/settings.py", "dashboard/workspace_settings.py", "dashboard/folder_picker.py"]:
         tree = ast.parse((root / filename).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "t":
@@ -60,11 +60,11 @@ def test_catalog_covers_ui_and_preserves_format_fields():
 def test_dashboard_switches_language_and_retains_year_and_evidence(tmp_path, monkeypatch):
     import sys
     config = create_demo_workspace(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["app.py", "--config", str(config)])
+    monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(config)])
     monkeypatch.delenv("WR_CONTROL_URL", raising=False)
     # Find the demo's configured database without making assumptions about its name.
-    from wr.config import load_config
-    database = load_config(config).resolved_db_path
+    from wr.config import load_settings
+    database = load_settings(config).resolved_db_path
 
     def exported_csvs():
         from wr.export import create_audit_export
@@ -107,7 +107,7 @@ def test_desktop_import_can_switch_language_during_job(tmp_path, monkeypatch):
     from wr.import_pipeline import ImportReport
     config = prepare_workspace(tmp_path)
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
-    monkeypatch.setattr(sys, "argv", ["app.py", "--config", str(config)])
+    monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(config)])
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     job = ImportJob()
     app.session_state["import_job"] = job
@@ -122,6 +122,34 @@ def test_desktop_import_can_switch_language_during_job(tmp_path, monkeypatch):
     job.done.set()
     app.run()
     assert any(result.value.startswith("Stopped:") for result in app.success)
+
+
+def test_upstream_child_editor_survives_language_switch_and_reset(tmp_path, monkeypatch):
+    import sys
+    from wr.config import load_settings
+
+    def child_name(app):
+        return next(widget for widget in app.text_input if widget.key.endswith("_canonical_child_0"))
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
+    monkeypatch.delenv("WR_CONTROL_URL", raising=False)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
+    app.button(key="add_child").click().run()
+    child_name(app).set_value("Charlie Example").run()
+    app.selectbox(key="ui_language").select("nl").run()
+    assert not app.exception
+    assert child_name(app).value == "Charlie Example"
+    assert app.button(key="add_child").label == "Kind toevoegen"
+    assert [tab.label for tab in app.tabs] == ["Overzicht", "Documenten", "Belastingplichtigen", "Instellingen"]
+    app.button(key="save_field_canonical_child_0").click().run()
+    assert load_settings(tmp_path).partners.children[0].canonical_name == "Charlie Example"
+    assert "Toerekening" in app.dataframe[1].value.columns
+    app.button(key="reset_workspace").click().run()
+    app.button(key="confirm_reset_workspace").click().run()
+    assert not app.exception
+    assert load_settings(tmp_path).partners.children == ()
+    assert app.selectbox(key="ui_language").value == "nl"
 
 
 @pytest.mark.parametrize("verification_mode", [False, True])

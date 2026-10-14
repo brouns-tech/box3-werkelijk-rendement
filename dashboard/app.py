@@ -132,6 +132,11 @@ def main() -> None:
     st.title(t("Werkelijk rendement — Box 3"))
     st.caption(t("Database: `{name}`", name=db_path.name))
 
+    job = st.session_state.get("import_job")
+    if os.environ.get("WR_CONTROL_URL") and job is not None and not job.done.is_set():
+        documents_ui(cfg)
+        st.stop()
+
     conn = connect(db_path)
     init_db(conn)
     overview, documents, taxpayers, settings = st.tabs([t("Overview"), t("Documents"), t("Taxpayers"), t("Settings")])

@@ -43,7 +43,7 @@ for the validation record and release gates.
 ## Using the application
 
 The launcher opens the dashboard in your default browser. Use **Language / Taal**
-to select **Nederlands** or **English**. Choose **Select folder**, then **Scan
+to select **Nederlands** or **English**. Open **Documents**, choose **Select folder**, then **Scan
 documents and calculate**. Review unsupported files, document coverage, and the
 underlying source evidence before relying on a result. You can cancel importing
 after the current document. Original documents are never modified.
@@ -59,6 +59,12 @@ Close the application before backing up or deleting that directory. Deleting it
 resets the workspace without deleting original PDFs. Audit downloads are stored
 separately and must be deleted separately if you want to remove all derived data.
 The application does not encrypt its database.
+
+Use **Taxpayers** to review names, aliases, and minor-child profiles, and
+**Settings** for storage, institution options, and resetting imported data.
+The selected folder and workspace settings live in `.wr-settings.json`.
+Earlier beta TOML settings and folder preferences migrate once; they are ignored
+after migration, including after a workspace reset.
 
 Both formats run as your desktop user and are not sandboxes. The services bind to
 loopback, source processing stays local, and usage telemetry is disabled. Only

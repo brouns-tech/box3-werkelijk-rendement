@@ -7,6 +7,10 @@ from wr.desktop_storage import remember_language, remembered_language
 from wr.i18n import LANGUAGES, translate
 
 
+def ui_text(message: str, **values) -> str:
+    return translate(st.session_state.get("ui_language", "en"), message, **values)
+
+
 def select_language(directory: Path, default: str) -> str:
     saved = remembered_language(directory, default)
     if "ui_language" not in st.session_state or saved != st.session_state.get("saved_language"):

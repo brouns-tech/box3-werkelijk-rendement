@@ -109,7 +109,7 @@ def main():
             # Linux verifies the frozen server without requiring a graphical desktop.
             import urllib.request
             port = free_port()
-            child = subprocess.Popen([str(executable), "--serve", str(directory / "smoke/config.toml"), str(port)], cwd=directory, env=env)
+            child = subprocess.Popen([str(executable), "--serve", str(directory / "smoke"), str(port)], cwd=directory, env=env)
             try:
                 deadline = time.monotonic() + 60
                 while time.monotonic() < deadline:
@@ -144,7 +144,7 @@ def main():
                 print("Verifying clean shutdown", flush=True)
                 control_request(instance["endpoint"], instance["token"], "stop", 5)
                 assert launcher.wait(timeout=15) == 0
-                assert (workspace / "config.toml").exists()
+                assert (workspace / ".wr-settings.json").exists()
                 # Abnormal supervisor termination must also stop the server.
                 launcher = subprocess.Popen(launcher_command, cwd=directory, env=env)
                 print("Verifying server cleanup after supervisor termination", flush=True)

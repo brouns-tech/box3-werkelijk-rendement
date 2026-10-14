@@ -11,6 +11,7 @@ from wr.desktop import desktop_request
 from wr.desktop_storage import app_version, remember_folder, selected_folder
 from wr.i18n import status_label, translator
 from wr.import_pipeline import run_import
+from dashboard.ui_state import refresh_taxpayer_editor
 
 _IMPORT_LOCK = threading.Lock()
 
@@ -43,7 +44,7 @@ class ImportJob:
 
 def render(cfg, language: str):
     t = translator(language)
-    directory = cfg.config_path.parent
+    directory = cfg.project_root
     st.caption(t("Version {version} · Local processing · Data: {directory}", version=app_version(), directory=directory))
     st.info(t("Select a folder with annual statements and tax returns. Source files stay unchanged. Importing does not prove that your entire financial situation is covered."))
     job = st.session_state.get("import_job")
@@ -53,6 +54,7 @@ def render(cfg, language: str):
             folder = desktop_request("folder")["folder"]
             if folder:
                 remember_folder(directory, folder)
+                st.rerun()
         except Exception as exc:
             st.error(t("Folder selection failed: {error}", error=exc))
     folder = selected_folder(directory)
@@ -97,6 +99,8 @@ def _render_job(job, language: str):
                      status=t("Stopped") if report.cancelled else t("Done"), parsed=report.parsed,
                      duplicate=report.duplicate, skipped=report.skipped, failed=report.failed))
         if st.button(t("Refresh dashboard"), key="refresh_dashboard"):
+            refresh_taxpayer_editor()
+            st.session_state.pop("import_job", None)
             st.rerun()
     if outcomes:
         st.caption(t("Technical details from the source or parser are shown as recorded."))

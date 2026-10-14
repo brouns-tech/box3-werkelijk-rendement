@@ -12,7 +12,9 @@ if sys.platform.startswith('linux'):
 
 root = Path(SPECPATH).parent
 streamlit_data, streamlit_binaries, streamlit_hidden = collect_all('streamlit')
+explorer_data, explorer_binaries, explorer_hidden = collect_all('streamlit_explorer')
 data = streamlit_data + copy_metadata('box3-werkelijk-rendement', recursive=True)
+data += explorer_data
 data += [(str(root / 'dashboard' / 'app.py'), 'dashboard'), (str(root / 'LICENSE'), 'licenses/project')]
 # Retain third-party license texts in the release, even if upstream metadata lacks them.
 import importlib.metadata
@@ -25,8 +27,8 @@ for distribution in importlib.metadata.distributions():
 
 analysis = Analysis([str(root / 'packaging' / 'entrypoint.py')],
     pathex=[str(root / 'src'), str(root)],
-    binaries=streamlit_binaries, datas=data,
-    hiddenimports=streamlit_hidden + collect_submodules('wr') + collect_submodules('dashboard'),
+    binaries=streamlit_binaries + explorer_binaries, datas=data,
+    hiddenimports=streamlit_hidden + explorer_hidden + collect_submodules('wr') + collect_submodules('dashboard'),
     excludes=['pytest'], noarchive=False)
 pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True,

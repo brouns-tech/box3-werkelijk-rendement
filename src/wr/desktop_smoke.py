@@ -35,6 +35,10 @@ def synthetic_pdf(path: Path, text: str = ING_TEXT) -> None:
 
 
 def smoke_test(directory: Path) -> None:
+    # Exercise the upstream dashboard dependency boundary in frozen builds too.
+    from dashboard.explorer_compat import DirPicker
+    from wr.config import load_settings
+    assert callable(DirPicker)
     import shutil
     from wr.desktop_storage import app_version, prepare_workspace, remember_language, remembered_language
     from wr.i18n import currency, translator
@@ -72,7 +76,7 @@ def smoke_test(directory: Path) -> None:
     text, pages = extract_text(pdf)
     assert "ING Jaaroverzicht 2024" in text and pages == 1
     assert {p.issuer for p in PLUGINS} == {"ing", "rabobank", "sns", "raisin", "revolut", "degiro", "flatex", "belastingdienst"}
-    db = directory / "wr.sqlite"
+    db = load_settings(config).resolved_db_path
     report = run_import(documents, db)
     assert report.parsed + report.duplicate == len(SAMPLES) and not report.failed
     recompute(db)

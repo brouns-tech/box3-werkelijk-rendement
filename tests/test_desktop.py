@@ -12,15 +12,18 @@ from wr.import_pipeline import run_import
 
 
 def test_desktop_workspace_persists_and_does_not_overwrite_configuration(tmp_path):
-    config = prepare_workspace(tmp_path)
-    config.write_text('db_path = "custom.sqlite"\n[partners]\npartner_a="EXAMPLE"\n')
+    from wr.config import PartnerSettings, load_settings, save_settings
+    prepare_workspace(tmp_path)
+    save_settings(load_settings(tmp_path), PartnerSettings(partner_a="EXAMPLE"), db_path="custom.sqlite")
     documents = tmp_path / "space and unicode é"
     documents.mkdir()
     remember_folder(tmp_path, str(documents))
     assert selected_folder(tmp_path) == str(documents)
-    assert prepare_workspace(tmp_path).read_text() == config.read_text()
+    assert prepare_workspace(tmp_path) == tmp_path
+    assert load_settings(tmp_path).partners.partner_a == "EXAMPLE"
+    assert load_settings(tmp_path).resolved_db_path == tmp_path / "custom.sqlite"
     with pytest.raises(ValueError):
-        remember_folder(tmp_path, str(config))
+        remember_folder(tmp_path, str(tmp_path / ".wr-settings.json"))
 
 
 def test_single_instance_lock_recovers_after_close(tmp_path):
@@ -30,6 +33,45 @@ def test_single_instance_lock_recovers_after_close(tmp_path):
     first.close()
     assert second.acquire()
     second.close()
+
+
+def test_legacy_desktop_storage_migrates_once_and_reset_stays_reset(tmp_path):
+    from wr.config import load_settings
+    from wr.workspace import reset_workspace
+
+    documents = tmp_path / "statements"
+    documents.mkdir()
+    legacy = 'db_path = "custom.sqlite"\n[partners]\npartner_a="EXAMPLE"\n'
+    (tmp_path / "config.toml").write_text(legacy)
+    (tmp_path / "preferences.json").write_text(json.dumps({"selected_folder": str(documents)}))
+    assert prepare_workspace(tmp_path) == tmp_path
+    cfg = load_settings(tmp_path)
+    assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
+    assert cfg.partners.partner_a == "EXAMPLE"
+    assert selected_folder(tmp_path) == str(documents)
+    assert (tmp_path / "config.toml").read_text() == legacy
+    reset_workspace(cfg)
+    prepare_workspace(tmp_path)
+    assert selected_folder(tmp_path) is None
+    assert load_settings(tmp_path).partners.partner_a is None
+    assert documents.is_dir()
+
+
+def test_desktop_folder_selection_preserves_upstream_profiles_and_storage(tmp_path):
+    from wr.config import ChildSettings, PartnerSettings, load_settings, save_settings
+
+    prepare_workspace(tmp_path)
+    partners = PartnerSettings(partner_a="EXAMPLE", children=(ChildSettings("CHILD", ("C. EXAMPLE",)),))
+    options = {"flatex": {"beneficial_owner": "EXAMPLE"}}
+    save_settings(load_settings(tmp_path), partners, db_path="custom.sqlite", institution_options=options)
+    documents = tmp_path / "statements"
+    documents.mkdir()
+    remember_folder(tmp_path, str(documents))
+    cfg = load_settings(tmp_path)
+    assert cfg.partners == partners
+    assert cfg.institution_options == options
+    assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
+    assert cfg.import_root == documents
 
 
 def test_control_api_requires_token_and_rejects_browser_origin():
@@ -59,7 +101,7 @@ def test_control_api_requires_token_and_rejects_browser_origin():
 def test_child_command_uses_frozen_executable(monkeypatch, tmp_path):
     import sys
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    assert child_command(tmp_path / "config.toml", 1234) == [sys.executable, "--serve", str(tmp_path / "config.toml"), "1234"]
+    assert child_command(tmp_path, 1234) == [sys.executable, "--serve", str(tmp_path), "1234"]
 
 
 def test_native_pdf_import_and_audit_smoke_without_poppler(tmp_path, monkeypatch):
@@ -105,11 +147,11 @@ def test_server_bootstrap_applies_security_options_before_run(monkeypatch, tmp_p
         assert config.get_option("server.enableXsrfProtection") is True
         assert config.get_option("global.developmentMode") is False
         assert config.get_option("server.baseUrlPath") == "synthetic-prefix"
-        assert args == ["--config", str(tmp_path / "config.toml")]
+        assert args == ["--workspace", str(tmp_path)]
 
     monkeypatch.setenv("WR_DASHBOARD_PATH", "synthetic-prefix")
     monkeypatch.setattr(bootstrap, "run", check_run)
-    serve(tmp_path / "config.toml", 9876)
+    serve(tmp_path, 9876)
 
 
 def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch):
@@ -124,7 +166,7 @@ def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch):
     monkeypatch.setattr("wr.pdf.shutil.which", lambda _: None)
     monkeypatch.setattr("dashboard.desktop_import.desktop_request", lambda _: {"folder": str(documents)})
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
-    monkeypatch.setattr(sys, "argv", ["app.py", "--config", str(config)])
+    monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(config)])
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert not app.exception
     next(b for b in app.button if b.label == "Map selecteren").click().run()

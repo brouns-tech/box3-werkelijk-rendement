@@ -109,9 +109,9 @@ def child_command(config: Path, port: int) -> list[str]:
 
 def serve(config: Path, port: int) -> None:
     from streamlit.web import bootstrap
-    from wr.config import load_config
+    from wr.config import load_settings
     from wr.import_pipeline import recompute
-    settings = load_config(config)
+    settings = load_settings(config)
     if settings.resolved_db_path.exists():
         # Recover derived results after an interrupted import before displaying them.
         recompute(settings.resolved_db_path, partner_config=settings.partners,
@@ -129,7 +129,7 @@ def serve(config: Path, port: int) -> None:
         "server.baseUrlPath": os.environ.get("WR_DASHBOARD_PATH", ""),
     }
     bootstrap.load_config_options(options)
-    bootstrap.run(str(app), False, ["--config", str(config)], options)
+    bootstrap.run(str(app), False, ["--workspace", str(config)], options)
 
 
 def watch_parent() -> None:
@@ -159,7 +159,7 @@ def main() -> int:
         if os.environ.get("WR_PARENT_PID"):
             threading.Thread(target=watch_parent, daemon=True).start()
         # PyInstaller windowed executables have no standard streams.
-        log_path = Path(sys.argv[2]).parent / "server.log"
+        log_path = Path(sys.argv[2]) / "server.log"
         if log_path.exists() and log_path.stat().st_size > 2 * 1024 * 1024:
             log_path.replace(log_path.with_suffix(".previous.log"))
         original_stdout, original_stderr = sys.stdout, sys.stderr
