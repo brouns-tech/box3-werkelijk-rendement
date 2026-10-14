@@ -358,3 +358,44 @@ def test_taxpayer_fields_refresh_through_repeated_reset_and_import_without_reloa
         assert reset_keys.isdisjoint(seen_keys)
         seen_keys.update(reset_keys)
         assert not app.tabs[2].selectbox
+
+
+def test_alias_assignments_save_and_recompute_immediately(tmp_path, monkeypatch):
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_settings()
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute("DELETE FROM account_year_facts WHERE account_key != 'NL22RABO0002345678'")
+        conn.execute("UPDATE account_year_facts SET holder_names = '[\"Fie\"]'")
+        conn.execute("UPDATE tax_returns SET full_year_fiscal_partners = 0")
+    app = AppTest.from_file(str(APP)).run()
+    assert not app.exception
+
+    def actual_return(slot):
+        with connect(cfg.resolved_db_path) as conn:
+            return conn.execute("SELECT allocated_actual_return FROM partner_tax_results WHERE partner = ?", (slot,)).fetchone()[0]
+
+    assert actual_return("a") is None
+    next(select for select in app.selectbox if select.label == "Fie").set_value("a").run()
+    assert not app.exception
+    assert "Fie" in load_settings().partners.partner_a_aliases
+    assert "Fie" in taxpayer_input(app, "aliases_a").value
+    assert actual_return("a") == 540
+
+    next(select for select in app.selectbox if select.label == "Fie").set_value("b").run()
+    assert not app.exception
+    assert "Fie" not in load_settings().partners.partner_a_aliases
+    assert "Fie" in load_settings().partners.partner_b_aliases
+    assert actual_return("a") is None
+    assert actual_return("b") == 540
+
+    next(select for select in app.selectbox if select.label == "Fie").set_value("unassigned").run()
+    assert not app.exception
+    assert "Fie" in load_settings().partners.unassigned_names
+    assert "Fie" not in load_settings().partners.partner_b_aliases
+    assert actual_return("b") is None
+    restarted = AppTest.from_file(str(APP)).run()
+    assert next(select for select in restarted.selectbox if select.label == "Fie").value == "unassigned"

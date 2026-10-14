@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 import streamlit as st
 
@@ -11,6 +12,26 @@ from wr.config import PartnerSettings, resolve_db_path, save_settings
 from wr.identities import effective_partners, identity_slot, observed_names
 from wr.import_pipeline import run_import
 from wr.recommend import rebuild_recommendations
+
+
+_UNASSIGNED_STYLE = """
+<style>
+div[class*="st-key-unassigned_name_"] {
+    background-color: rgba(173, 106, 106, 0.4);
+    border-left: 3px solid #ad6a6a;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+}
+div[class*="st-key-unassigned_name_"] [data-baseweb="select"] > div {
+    border-color: rgba(173, 106, 106, 0.5);
+}
+</style>
+"""
+
+
+def _assignment_changed() -> None:
+    # Process the change on the next script run, using its live DB connection.
+    st.session_state["taxpayer_assignment_changed"] = True
 
 
 def documents_ui(cfg) -> None:
@@ -61,6 +82,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     prepare_taxpayer_editor(str(cfg.resolved_db_path), partners, names)
 
     st.info("Detected identities are best guesses based on names. Review shared initials and add nicknames as aliases. Fiscal partnership and allocation come from each tax return.")
+    st.markdown(_UNASSIGNED_STYLE, unsafe_allow_html=True)
     columns = st.columns(2)
     values = {}
     for slot, column in zip(("a", "b"), columns):
@@ -74,6 +96,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             key=taxpayer_widget_key(f"aliases_{slot}"),
         )
     st.caption("For one identity, clear the second name and assign its spellings to the remaining person. Two identities do not imply full-year fiscal partnership.")
+    save = st.button("Save settings and update analysis", key="save_settings")
     labels = {
         "unassigned": "Unassigned",
         "a": values["a"].strip() or "First taxpayer (enter a name above)",
@@ -82,15 +105,19 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     assignments = {}
     if names:
         st.markdown("**Names found in documents**")
-        st.caption("Choose the person each spelling belongs to, or leave it unassigned. These assignments take precedence over the alias text above. Source names are preserved.")
-        for name in names:
+        st.caption("Assignments save and update the analysis immediately, including any name or alias edits above. These assignments take precedence over the alias text. Source names are preserved.")
+        for index, name in enumerate(names):
             options = ["unassigned", "a", "b"]
             slot = identity_slot(name, partners) or "unassigned"
-            assignments[name] = st.selectbox(
-                name, options, index=options.index(slot), format_func=labels.get,
-                key=taxpayer_widget_key(f"identity_{name}"),
-            )
-    if st.button("Save settings and update analysis", key="save_settings"):
+            key = taxpayer_widget_key(f"identity_{name}")
+            unassigned = st.session_state.get(key, slot) == "unassigned"
+            with st.container(key=f"{'unassigned' if unassigned else 'assigned'}_name_{index}"):
+                assignments[name] = st.selectbox(
+                    name, options, index=options.index(slot), format_func=labels.get,
+                    key=key, on_change=_assignment_changed,
+                )
+    changed = st.session_state.pop("taxpayer_assignment_changed", False)
+    if save or changed:
         try:
             aliases = {
                 slot: {alias.strip() for alias in values[f"aliases_{slot}"].splitlines() if alias.strip()}
@@ -110,7 +137,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             )
             save_settings(cfg, updated, str(cfg.import_root or ""))
             rebuild_recommendations(conn, updated)
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
             st.error(str(exc))
         else:
             st.session_state["settings_saved"] = True
