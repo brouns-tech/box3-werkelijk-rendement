@@ -245,3 +245,13 @@ startup timeout, port retries, and parent watchdog.
 The local regression suite passes 134 tests, including hidden-root startup,
 authenticated folder/data/stop requests, dialog language changes, sidebar actions,
 and suppression of external applications during frozen verification.
+
+### Editor refresh after scanning
+
+An empty assignment selectbox could return `None`, causing `KeyError: None` when
+an old save callback resumed after import. Empty or obsolete selections now retain
+the current assignment rather than changing ownership. Explicit **Unassigned**
+remains available. Editor generations discard stale save callbacks, and completed
+scans refresh taxpayer widgets once, including duplicate-only scans.
+Synthetic regression tests cover empty selections and English imports from a
+remembered folder without reopening the native folder picker.

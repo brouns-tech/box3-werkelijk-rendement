@@ -24,6 +24,7 @@ class ImportJob:
     report: object = None
     error: str | None = None
     busy: bool = False
+    editor_refreshed: bool = False
 
     def run(self, folder, cfg):
         if not _IMPORT_LOCK.acquire(blocking=False):
@@ -71,6 +72,11 @@ def render(cfg, language: str):
         _render_job(job, language)
         if not job.done.is_set() or job.error or job.busy:
             st.stop()
+        if not job.editor_refreshed:
+            # Even a duplicate-only scan hides taxpayer widgets while active.
+            # Give restored widgets a fresh generation before showing analysis.
+            refresh_taxpayer_editor()
+            job.editor_refreshed = True
 
 
 @st.fragment(run_every=0.5)

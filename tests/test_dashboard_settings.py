@@ -8,6 +8,19 @@ from wr.config import load_settings
 APP = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
 
 
+def test_empty_assignment_does_not_crash_or_change_existing_ownership(tmp_path, monkeypatch):
+    from wr.demo import create_demo_workspace
+    from wr.identities import identity_slot
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    app = AppTest.from_file(str(APP)).run()
+    assignment = next(widget for widget in app.selectbox if "_identity_" in (widget.key or ""))
+    name, original_slot = assignment.label, assignment.value
+    assignment.set_value(None).run()
+    assert not app.exception
+    assert identity_slot(name, load_settings().partners) == original_slot
+
+
 def taxpayer_input(app, field):
     widgets = app.text_area if field.startswith("aliases_") else app.text_input
     return next(widget for widget in widgets if widget.key.endswith(f"_{field}"))

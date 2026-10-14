@@ -177,6 +177,60 @@ def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch):
     assert any("1 verwerkt" in result.value for result in app.success)
 
 
+@pytest.mark.parametrize("already_imported", [False, True])
+def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale_callbacks(tmp_path, monkeypatch, already_imported):
+    import sys
+    from pathlib import Path
+    from streamlit.testing.v1 import AppTest
+    from dashboard.desktop_import import ImportJob
+    from wr.config import load_settings
+    from wr.desktop_storage import remember_language
+
+    workspace = prepare_workspace(tmp_path)
+    documents = tmp_path / "statements"
+    documents.mkdir()
+    synthetic_pdf(documents / "statement.pdf")
+    remember_folder(tmp_path, str(documents))
+    remember_language(tmp_path, "en")
+    monkeypatch.setattr("wr.pdf.shutil.which", lambda _: None)
+    if already_imported:
+        run_import(documents, load_settings(tmp_path).resolved_db_path)
+    monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
+    monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(workspace)])
+    release = threading.Event()
+    run = ImportJob.run
+
+    def delayed_import(job, folder, cfg):
+        if release.wait(timeout=10):
+            run(job, folder, cfg)
+
+    monkeypatch.setattr(ImportJob, "run", delayed_import)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
+    before = load_settings(tmp_path).partners
+    try:
+        app.button(key="scan_documents").click().run()
+        assert not app.exception
+        assert not any("_identity_" in (widget.key or "") for widget in app.selectbox)
+        job = app.session_state["import_job"]
+    finally:
+        release.set()
+    assert job.done.wait(timeout=10)
+    # An old browser callback must not save the newly created editor generation.
+    app.session_state["taxpayer_assignment_changed"] = True
+    app.session_state["taxpayer_save_requested"] = True
+    app.run()
+    assert not app.exception
+    assert app.selectbox(key="ui_language").value == "en"
+    expected = "1 duplicate" if already_imported else "1 processed"
+    assert any(expected in result.value for result in app.success)
+    assert load_settings(tmp_path).partners == before
+    assignments = [widget for widget in app.selectbox if "_identity_" in (widget.key or "")]
+    assert assignments and all(widget.value is not None for widget in assignments)
+    app.button(key="refresh_dashboard").click().run()
+    assert not app.exception
+    assert load_settings(tmp_path).import_root == documents
+
+
 def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_path, monkeypatch):
     import sys
     from wr import desktop, desktop_smoke

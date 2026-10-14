@@ -240,12 +240,17 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             options = ["unassigned", *slots]
             slot = identity_slot(name, partners) or "unassigned"
             key = _editor_widget_key(f"identity_{name}", slot)
+            # Empty/stale browser state is not an ownership decision. Keep the
+            # existing suggestion; explicit Unassigned remains a valid choice.
+            if st.session_state.get(key) not in options:
+                st.session_state[key] = slot
             unassigned = st.session_state.get(key, slot) == "unassigned"
             with st.container(key=f"{'unassigned' if unassigned else 'assigned'}_name_{index}"):
-                assignments[name] = st.selectbox(
+                selected = st.selectbox(
                     name, options, index=None, format_func=labels.get,
                     key=key, on_change=_assignment_changed,
                 )
+                assignments[name] = selected if selected in options else slot
     changed = st.session_state.pop("taxpayer_assignment_changed", False)
     save = st.session_state.pop("taxpayer_save_requested", False)
     if save or changed:
