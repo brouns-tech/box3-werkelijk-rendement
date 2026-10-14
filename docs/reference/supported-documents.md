@@ -17,7 +17,7 @@ affect classification.
 | Raisin | `Raisin Financieel Jaaroverzicht` | Supplies savings-product balances, interest, and withholding tax. |
 | Revolut | `Annual Financial Summary` | Supplies annual account data. |
 | Revolut | Annual Flexible Cash Funds savings statement | Supplies earned return for the savings product. |
-| Revolut | Personal current-account statement covering 1 January through 31 December | Supplies balances and flows. Revolut Business statements are not supported. |
+| Revolut | Personal current-account statement covering 1 January through 31 December | Parses Current Account and Deposit separately; interest credits are separated from transfers. Amounts retain their source currency. Foreign-currency accounts require EUR conversion (including currency gains/losses) and remain incomplete for tax comparison. Revolut Business statements are not supported. |
 
 ## General limitations
 

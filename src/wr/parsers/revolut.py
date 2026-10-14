@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
-from wr.money import add
+from wr.money import add, subtract, total
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
@@ -171,28 +171,52 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
     if currency != "EUR":
         account_key = f"{account_key}:{currency}"
 
-    summary = re.search(
-        r"Account \(Current Account\)\s+[€$£]?\s*([\d,]+\.\d{2})\s+"
-        r"[€$£]?\s*([\d,]+\.\d{2})\s+[€$£]?\s*([\d,]+\.\d{2})\s+"
-        r"[€$£]?\s*([\d,]+\.\d{2})",
-        text,
-        re.I,
+    # A statement contains distinct products. "Money in" includes interest,
+    # so it must not be copied wholesale into external deposits.
+    amount = r"[€$£]?\s*(-?[\d,]+\.\d{2})"
+    summary_rows = re.finditer(
+        rf"^(Account \(Current Account\)|Deposit)[ \t]+{amount}\s+{amount}\s+{amount}\s+{amount}",
+        text, re.I | re.M,
     )
-    if summary:
+    for row in summary_rows:
+        product = "deposit" if row.group(1).lower() == "deposit" else "current"
+        section_name = "Deposit" if product == "deposit" else "Account"
+        section = re.search(rf"{section_name} transactions from[^\n]*\n(.*)", text, re.I | re.S)
+        body = section.group(1) if section else ""
+        if product == "current":
+            body = re.split(r"Deposit transactions from", body, flags=re.I)[0]
+        credits = []
+        for line in body.splitlines():
+            # "Paid to" is interest credited to the customer's savings product.
+            if re.search(r"Net Interest Paid to", line, re.I):
+                values = re.findall(r"[€$£]\s*([\d,]+\.\d{2})", line)
+                if len(values) >= 2:
+                    credits.append(parse_en_amount(values[0]))
+        interest = total(credits) if credits else (0.0 if product == "current" and section else None)
+        incoming = parse_en_amount(row.group(4))
         fact = AccountYearFact(
-            tax_year=year,
-            issuer="revolut",
-            account_key=account_key,
-            account_label="Revolut Current Account",
-            holder_names=_holders(text),
-            currency=currency,
-            start_balance=parse_en_amount(summary.group(1)),
-            end_balance=parse_en_amount(summary.group(4)),
-            deposits=parse_en_amount(summary.group(3)),
-            withdrawals=parse_en_amount(summary.group(2)),
+            tax_year=year, issuer="revolut",
+            account_key=account_key + (":deposit" if product == "deposit" else ""),
+            account_label="Revolut Deposit" if product == "deposit" else "Revolut Current Account",
+            holder_names=_holders(text), currency=currency,
+            start_balance=parse_en_amount(row.group(2)),
+            end_balance=parse_en_amount(row.group(5)),
+            deposits=subtract(incoming, interest or 0),
+            withdrawals=parse_en_amount(row.group(3)),
+            interest_received=interest,
+            gain_method="interest_only" if interest is not None else "unknown",
+            capital_gain=interest,
+            extra={"product": product, "money_in_includes_interest": incoming,
+                   "interest_source": "net_interest_transactions" if credits else "no_interest_transactions",
+                   "interest_credit_count": len(credits),
+                   "fx_status": "requires_eur_conversion" if currency != "EUR" else "not_required"},
         )
-        fact.compute_capital_gain()
-        return ParseResult("revolut", "account_statement", year, facts=[fact])
+        # Missing deposit transactions do not prove zero savings interest.
+        if product == "current" and interest is None:
+            fact.compute_capital_gain()
+        facts.append(fact)
+    if facts:
+        return ParseResult("revolut", "account_statement", year, facts=facts)
 
     # Try Dutch or EN balance markers
     start = None
@@ -222,6 +246,10 @@ def _holders(text: str) -> list[str]:
     last = re.search(r"Last Name[ \t]+(\S+)", text)
     if first and last:
         return [f"{first.group(1)} {last.group(1)}"]
+    # Personal account statements print the holder immediately after the bank.
+    holder = re.search(r"Revolut Bank UAB[^\n]*\n([^\n]+)", text)
+    if holder and re.fullmatch(r"[A-ZÀ-Ÿ][A-ZÀ-Ÿ \'’.-]+", holder.group(1).strip()):
+        return [holder.group(1).strip()]
     return []
 
 

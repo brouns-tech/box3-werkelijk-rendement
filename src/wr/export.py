@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from wr.db import connect, init_db
-from wr.portfolio import _fact_has_actual_return, _fact_return, _is_excluded_box3_fact
+from wr.portfolio import _native_fact_return, _fact_has_actual_return, _fact_return, _is_excluded_box3_fact
 from wr.import_pipeline import pending_reprocessing
 
 
@@ -293,7 +293,7 @@ def _asset_and_fact_rows(
                     "institution": fact["issuer"],
                     "account_id": fact["account_key"],
                     "label": fact["account_label"],
-                    "coverage_status": "UNKNOWN",
+                    "coverage_status": "COMPLETE" if _fact_has_actual_return(fact) else "PARTIAL",
                     "declared_start_capital": None,
                     "declared_end_capital": None,
                     "source_start_capital": fact["start_balance"],
@@ -313,7 +313,9 @@ def _asset_and_fact_rows(
                     "market_value_change": fact["capital_gain"],
                     "actual_return_from_sources": actual_return,
                     "return_used": actual_return or 0.0,
-                    "return_basis": "canonical statement fact",
+                    "currency": fact["currency"],
+                    "native_actual_return": _native_fact_return(fact),
+                    "return_basis": "canonical statement fact" if (fact["currency"] or "EUR") == "EUR" else "requires EUR conversion; native amounts retained",
                     "matched_fact_ids": fact_id,
                     "included_fact_ids": fact_id,
                     "source_document_sha256s": fact["document_sha256"],
@@ -325,7 +327,7 @@ def _asset_and_fact_rows(
     for fact in facts:
         fact_id = int(fact["id"])
         excluded = _is_excluded_box3_fact(fact)
-        included = fact_id in included_fact_ids
+        included = fact_id in included_fact_ids and (fact["currency"] or "EUR") == "EUR"
         fact_rows.append(
             {
                 "tax_year": year,
@@ -347,12 +349,13 @@ def _asset_and_fact_rows(
                 "capital_gain": fact["capital_gain"],
                 "gain_method": fact["gain_method"],
                 "calculated_actual_return": _fact_return(fact),
+                "native_actual_return": _native_fact_return(fact),
                 "has_usable_actual_return": _fact_has_actual_return(fact),
                 "matched_asset_ids": _join_ids(links.get(fact_id, [])),
                 "primary_asset_id": primary_asset.get(fact_id),
                 "included_in_year_total": included,
                 "exclusion_reason": (
-                    "excluded from Box 3" if excluded else "unmatched to declared inventory"
+                    "excluded from Box 3" if excluded else ("requires EUR conversion" if (fact["currency"] or "EUR") != "EUR" else "unmatched to declared inventory")
                 )
                 if not included
                 else None,

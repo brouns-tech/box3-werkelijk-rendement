@@ -1,0 +1,96 @@
+import sqlite3
+
+import pytest
+
+from wr.db import init_db, insert_facts
+from wr.i18n import currency
+from wr.parsers.revolut import parse_revolut
+from wr.portfolio import _coverage_for_year, _fact_has_actual_return, _fact_return, _native_fact_return
+
+
+@pytest.mark.parametrize("code,symbol", [("EUR", "€"), ("USD", "$"), ("GBP", "£")])
+def test_deposit_interest_is_separate_from_money_in_and_current_account(code, symbol):
+    text = f"""
+{code} Statement
+Revolut Bank UAB (Netherlands Branch)
+ALEX EXAMPLE
+IBAN NL00REVO0000000000
+Balance summary
+Account (Current Account) {symbol}0.00 {symbol}1,000.00 {symbol}1,000.00 {symbol}0.00
+Deposit {symbol}0.00 {symbol}100.00 {symbol}1,005.00 {symbol}905.00
+Total {symbol}0.00 {symbol}1,100.00 {symbol}2,005.00 {symbol}905.00
+Account transactions from January 1, 2025 to December 31, 2025
+Jan 1, 2025 To Instant Access Savings {symbol}1,000.00 {symbol}0.00
+Deposit transactions from January 1, 2025 to December 31, 2025
+Jan 1, 2025 To Instant Access Savings {symbol}1,000.00 {symbol}1,000.00
+Jan 2, 2025 Net Interest Paid to 'Instant Access Savings' for Jan 2, {symbol}2.00 {symbol}1,002.00
+2025
+\f
+{code} Statement
+Jan 3, 2025 Net Interest Paid to 'Instant Access Savings' for Jan 3, {symbol}3.00 {symbol}1,005.00
+2025
+Jan 4, 2025 From Instant Access Savings {symbol}100.00 {symbol}905.00
+"""
+    current, deposit = parse_revolut(text, 2025, "account_statement").facts
+    assert current.holder_names == deposit.holder_names == ["ALEX EXAMPLE"]
+    assert current.currency == deposit.currency == code
+    assert current.account_key != deposit.account_key
+    assert current.interest_received == 0
+    assert deposit.interest_received == 5
+    assert deposit.deposits == 1000
+    assert deposit.withdrawals == 100
+    assert deposit.end_balance == 905
+    assert _native_fact_return(deposit.__dict__) == 5
+    assert _fact_return(deposit.__dict__) == (5 if code == "EUR" else None)
+    assert currency(deposit.interest_received, "en", code) == f"{symbol} 5.00"
+    assert currency(1000, "nl", code) == f"{symbol} 1.000,00"
+
+
+def test_summary_alone_does_not_prove_zero_deposit_interest():
+    result = parse_revolut("""
+EUR Statement
+IBAN NL00REVO0000000000
+Account (Current Account) €0.00 €100.00 €100.00 €0.00
+Deposit €0.00 €0.00 €105.00 €105.00
+""", 2025, "account_statement")
+    assert result.facts[1].interest_received is None
+    assert _fact_return(result.facts[1].__dict__) is None
+    assert not _fact_has_actual_return(result.facts[1].__dict__)
+
+
+def test_foreign_currency_never_enters_eur_rollup():
+    from wr.models import AccountYearFact
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    conn.execute("INSERT INTO documents (content_sha256, byte_size, imported_at, parse_status) VALUES ('test', 1, 'now', 'parsed')")
+    insert_facts(conn, 'test', [fact.__dict__ for fact in [
+        AccountYearFact(2025, 'bank', 'eur', 'EUR', interest_received=10, gain_method='interest_only'),
+        AccountYearFact(2025, 'bank', 'usd', 'USD', currency='USD', end_balance=1000, interest_received=20, gain_method='interest_only'),
+    ]])
+    conn.execute("UPDATE account_year_facts SET is_canonical=1")
+    result = _coverage_for_year(conn, 2025)
+    assert result.known_combined_actual_return == result.interest_received == 10
+    assert result.end_balance == 0
+    assert result.coverage_status == 'PARTIAL'
+    assert any('requires EUR conversion' in message for message in result.missing)
+    from wr.export import _asset_and_fact_rows
+    assets, sources = _asset_and_fact_rows(conn, 2025)
+    usd = next(row for row in sources if row['currency'] == 'USD')
+    assert usd['native_actual_return'] == 20
+    assert usd['calculated_actual_return'] is None
+    assert not usd['included_in_year_total']
+    assert usd['exclusion_reason'] == 'requires EUR conversion'
+
+
+def test_decision_table_distinguishes_holder_return_from_zero_tax_allocation():
+    from dashboard.app import _decision_rows
+    rows = _decision_rows([{
+        'partner': 'a', 'partner_name': 'Alex Example', 'allocation_ratio': 0,
+        'allocated_actual_return': 0, 'fictitious_return': 0,
+        'estimated_box3_tax_actual': 0, 'estimated_box3_tax_fictitious': 0,
+        'recommendation': 'EQUAL',
+    }], statement_returns={'a': 1500})
+    assert rows[0]['Statement return by holder'] == '€ 1,500.00'
+    assert rows[0]['Allocated actual return'] == '€ 0.00'
+    assert rows[0]['Tax allocation'] == '0%'

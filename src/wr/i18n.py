@@ -79,6 +79,12 @@ DUTCH = {
     "Download audit export": "Auditexport downloaden",
     "ZIP with yearly totals, asset calculations, source facts, and tax results.": "ZIP met jaartotalen, vermogensberekeningen, brongegevens en belastingresultaten.",
     "Coverage": "Documentdekking",
+    "Statement return by holder": "Bronrendement per rekeninghouder",
+    "Requires EUR conversion and currency gain/loss": "Omrekening naar EUR en valutawinst/-verlies vereist",
+    "Tax allocation": "Fiscale verdeling",
+    "Allocated actual return": "Toegerekend werkelijk rendement",
+    "Statement returns follow account ownership; joint accounts are split equally for this view. Tax estimates use the filed fiscal-partner allocation of the combined return.": "Bronrendement volgt rekeningbezit; gezamenlijke rekeningen worden in deze weergave gelijk verdeeld. Belastingramingen gebruiken de fiscale verdeling uit de aangifte van het gezamenlijke rendement.",
+    "Account amounts use the source currency. Unconverted foreign-currency accounts are excluded from EUR totals and keep the tax comparison incomplete.": "Rekeningbedragen staan in de bronvaluta. Niet-omgerekende vreemdevalutarekeningen tellen niet mee in EUR-totalen en houden de belastingvergelijking onvolledig.",
     "Actual return": "Werkelijk rendement",
     "Statement sources": "Brongegevens uit overzichten",
     "Missing / partial: {details}": "Ontbrekend / gedeeltelijk: {details}",
@@ -192,13 +198,14 @@ def translator(language: str):
     return partial(translate, language)
 
 
-def currency(value: float | None, language: str = "en") -> str:
+def currency(value: float | None, language: str = "en", currency_code: str = "EUR") -> str:
     if value is None:
         return "—"
     number = f"{value:,.2f}"
     if language == "nl":
         number = number.translate(str.maketrans({",": ".", ".": ","}))
-    return f"€ {number}"
+    symbol = {"EUR": "€", "USD": "$", "GBP": "£"}.get(currency_code, currency_code)
+    return f"{symbol} {number}"
 
 
 STATUS_MESSAGES = {
@@ -233,5 +240,7 @@ def coverage_details(value: str, language: str) -> str:
             entry = translate(language, "No canonical Box 3 statements for this year")
         elif entry.endswith(suffix):
             entry = entry[:-len(suffix)] + " (" + translate(language, "No actual-return fields") + ")"
+        elif entry.endswith(" (requires EUR conversion and currency gain/loss)"):
+            entry = entry[:-len(" (requires EUR conversion and currency gain/loss)")] + " (" + translate(language, "Requires EUR conversion and currency gain/loss") + ")"
         messages.append(entry)
     return "; ".join(messages)
