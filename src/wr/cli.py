@@ -7,14 +7,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from wr.config import load_config, resolve_db_path
+from wr.config import load_settings, resolve_db_path
 from wr.export import write_audit_export
 from wr.import_pipeline import DocumentImportOutcome, ImportStatus, recompute, run_import
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wr", description="Werkelijk rendement Box 3 toolkit")
-    parser.add_argument("--config", help="Path to config.toml")
+    parser.add_argument("--workspace", help="Workspace directory with saved UI settings (default: current directory)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_import = sub.add_parser("import", help="Import PDFs recursively and rebuild analysis")
@@ -43,29 +43,30 @@ def main(argv: list[str] | None = None) -> int:
         from wr.demo import create_demo_workspace
 
         with tempfile.TemporaryDirectory(prefix="werkelijk-rendement-demo-") as directory:
-            config_path = create_demo_workspace(directory)
+            workspace = create_demo_workspace(directory)
             print("Opening dashboard with synthetic example data")
-            return _launch_dashboard(config_path, args.port)
+            return _launch_dashboard(workspace, args.port)
 
     try:
-        cfg = load_config(args.config)
+        cfg = load_settings(args.workspace)
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
     db_path = resolve_db_path(cfg)
     partner_config = cfg.partners
 
     if args.cmd == "import":
-        if args.fresh and db_path.exists():
-            db_path.unlink()
-        root = Path(args.root) if args.root else cfg.import_root
+        root = Path(args.root).expanduser() if args.root else cfg.import_root
         if not root:
             print("Provide --root with the document folder, or import using the dashboard", file=sys.stderr)
             return 2
+        root = root.expanduser()
         if not root.is_absolute() and not args.root:
             root = cfg.project_root / root
         if not Path(root).is_dir():
             print(f"Import root is not a directory: {root}", file=sys.stderr)
             return 2
+        if args.fresh and db_path.exists():
+            db_path.unlink()
         print(f"Importing from {root}")
         print(f"Database {db_path}")
         report = run_import(
@@ -101,12 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "dashboard":
-        return _launch_dashboard(cfg.config_path, args.port)
+        return _launch_dashboard(cfg.project_root, args.port)
 
     return 1
 
 
-def _launch_dashboard(config_path: Path | None, port: int) -> int:
+def _launch_dashboard(workspace: Path, port: int) -> int:
     app_module = importlib.import_module("dashboard.app")
     app = Path(app_module.__file__).resolve()
     cmd = [
@@ -118,8 +119,7 @@ def _launch_dashboard(config_path: Path | None, port: int) -> int:
         "--server.port",
         str(port),
     ]
-    if config_path:
-        cmd.extend(["--", "--config", str(config_path)])
+    cmd.extend(["--", "--workspace", str(workspace)])
     try:
         return subprocess.call(cmd)
     except KeyboardInterrupt:

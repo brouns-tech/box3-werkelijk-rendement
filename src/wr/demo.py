@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from wr.config import PartnerSettings
+from wr.config import PartnerSettings, Settings, save_settings
 from wr.db import connect, init_db
 from wr.portfolio import rebuild_portfolio
 from wr.recommend import rebuild_recommendations
@@ -113,17 +113,8 @@ def create_demo_workspace(directory: str | Path) -> Path:
     rebuild_recommendations(conn, PARTNERS)
     conn.close()
 
-    config_path = workspace / "config.toml"
-    config_path.write_text(
-        'db_path = "wr-demo.sqlite"\n\n'
-        "[partners]\n"
-        'partner_a = "Sophie de Vries"\n'
-        'partner_b = "Daan Jansen"\n'
-        'partner_a_aliases = ["S. de Vries"]\n'
-        'partner_b_aliases = ["D. Jansen"]\n',
-        encoding="utf-8",
-    )
-    return config_path
+    save_settings(Settings(project_root=workspace.resolve(), db_path=Path("wr-demo.sqlite"), partners=PARTNERS))
+    return workspace.resolve()
 
 
 def _insert_demo_data(conn) -> None:

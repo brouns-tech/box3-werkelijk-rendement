@@ -47,12 +47,20 @@ class ParserRegistration:
 
 
 @dataclass(frozen=True)
+class InstitutionSetting:
+    key: str
+    label: str
+    help: str = ""
+
+
+@dataclass(frozen=True)
 class InstitutionPlugin:
     issuer: str
     classification_rules: tuple[ClassificationRule, ...]
     parsers: Mapping[str, ParserRegistration]
     postprocess: PostProcessor | None = None
     classification_priority: int = 0
+    settings_fields: tuple[InstitutionSetting, ...] = ()
 
 
 def simple_parser(

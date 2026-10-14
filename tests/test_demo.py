@@ -1,13 +1,13 @@
 import json
 import sqlite3
 
-from wr.config import load_config, resolve_db_path
+from wr.config import load_settings, resolve_db_path
 from wr.demo import create_demo_workspace
 
 
 def test_demo_workspace_contains_complete_synthetic_analysis(tmp_path):
-    config_path = create_demo_workspace(tmp_path)
-    settings = load_config(config_path)
+    workspace = create_demo_workspace(tmp_path)
+    settings = load_settings(workspace)
 
     assert settings.partners.partner_a == "Sophie de Vries"
     assert settings.partners.partner_b == "Daan Jansen"

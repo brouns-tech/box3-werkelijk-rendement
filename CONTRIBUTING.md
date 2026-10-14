@@ -15,17 +15,18 @@ Contributions that add support for more bank and broker statement templates are 
 5. Add the exact statement name and limitations to
    `docs/supported-documents.md`.
 
-Plugin-specific configuration belongs under an institution namespace:
+Plugins declare UI settings using `InstitutionPlugin.settings_fields`:
 
-```toml
-[institutions.example]
-option_name = "value"
+```python
+settings_fields=(InstitutionSetting("option_name", "Option label", "Help text"),)
 ```
 
-The main application passes these values through without knowing their meaning.
+The Settings tab renders these fields and persists their values under the
+institution namespace. The main application passes the values through without
+knowing their meaning.
 
 Do not commit real statements, extracted text, names, addresses, account numbers, tax identifiers, balances,
-`config.toml`, SQLite databases, or audit exports. Synthetic fixtures should use unmistakably fictional names and
+`.wr-settings.json`, retired configuration files, SQLite databases, or audit exports. Synthetic fixtures should use unmistakably fictional names and
 reserved example account identifiers.
 
 ## Development setup

@@ -3,7 +3,7 @@ import sqlite3
 
 import pytest
 
-from wr.config import PartnerSettings, load_config, save_settings
+from wr.config import PartnerSettings, load_settings, save_settings
 from wr.db import init_db
 from wr.identities import effective_partners, identity_slot, similarity, suggest_identities
 from wr.recommend import rebuild_recommendations
@@ -53,24 +53,24 @@ def test_configured_nickname_aliases_override_inference():
 def test_ui_settings_override_toml_and_survive_database_removal(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.toml").write_text('[partners]\npartner_a = "Legacy Person"\n')
-    cfg = load_config()
+    cfg = load_settings()
     partners = PartnerSettings(partner_a="Sophie de Vries", partner_a_aliases=("Fie",), unassigned_names=("S. de Vries",))
     save_settings(cfg, partners, "documents")
-    assert load_config().partners == partners
-    assert str(load_config().import_root) == "documents"
+    assert load_settings().partners == partners
+    assert str(load_settings().import_root) == "documents"
     cfg.resolved_db_path.parent.mkdir()
     cfg.resolved_db_path.touch()
     cfg.resolved_db_path.unlink()
-    assert load_config().partners == partners
+    assert load_settings().partners == partners
 
 
 def test_duplicate_alias_rejected_without_overwriting_preferences(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    cfg = load_config()
+    cfg = load_settings()
     save_settings(cfg, PartnerSettings(partner_a="Sophie de Vries"), "")
     with pytest.raises(ValueError, match="both taxpayers"):
         save_settings(cfg, PartnerSettings(partner_a="Sophie de Vries", partner_b="Simon de Vries", partner_a_aliases=("S. de Vries",), partner_b_aliases=("S de Vries",)), "")
-    assert load_config().partners.partner_a == "Sophie de Vries"
+    assert load_settings().partners.partner_a == "Sophie de Vries"
 
 
 def test_inferred_initials_flow_into_recommendations():

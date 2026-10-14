@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from wr.config import PartnerSettings, load_config, resolve_db_path
+from wr.config import PartnerSettings, load_settings, resolve_db_path
 from wr.db import connect, init_db
 from wr.identities import identity_slot, observed_names, name_tokens
 from wr.recommend import rebuild_recommendations
 from dashboard.settings import documents_ui, taxpayers_ui
+from dashboard.workspace_settings import workspace_settings_ui
 from wr.export import create_audit_export
 from wr.money import subtract
 from wr.portfolio import _fact_return, is_box3_fact
@@ -113,10 +113,10 @@ def _styled_table(rows: list[dict], owner_column: str, colors: dict[str, str]):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default=None)
+    parser.add_argument("--workspace", default=None)
     args, _ = parser.parse_known_args()
 
-    cfg = load_config(args.config)
+    cfg = load_settings(args.workspace)
     db_path = resolve_db_path(cfg)
 
     st.set_page_config(page_title="Werkelijk Rendement", layout="wide")
@@ -125,8 +125,10 @@ def main() -> None:
 
     conn = connect(db_path)
     init_db(conn)
-    overview, documents, taxpayers = st.tabs(["Overview", "Documents", "Taxpayers"])
+    overview, documents, taxpayers, settings = st.tabs(["Overview", "Documents", "Taxpayers", "Settings"])
     try:
+        with settings:
+            workspace_settings_ui(cfg)
         with documents:
             documents_ui(cfg)
         with taxpayers:

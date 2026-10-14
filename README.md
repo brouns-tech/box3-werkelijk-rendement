@@ -82,11 +82,20 @@ Imported data is kept in the database across sessions. Imports read files direct
 from the computer running the app; documents are not uploaded through the browser.
 Relative folder paths start at the workspace, and `~` refers to your home folder.
 
-Existing `config.toml` files remain supported for compatibility and advanced
-database/institution options; see `config.example.toml`. Saved UI taxpayer
-settings take precedence. Relative database paths are resolved from the
-configuration file. Use another file with
-`wr --config /path/to/config.toml <command>`; its directory defines the workspace.
+To start over, open **Settings → Reset workspace** and confirm **Delete profiles
+and imported data**. This removes taxpayer profiles, aliases, imported document
+records, extracted facts, analysis results, institution options, and the saved folder. Original PDFs
+and audit exports stay on disk.
+
+Manage the database location and institution options in the **Settings** tab.
+All settings are persisted automatically by the UI; no configuration file needs
+to be maintained. Existing `config.toml` values are migrated once into saved UI
+settings, preserving earlier UI edits. The retired file is ignored afterward.
+
+The current directory defines the workspace. To use another workspace with the
+dashboard or CLI, run `wr --workspace /path/to/workspace <command>`. CLI import,
+recompute, and export commands use the same saved settings as the dashboard.
+The `--config` option and example TOML configuration have been removed.
 
 ### 4. Import your documents
 

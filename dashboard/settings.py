@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 
 from dashboard.folder_picker import folder_path_input
+from dashboard.ui_state import prepare_taxpayer_editor, refresh_taxpayer_editor, taxpayer_widget_key
 from wr.config import PartnerSettings, resolve_db_path, save_settings
 from wr.identities import effective_partners, identity_slot, observed_names
 from wr.import_pipeline import run_import
@@ -44,10 +45,7 @@ def documents_ui(cfg) -> None:
         else:
             if not do_import:
                 st.rerun()
-            # Rebuild the editor from saved settings and newly detected names.
-            for key in list(st.session_state):
-                if key.startswith(("canonical_", "aliases_", "identity_")):
-                    del st.session_state[key]
+            refresh_taxpayer_editor()
             st.rerun()
     if st.session_state.pop("folder_saved", False):
         st.success("Document folder saved.")
@@ -57,9 +55,10 @@ def documents_ui(cfg) -> None:
 
 def taxpayers_ui(cfg, conn) -> PartnerSettings:
     st.subheader("Taxpayers")
-    st.caption("Settings are saved in this workspace and reused across sessions. Existing TOML settings are used until you save here.")
+    st.caption("Taxpayer names and aliases are saved in this workspace and reused across sessions.")
     partners = effective_partners(conn, cfg.partners)
     names = observed_names(conn)
+    prepare_taxpayer_editor(str(cfg.resolved_db_path), partners, names)
 
     st.info("Detected identities are best guesses based on names. Review shared initials and add nicknames as aliases. Fiscal partnership and allocation come from each tax return.")
     columns = st.columns(2)
@@ -67,11 +66,12 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     for slot, column in zip(("a", "b"), columns):
         fallback = "First taxpayer" if slot == "a" else "Second taxpayer (optional)"
         current = getattr(partners, f"partner_{slot}") or ""
-        column.markdown(f"**{st.session_state.get(f'canonical_{slot}', current) or fallback}**")
-        values[slot] = column.text_input("Canonical name", value=current, key=f"canonical_{slot}")
+        canonical_key = taxpayer_widget_key(f"canonical_{slot}")
+        column.markdown(f"**{st.session_state.get(canonical_key, current) or fallback}**")
+        values[slot] = column.text_input("Canonical name", value=current, key=canonical_key)
         values[f"aliases_{slot}"] = column.text_area(
             "Aliases (one per line)", value="\n".join(partners.aliases_for(slot)),
-            key=f"aliases_{slot}",
+            key=taxpayer_widget_key(f"aliases_{slot}"),
         )
     st.caption("For one identity, clear the second name and assign its spellings to the remaining person. Two identities do not imply full-year fiscal partnership.")
     labels = {
@@ -88,7 +88,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             slot = identity_slot(name, partners) or "unassigned"
             assignments[name] = st.selectbox(
                 name, options, index=options.index(slot), format_func=labels.get,
-                key=f"identity_{name}",
+                key=taxpayer_widget_key(f"identity_{name}"),
             )
     if st.button("Save settings and update analysis", key="save_settings"):
         try:

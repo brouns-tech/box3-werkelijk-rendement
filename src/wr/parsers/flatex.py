@@ -11,6 +11,7 @@ from wr.money import add, subtract, total
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
+    InstitutionSetting,
     ParserContext,
     ParserRegistration,
 )
@@ -490,4 +491,7 @@ PLUGIN = InstitutionPlugin(
         "belastingcertificaat": ParserRegistration(_parse_with_context, 10),
     },
     postprocess=_postprocess,
+    settings_fields=(
+        InstitutionSetting("linked_account", "Linked bank account (IBAN)", "Used to identify external transfers in flatex account statements."),
+    ),
 )

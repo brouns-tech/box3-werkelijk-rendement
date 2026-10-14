@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
 import json
 import os
 import tempfile
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore
+SETTINGS_VERSION = 2
+
 
 @dataclass(frozen=True)
 class PartnerSettings:
@@ -34,7 +32,6 @@ class PartnerSettings:
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
-    config_path: Path | None = None
     import_root: Path | None = None
     db_path: Path = Path("data/wr.sqlite")
     partners: PartnerSettings = field(default_factory=PartnerSettings)
@@ -42,72 +39,91 @@ class Settings:
 
     @property
     def resolved_db_path(self) -> Path:
-        if self.db_path.is_absolute():
-            return self.db_path
-        return self.project_root / self.db_path
+        path = self.db_path.expanduser()
+        return path if path.is_absolute() else self.project_root / path
+
+    @property
+    def settings_path(self) -> Path:
+        return self.project_root / ".wr-settings.json"
 
 
-def load_config(path: str | Path | None = None) -> Settings:
-    candidate = Path(path) if path is not None else Path.cwd() / "config.toml"
-    if not candidate.is_file():
-        if path is not None:
-            raise FileNotFoundError(f"Config file not found: {candidate}")
-        return _load_saved_settings(Settings(project_root=Path.cwd().resolve()))
+def load_settings(workspace: str | Path | None = None) -> Settings:
+    root = Path(workspace or Path.cwd()).expanduser().resolve()
+    if root.exists() and not root.is_dir():
+        raise ValueError(f"Workspace must be a directory: {root}")
+    path = root / ".wr-settings.json"
+    raw = _mapping(json.loads(path.read_text(encoding="utf-8")), "settings") if path.exists() else {}
+    version = raw.get("version", 1)
+    if not isinstance(version, int) or not 1 <= version <= SETTINGS_VERSION:
+        raise ValueError(f"Unsupported workspace settings version: {version}")
+    # Upgrade the original UI preferences, preserving their overrides over TOML.
+    # Version 2 is self-contained: legacy files are never read again afterward.
+    upgrade = bool(raw) and version < SETTINGS_VERSION
+    if version < SETTINGS_VERSION and (root / "config.toml").is_file():
+        from wr.legacy_settings import read_legacy_settings
 
-    with candidate.open("rb") as config_file:
-        raw = tomllib.load(config_file)
-    return _load_saved_settings(_settings_from_mapping(raw, candidate.resolve()))
+        raw = {**read_legacy_settings(root / "config.toml"), **raw}
+        upgrade = True
+    settings = _settings_from_mapping(raw, root)
+    if upgrade:
+        save_settings(settings)
+    return settings
 
 
-def _load_saved_settings(settings: Settings) -> Settings:
-    path = settings.project_root / ".wr-settings.json"
-    if not path.exists():
-        return settings
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    saved = _settings_from_mapping(raw, path)
-    return replace(settings, partners=saved.partners, import_root=saved.import_root)
-
-
-def save_settings(settings: Settings, partners: PartnerSettings, import_root: str) -> None:
-    """Persist UI preferences independently of the database (including fresh imports)."""
+def save_settings(
+    settings: Settings,
+    partners: PartnerSettings | None = None,
+    import_root: str | None = None,
+    *,
+    db_path: str | Path | None = None,
+    institution_options: dict[str, dict[str, object]] | None = None,
+) -> None:
+    """Atomically save UI settings while preserving fields edited in other tabs."""
     from wr.identities import validate_partners
 
-    validate_partners(partners)
-    payload = {"partners": asdict(partners), "import_root": import_root.strip() or None}
-    path = settings.project_root / ".wr-settings.json"
+    updated = replace(
+        settings,
+        partners=partners if partners is not None else settings.partners,
+        import_root=(Path(import_root.strip()) if import_root.strip() else None) if import_root is not None else settings.import_root,
+        db_path=Path(db_path) if db_path is not None else settings.db_path,
+        institution_options=institution_options if institution_options is not None else settings.institution_options,
+    )
+    validate_partners(updated.partners)
+    payload = {
+        "version": SETTINGS_VERSION,
+        "db_path": str(updated.db_path),
+        "import_root": str(updated.import_root) if updated.import_root else None,
+        "partners": asdict(updated.partners),
+        "institutions": updated.institution_options,
+    }
+    _settings_from_mapping(payload, settings.project_root)
+    serialized = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    path = settings.settings_path
+    path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".wr-settings-", suffix=".tmp")
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            json.dump(payload, output, indent=2, ensure_ascii=False)
-            output.write("\n")
+            output.write(serialized)
         os.replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
 
 
-def _settings_from_mapping(raw: dict[str, Any], config_path: Path) -> Settings:
+def _settings_from_mapping(raw: dict[str, Any], root: Path) -> Settings:
     partner_raw = _mapping(raw.get("partners"), "partners")
     institution_raw = _mapping(raw.get("institutions"), "institutions")
     return Settings(
-        project_root=config_path.parent,
-        config_path=config_path,
+        project_root=root,
         import_root=_optional_path(raw.get("import_root"), "import_root"),
         db_path=_optional_path(raw.get("db_path"), "db_path") or Path("data/wr.sqlite"),
         partners=PartnerSettings(
             partner_a=_optional_string(partner_raw.get("partner_a"), "partners.partner_a"),
             partner_b=_optional_string(partner_raw.get("partner_b"), "partners.partner_b"),
-            partner_a_aliases=_string_tuple(
-                partner_raw.get("partner_a_aliases"), "partners.partner_a_aliases"
-            ),
-            partner_b_aliases=_string_tuple(
-                partner_raw.get("partner_b_aliases"), "partners.partner_b_aliases"
-            ),
+            partner_a_aliases=_string_tuple(partner_raw.get("partner_a_aliases"), "partners.partner_a_aliases"),
+            partner_b_aliases=_string_tuple(partner_raw.get("partner_b_aliases"), "partners.partner_b_aliases"),
             unassigned_names=_string_tuple(partner_raw.get("unassigned_names"), "partners.unassigned_names"),
         ),
-        institution_options={
-            name: _mapping(options, f"institutions.{name}")
-            for name, options in institution_raw.items()
-        },
+        institution_options={name: _mapping(options, f"institutions.{name}") for name, options in institution_raw.items()},
     )
 
 
@@ -115,7 +131,7 @@ def _mapping(value: Any, name: str) -> dict[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, dict):
-        raise ValueError(f"{name} must be a TOML table")
+        raise ValueError(f"{name} must be an object")
     return value
 
 
@@ -135,9 +151,7 @@ def _optional_path(value: Any, name: str) -> Path | None:
 def _string_tuple(value: Any, name: str) -> tuple[str, ...]:
     if value is None:
         return ()
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) or not item.strip() for item in value
-    ):
+    if not isinstance(value, (list, tuple)) or any(not isinstance(item, str) or not item.strip() for item in value):
         raise ValueError(f"{name} must be an array of non-empty strings")
     return tuple(item.strip() for item in value)
 
