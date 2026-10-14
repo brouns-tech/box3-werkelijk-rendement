@@ -45,8 +45,10 @@ def test_inline_save_and_discard_apply_to_all_drafts(tmp_path, monkeypatch):
     assert "Other nickname" in load_settings().partners.partner_b_aliases
 
 
-def test_delete_child_unassigns_documents_and_does_not_redetect(tmp_path, monkeypatch):
+def test_delete_child_unassigns_documents_and_does_not_redetect(tmp_path, monkeypatch, caplog):
     from dataclasses import replace
+    from types import SimpleNamespace
+    from streamlit.elements.lib import policies
     from wr.config import ChildSettings, save_settings
     from wr.db import connect
     from wr.demo import create_demo_workspace
@@ -60,6 +62,11 @@ def test_delete_child_unassigns_documents_and_does_not_redetect(tmp_path, monkey
     app = AppTest.from_file(str(APP)).run()
     taxpayer_input(app, "canonical_a").set_value("Unsaved parent").run()
     taxpayer_input(app, "canonical_child_1").set_value("Unsaved child").run()
+    # AppTest has no server runtime, so enable the policy check locally to catch
+    # the default/session-state warning emitted in the running dashboard.
+    monkeypatch.setattr(policies, "runtime", SimpleNamespace(exists=lambda: True))
+    monkeypatch.setattr(policies, "_shown_default_value_warning", False)
+    caplog.clear()
     app.button(key="delete_child_0").click().run()
     assert not app.exception
     cfg = load_settings()
@@ -69,6 +76,11 @@ def test_delete_child_unassigns_documents_and_does_not_redetect(tmp_path, monkey
     assert taxpayer_input(app, "canonical_child_0").value == "Unsaved child"
     assert taxpayer_input(app, "canonical_a").value == "Unsaved parent"
     assert cfg.partners.partner_a == "Sophie de Vries"
+    app.button(key="add_child").click().run()
+    assert taxpayer_input(app, "canonical_child_1").value == ""
+    assert taxpayer_input(app, "canonical_child_0").value == "Unsaved child"
+    assert not app.exception
+    assert not any("was created with a default value" in record.getMessage() for record in caplog.records)
     restarted = AppTest.from_file(str(APP)).run()
     assert len([button for button in restarted.button if button.label == "Delete child"]) == 1
     with connect(cfg.resolved_db_path) as conn:

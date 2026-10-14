@@ -64,6 +64,14 @@ def _request_child_deletion(index: int) -> None:
     st.session_state["taxpayer_delete_child"] = index
 
 
+def _editor_widget_key(field: str, initial_value: str) -> str:
+    # Session state is the only source of widget values, including restored drafts.
+    # Widgets use a None default so Streamlit never sees competing initial values.
+    key = taxpayer_widget_key(field)
+    st.session_state.setdefault(key, initial_value)
+    return key
+
+
 def _preserve_other_drafts(indices: list[int], deleted: int, names: list[str]) -> None:
     """Keep other edits when deleting a saved child compacts profile indices."""
     remaining = [index for index in indices if index != deleted]
@@ -178,13 +186,13 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     for slot, column in zip(("a", "b"), columns):
         fallback = "First taxpayer" if slot == "a" else "Second taxpayer (optional)"
         current = getattr(partners, f"partner_{slot}") or ""
-        canonical_key = taxpayer_widget_key(f"canonical_{slot}")
+        canonical_key = _editor_widget_key(f"canonical_{slot}", current)
         column.markdown(f"**{st.session_state.get(canonical_key, current) or fallback}**")
-        values[slot] = column.text_input("Canonical name", value=current, key=canonical_key)
+        values[slot] = column.text_input("Canonical name", value=None, key=canonical_key)
         _field_actions(column, f"canonical_{slot}", values[slot], current)
         values[f"aliases_{slot}"] = column.text_area(
-            "Aliases (one per line)", value="\n".join(partners.aliases_for(slot)),
-            key=taxpayer_widget_key(f"aliases_{slot}"),
+            "Aliases (one per line)", value=None,
+            key=_editor_widget_key(f"aliases_{slot}", "\n".join(partners.aliases_for(slot))),
         )
         _field_actions(column, f"aliases_{slot}", values[f"aliases_{slot}"], "\n".join(partners.aliases_for(slot)))
     st.caption("For one identity, clear the second name and assign its spellings to the remaining person. Two identities do not imply full-year fiscal partnership.")
@@ -200,13 +208,13 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
         for slot, column in zip(child_slots[start:start + 2], columns):
             index = int(slot.removeprefix("child_"))
             child = partners.children[index] if index < len(partners.children) else None
-            canonical_key = taxpayer_widget_key(f"canonical_{slot}")
+            canonical_key = _editor_widget_key(f"canonical_{slot}", child.canonical_name if child else "")
             column.markdown(f"**{st.session_state.get(canonical_key, child.canonical_name if child else '') or f'Child {index + 1}'}**")
-            values[slot] = column.text_input("Canonical name", value=child.canonical_name if child else "", key=canonical_key)
+            values[slot] = column.text_input("Canonical name", value=None, key=canonical_key)
             _field_actions(column, f"canonical_{slot}", values[slot], child.canonical_name if child else "")
             values[f"aliases_{slot}"] = column.text_area(
-                "Aliases (one per line)", value="\n".join(child.aliases) if child else "",
-                key=taxpayer_widget_key(f"aliases_{slot}"),
+                "Aliases (one per line)", value=None,
+                key=_editor_widget_key(f"aliases_{slot}", "\n".join(child.aliases) if child else ""),
             )
             _field_actions(column, f"aliases_{slot}", values[f"aliases_{slot}"], "\n".join(child.aliases) if child else "")
             column.button("Delete child", key=f"delete_{slot}", on_click=_request_child_deletion, args=(index,))
@@ -224,11 +232,11 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
         for index, name in enumerate(names):
             options = ["unassigned", *slots]
             slot = identity_slot(name, partners) or "unassigned"
-            key = taxpayer_widget_key(f"identity_{name}")
+            key = _editor_widget_key(f"identity_{name}", slot)
             unassigned = st.session_state.get(key, slot) == "unassigned"
             with st.container(key=f"{'unassigned' if unassigned else 'assigned'}_name_{index}"):
                 assignments[name] = st.selectbox(
-                    name, options, index=options.index(slot), format_func=labels.get,
+                    name, options, index=None, format_func=labels.get,
                     key=key, on_change=_assignment_changed,
                 )
     changed = st.session_state.pop("taxpayer_assignment_changed", False)
