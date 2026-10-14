@@ -8,7 +8,7 @@ import streamlit as st
 
 from dashboard.folder_picker import folder_path_input
 from dashboard.ui_state import prepare_taxpayer_editor, refresh_taxpayer_editor, taxpayer_widget_key
-from wr.config import PartnerSettings, resolve_db_path, save_settings
+from wr.config import ChildSettings, PartnerSettings, resolve_db_path, save_settings
 from wr.identities import effective_partners, identity_slot, observed_names
 from wr.import_pipeline import run_import
 from wr.recommend import rebuild_recommendations
@@ -81,7 +81,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
     names = observed_names(conn)
     prepare_taxpayer_editor(str(cfg.resolved_db_path), partners, names)
 
-    st.info("Detected identities are best guesses based on names. Review shared initials and add nicknames as aliases. Fiscal partnership and allocation come from each tax return.")
+    st.info("Tax returns identify primary taxpayers and fiscal partners. Other distinct account holders are suggested as minor children; review these guesses, especially missing adult returns and shared initials. Fiscal partnership and allocation come from each tax return.")
     st.markdown(_UNASSIGNED_STYLE, unsafe_allow_html=True)
     columns = st.columns(2)
     values = {}
@@ -96,18 +96,42 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             key=taxpayer_widget_key(f"aliases_{slot}"),
         )
     st.caption("For one identity, clear the second name and assign its spellings to the remaining person. Two identities do not imply full-year fiscal partnership.")
+    st.subheader("Minor children (assets attributed to parents)")
+    st.caption("Minderjarige kinderen: use this category for children whose Box 3 assets are attributed to the parents. Their documents appear as joint (purple) in the overview. Review ages and parental authority for the relevant tax year.")
+    count_key = taxpayer_widget_key("child_count")
+    st.session_state.setdefault(count_key, len(partners.children))
+    if st.button("Add child", key="add_child"):
+        st.session_state[count_key] += 1
+    child_slots = [f"child_{index}" for index in range(st.session_state[count_key])]
+    # Rows of at most two cards support an arbitrary number of children.
+    for start in range(0, len(child_slots), 2):
+        columns = st.columns(min(2, len(child_slots) - start))
+        for index, column in enumerate(columns, start=start):
+            slot = f"child_{index}"
+            child = partners.children[index] if index < len(partners.children) else None
+            canonical_key = taxpayer_widget_key(f"canonical_{slot}")
+            column.markdown(f"**{st.session_state.get(canonical_key, child.canonical_name if child else '') or f'Child {index + 1}'}**")
+            values[slot] = column.text_input("Canonical name", value=child.canonical_name if child else "", key=canonical_key)
+            values[f"aliases_{slot}"] = column.text_area(
+                "Aliases (one per line)", value="\n".join(child.aliases) if child else "",
+                key=taxpayer_widget_key(f"aliases_{slot}"),
+            )
+    if child_slots:
+        st.caption("To remove a child, clear the canonical name and aliases, and set its document names to Unassigned or another person.")
     save = st.button("Save settings and update analysis", key="save_settings")
     labels = {
         "unassigned": "Unassigned",
         "a": values["a"].strip() or "First taxpayer (enter a name above)",
         "b": values["b"].strip() or "Second taxpayer (enter a name above)",
     }
+    labels.update({slot: values[slot].strip() or f"Child {index + 1} (enter a name above)" for index, slot in enumerate(child_slots)})
+    slots = ["a", "b", *child_slots]
     assignments = {}
     if names:
         st.markdown("**Names found in documents**")
         st.caption("Assignments save and update the analysis immediately, including any name or alias edits above. These assignments take precedence over the alias text. Source names are preserved.")
         for index, name in enumerate(names):
-            options = ["unassigned", "a", "b"]
+            options = ["unassigned", *slots]
             slot = identity_slot(name, partners) or "unassigned"
             key = taxpayer_widget_key(f"identity_{name}")
             unassigned = st.session_state.get(key, slot) == "unassigned"
@@ -121,10 +145,10 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
         try:
             aliases = {
                 slot: {alias.strip() for alias in values[f"aliases_{slot}"].splitlines() if alias.strip()}
-                for slot in ("a", "b")
+                for slot in slots
             }
             for name, assignment in assignments.items():
-                for slot in ("a", "b"):
+                for slot in slots:
                     aliases[slot].discard(name)
                 if assignment != "unassigned":
                     aliases[assignment].add(name)
@@ -134,7 +158,13 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
                 partner_a_aliases=tuple(sorted(aliases["a"] - {values["a"].strip()})),
                 partner_b_aliases=tuple(sorted(aliases["b"] - {values["b"].strip()})),
                 unassigned_names=tuple(name for name, assignment in assignments.items() if assignment == "unassigned"),
+                children=tuple(
+                    ChildSettings(values[slot].strip(), tuple(sorted(aliases[slot] - {values[slot].strip()})))
+                    for slot in child_slots if values[slot].strip()
+                ),
             )
+            if any(aliases[slot] and not values[slot].strip() for slot in child_slots):
+                raise ValueError("Provide a child name before assigning aliases or documents.")
             save_settings(cfg, updated, str(cfg.import_root or ""))
             rebuild_recommendations(conn, updated)
         except (ValueError, OSError, sqlite3.Error) as exc:

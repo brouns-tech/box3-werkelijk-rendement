@@ -13,6 +13,47 @@ def taxpayer_input(app, field):
     return next(widget for widget in widgets if widget.key.endswith(f"_{field}"))
 
 
+def test_children_dynamic_editor_assignments_and_purple_overview(tmp_path, monkeypatch):
+    from dashboard.app import _canonical_name_map, _holder_label, _owner_colors, _owner_style
+    from wr.config import ChildSettings, PartnerSettings, save_settings
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_settings()
+    children = tuple(ChildSettings(f"Child {name} Example", (f"Nickname {name}",)) for name in ("Alpha", "Beta", "Gamma"))
+    save_settings(cfg, PartnerSettings(partner_a=cfg.partners.partner_a, partner_b=cfg.partners.partner_b, children=children))
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute("UPDATE account_year_facts SET holder_names = '[\"Nickname Gamma\"]' WHERE account_key = 'NL22RABO0002345678'")
+    app = AppTest.from_file(str(APP)).run()
+    assert not app.exception
+    assert taxpayer_input(app, "canonical_child_2").value == "Child Gamma Example"
+    select = next(select for select in app.selectbox if select.label == "Nickname Gamma")
+    assert select.value == "child_2"
+    assert "Child Gamma Example" in select.options
+    taxpayer_input(app, "canonical_child_2").set_value("Charlie Example").run()
+    assert "Charlie Example" in next(select for select in app.selectbox if select.label == "Nickname Gamma").options
+    app.button(key="save_settings").click().run()
+    assert not app.exception
+    cfg = load_settings()
+    assert cfg.partners.children[2].canonical_name == "Charlie Example"
+    assert _holder_label('["Nickname Gamma"]', _canonical_name_map(cfg.partners)) == "Charlie Example"
+    colors = _owner_colors(cfg.partners, _canonical_name_map(cfg.partners))
+    assert "#581c87" in _owner_style("Charlie Example", colors)
+    assert "#581c87" in _owner_style("Nickname Gamma", colors)
+    account_table = next(table.value for table in app.dataframe if "Account holder" in table.value.columns)
+    child_row = account_table[account_table["Account holder"] == "Charlie Example"].iloc[0]
+    assert child_row["Allocation"] == "Joint"
+    app.button(key="add_child").click().run()
+    taxpayer_input(app, "canonical_child_3").set_value("Robin Example")
+    app.button(key="save_settings").click().run()
+    assert not app.exception
+    assert len(load_settings().partners.children) == 4
+    restarted = AppTest.from_file(str(APP)).run()
+    assert taxpayer_input(restarted, "canonical_child_3").value == "Robin Example"
+
+
 def test_settings_can_be_saved_before_first_import(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     app = AppTest.from_file(str(APP)).run()

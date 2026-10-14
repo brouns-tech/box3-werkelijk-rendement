@@ -64,15 +64,26 @@ For manual path edits, click **Save folder** beside the field, or **Import docum
 in one step. PDFs in subfolders are included. No configuration file
 is required, and settings are available even before the first import.
 
-When no taxpayers are configured, the application suggests up to two identities
-from the taxpayer and account-holder names found in supported documents. It groups
+The application suggests up to two primary taxpayers from filers and named fiscal
+partners in tax returns. Other distinct account holders are suggested under
+**Minor children (assets attributed to parents)** (`minderjarige kinderen`). Without
+tax returns, it falls back to suggesting up to two taxpayers from account holders.
+It groups
 initials, first names, and small spelling differences where possible. A shared
 surname alone does not establish a match; ambiguous initials remain unassigned.
 Open the **Taxpayers** tab to review each detected spelling, change its assignment,
 rename taxpayers, and add aliases (including nicknames). Assignment dropdowns show the canonical
-names and update as you edit them. Additional names remain available for
-manual assignment. These are lexical guesses: fiscal partnership and allocations
-are still taken from each year's tax return.
+names of taxpayers and children and update as you edit them. Children have their
+own canonical names and aliases in a separate section; **Add child** supports any
+number of profiles. New distinct holders are also suggested after later imports.
+Ambiguous names remain available for manual assignment. Review these guesses:
+a missing return does not prove someone is a minor. Check the child's age and
+parental authority for each year; year-specific age or custody changes are not
+automatically modeled. Child accounts appear as joint (purple) in the overview.
+Full-year fiscal partners use the filed allocation for the combined return.
+For individual returns, child assets are attributed entirely to a sole configured
+parent, or equally to two configured parents. Children do not get separate tax
+decision rows.
 
 Saved taxpayer settings and the document-folder path are stored locally in
 `.wr-settings.json` in the workspace. They are reused by the dashboard and CLI
