@@ -41,6 +41,7 @@ def smoke_test(directory: Path) -> None:
     assert callable(DirPicker)
     from wr.desktop_storage import app_version, prepare_workspace, remember_language, remembered_language
     from wr.i18n import currency, translator
+    from wr.messages import Messages
     from wr.export import write_audit_export
     from wr.import_pipeline import recompute, run_import
     from wr.parsers import PLUGINS
@@ -54,7 +55,7 @@ def smoke_test(directory: Path) -> None:
     for language in ("nl", "en"):
         remember_language(directory, language)
         assert remembered_language(directory) == language
-        assert translator(language)("Select folder") == ("Map selecteren" if language == "nl" else "Select folder")
+        assert translator(language)(Messages.SELECT_FOLDER) == ("Map selecteren" if language == "nl" else "Select folder")
         assert currency(1234.56, language) == ("€ 1.234,56" if language == "nl" else "€ 1,234.56")
     layout_directory = directory / "layout-fixtures"
     layout_directory.mkdir(exist_ok=True)

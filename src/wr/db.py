@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Iterable
 
+from wr.money import Currency
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
     content_sha256 TEXT PRIMARY KEY,
@@ -241,7 +243,7 @@ def insert_facts(conn: sqlite3.Connection, document_sha: str, facts: Iterable[di
                 "account_label": payload.get("account_label"),
                 "holder_names": payload.get("holder_names"),
                 "ownership": payload.get("ownership", "unknown"),
-                "currency": payload.get("currency", "EUR"),
+                "currency": Currency(payload.get("currency", Currency.EUR)).value,
                 "start_balance": payload.get("start_balance"),
                 "end_balance": payload.get("end_balance"),
                 "deposits": payload.get("deposits"),

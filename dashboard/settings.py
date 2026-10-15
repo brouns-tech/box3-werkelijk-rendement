@@ -8,7 +8,8 @@ from dataclasses import replace
 
 import streamlit as st
 
-from dashboard.localization import ui_text as t
+from dashboard.localization import ui_translator
+from wr.messages import Messages
 
 from dashboard.folder_picker import folder_path_input
 from dashboard.ui_state import prepare_taxpayer_editor, refresh_taxpayer_editor, taxpayer_widget_key
@@ -47,11 +48,12 @@ def _discard_requested() -> None:
 
 
 def _field_actions(column, field: str, value: str, saved: str) -> None:
+    t = ui_translator()
     if value == saved:
         return
     with column.container(key=f"taxpayer_actions_{field}", horizontal=True, horizontal_alignment="right", gap="small"):
-        st.button("✓", key=f"save_field_{field}", help=t("Save all changes and update analysis"), on_click=_save_requested)
-        st.button("✕", key=f"discard_field_{field}", help=t("Discard all unsaved changes"), on_click=_discard_requested)
+        st.button("✓", key=f"save_field_{field}", help=t(Messages.SAVE_ALL_CHANGES_AND_UPDATE_ANALYSIS), on_click=_save_requested)
+        st.button("✕", key=f"discard_field_{field}", help=t(Messages.DISCARD_ALL_UNSAVED_CHANGES), on_click=_discard_requested)
 
 
 def _request_child_deletion(index: int) -> None:
@@ -96,34 +98,35 @@ def _preserve_other_drafts(indices: list[int], deleted: int, names: list[str]) -
 
 
 def documents_ui(cfg) -> None:
+    t = ui_translator()
     if os.environ.get("WR_CONTROL_URL"):
         from dashboard.desktop_import import render
         render(cfg, st.session_state.get("ui_language", "nl"))
         return
-    st.subheader(t("Documents"))
+    st.subheader(t(Messages.DOCUMENTS))
     st.session_state.setdefault("document_folder", str(cfg.import_root or ""))
     root, save = folder_path_input(cfg.project_root)
-    st.caption(t("Choose a folder on the computer running the app. Imports scan PDFs in that folder and its subfolders directly. The path is remembered across sessions."))
+    st.caption(t(Messages.DOCUMENT_IMPORT_HELP))
     selected = st.session_state.pop("folder_selected", False)
-    do_import = st.button(t("Import documents"), disabled=not root.strip(), key="import_documents")
+    do_import = st.button(t(Messages.IMPORT_DOCUMENTS), disabled=not root.strip(), key="import_documents")
     if save or do_import or selected:
         try:
             if not root.strip():
-                raise ValueError(t("Choose a document folder first."))
+                raise ValueError(t(Messages.CHOOSE_A_DOCUMENT_FOLDER_FIRST))
             folder = Path(root.strip()).expanduser()
             if not folder.is_absolute():
                 folder = cfg.project_root / folder
             folder = folder.resolve()
             if not folder.is_dir():
-                raise ValueError(t("The document folder does not exist or is not a directory."))
+                raise ValueError(t(Messages.THE_DOCUMENT_FOLDER_DOES_NOT_EXIST_OR_IS_NOT_A_DIRECTORY))
             save_settings(cfg, cfg.partners, str(folder))
             if do_import:
-                with st.spinner(t("Importing documents…")):
+                with st.spinner(t(Messages.IMPORTING_DOCUMENTS)):
                     report = run_import(
                         folder, resolve_db_path(cfg), partner_config=cfg.partners,
                         institution_options=cfg.institution_options,
                     )
-                st.session_state["import_summary"] = t("Import finished: {parsed} parsed, {duplicate} duplicates, {skipped} skipped, {failed} failed.", parsed=report.parsed, duplicate=report.duplicate, skipped=report.skipped, failed=report.failed)
+                st.session_state["import_summary"] = t.import_finished(parsed=report.parsed, duplicate=report.duplicate, skipped=report.skipped, failed=report.failed)
             else:
                 st.session_state["folder_saved"] = True
         except (OSError, ValueError) as exc:
@@ -134,14 +137,15 @@ def documents_ui(cfg) -> None:
             refresh_taxpayer_editor()
             st.rerun()
     if st.session_state.pop("folder_saved", False):
-        st.success(t("Document folder saved."))
+        st.success(t(Messages.DOCUMENT_FOLDER_SAVED))
     if "import_summary" in st.session_state:
         st.info(st.session_state.pop("import_summary"))
 
 
 def taxpayers_ui(cfg, conn) -> PartnerSettings:
-    st.subheader(t("Taxpayers"))
-    st.caption(t("Taxpayer names and aliases are saved in this workspace and reused across sessions."))
+    t = ui_translator()
+    st.subheader(t(Messages.TAXPAYERS))
+    st.caption(t(Messages.TAXPAYER_PROFILES_HELP))
     partners = effective_partners(conn, cfg.partners)
     names = observed_names(conn)
     prepare_taxpayer_editor(str(cfg.resolved_db_path), partners, names)
@@ -177,27 +181,27 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
                 if st.session_state.get(key) == f"child_{delete_index}":
                     st.session_state[key] = "unassigned"
 
-    st.info(t("Tax returns identify primary taxpayers and fiscal partners. Other distinct account holders are suggested as minor children; review these guesses, especially missing adult returns and shared initials. Fiscal partnership and allocation come from each tax return."))
+    st.info(t(Messages.TAXPAYER_DISCOVERY_HELP))
     st.markdown(_EDITOR_STYLE, unsafe_allow_html=True)
     columns = st.columns(2)
     values = {}
     for slot, column in zip(("a", "b"), columns):
         column = column.container(key=editor_key(slot, "profile"))
-        fallback = t("First taxpayer") if slot == "a" else t("Second taxpayer (optional)")
+        fallback = t(Messages.FIRST_TAXPAYER) if slot == "a" else t(Messages.SECOND_TAXPAYER_OPTIONAL)
         current = getattr(partners, f"partner_{slot}") or ""
         canonical_key = _editor_widget_key(f"canonical_{slot}", current)
         column.markdown(f"**{st.session_state.get(canonical_key, current) or fallback}**")
-        values[slot] = column.text_input(t("Canonical name"), value=None, key=canonical_key)
+        values[slot] = column.text_input(t(Messages.CANONICAL_NAME), value=None, key=canonical_key)
         _field_actions(column, f"canonical_{slot}", values[slot], current)
         values[f"aliases_{slot}"] = column.text_area(
-            t("Aliases (one per line)"), value=None,
+            t(Messages.ALIASES_ONE_PER_LINE), value=None,
             key=_editor_widget_key(f"aliases_{slot}", "\n".join(partners.aliases_for(slot))),
         )
         _field_actions(column, f"aliases_{slot}", values[f"aliases_{slot}"], "\n".join(partners.aliases_for(slot)))
-    st.caption(t("For one identity, clear the second name and assign its spellings to the remaining person. Two identities do not imply full-year fiscal partnership."))
-    st.subheader(t("Minor children (assets attributed to parents)"))
-    st.caption(t("Minderjarige kinderen: use this category for children whose Box 3 assets are attributed to the parents. Their documents appear as joint (purple) in the overview. Review ages and parental authority for the relevant tax year."))
-    if st.button(t("Add child"), key="add_child"):
+    st.caption(t(Messages.SINGLE_TAXPAYER_HELP))
+    st.subheader(t(Messages.MINOR_CHILDREN_ASSETS_ATTRIBUTED_TO_PARENTS))
+    st.caption(t(Messages.MINOR_CHILDREN_HELP))
+    if st.button(t(Messages.ADD_CHILD), key="add_child"):
         st.session_state[indices_key].append(st.session_state[next_index_key])
         st.session_state[next_index_key] += 1
     child_slots = [f"child_{index}" for index in st.session_state[indices_key]]
@@ -209,26 +213,26 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             index = int(slot.removeprefix("child_"))
             child = partners.children[index] if index < len(partners.children) else None
             canonical_key = _editor_widget_key(f"canonical_{slot}", child.canonical_name if child else "")
-            column.markdown(f"**{st.session_state.get(canonical_key, child.canonical_name if child else '') or t('Child {number}', number=index + 1)}**")
-            values[slot] = column.text_input(t("Canonical name"), value=None, key=canonical_key)
+            column.markdown(f"**{st.session_state.get(canonical_key, child.canonical_name if child else '') or t.child(number=index + 1)}**")
+            values[slot] = column.text_input(t(Messages.CANONICAL_NAME), value=None, key=canonical_key)
             _field_actions(column, f"canonical_{slot}", values[slot], child.canonical_name if child else "")
             values[f"aliases_{slot}"] = column.text_area(
-                t("Aliases (one per line)"), value=None,
+                t(Messages.ALIASES_ONE_PER_LINE), value=None,
                 key=_editor_widget_key(f"aliases_{slot}", "\n".join(child.aliases) if child else ""),
             )
             _field_actions(column, f"aliases_{slot}", values[f"aliases_{slot}"], "\n".join(child.aliases) if child else "")
-            column.button(t("Delete child"), key=f"delete_{slot}", on_click=_request_child_deletion, args=(index,))
+            column.button(t(Messages.DELETE_CHILD), key=f"delete_{slot}", on_click=_request_child_deletion, args=(index,))
     labels = {
-        "unassigned": t("Unassigned"),
-        "a": values["a"].strip() or t("First taxpayer (enter a name above)"),
-        "b": values["b"].strip() or t("Second taxpayer (enter a name above)"),
+        "unassigned": t(Messages.UNASSIGNED),
+        "a": values["a"].strip() or t(Messages.FIRST_TAXPAYER_ENTER_A_NAME_ABOVE),
+        "b": values["b"].strip() or t(Messages.SECOND_TAXPAYER_ENTER_A_NAME_ABOVE),
     }
-    labels.update({slot: values[slot].strip() or t("Child {number} (enter a name above)", number=index + 1) for index, slot in enumerate(child_slots)})
+    labels.update({slot: values[slot].strip() or t.child_name_placeholder(number=index + 1) for index, slot in enumerate(child_slots)})
     slots = ["a", "b", *child_slots]
     assignments = {}
     if names:
-        st.subheader(t("Names found in documents"))
-        st.caption(t("Assignments save and update the analysis immediately, including any name or alias edits above. These assignments take precedence over the alias text. Source names are preserved."))
+        st.subheader(t(Messages.NAMES_FOUND_IN_DOCUMENTS))
+        st.caption(t(Messages.IDENTITY_ASSIGNMENT_HELP))
         for index, name in enumerate(names):
             options = ["unassigned", *slots]
             slot = identity_slot(name, partners) or "unassigned"
@@ -269,7 +273,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
                 ),
             )
             if any(aliases[slot] and not values[slot].strip() for slot in child_slots):
-                raise ValueError(t("Provide a child name before assigning aliases or documents."))
+                raise ValueError(t(Messages.PROVIDE_A_CHILD_NAME_BEFORE_ASSIGNING_ALIASES_OR_DOCUMENTS))
             save_settings(cfg, updated, str(cfg.import_root or ""))
             rebuild_recommendations(conn, updated)
         except (ValueError, OSError, sqlite3.Error) as exc:
@@ -278,5 +282,5 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             st.session_state["settings_saved"] = True
             st.rerun()
     if st.session_state.pop("settings_saved", False):
-        st.success(t("Settings saved."))
+        st.success(t(Messages.SETTINGS_SAVED))
     return partners

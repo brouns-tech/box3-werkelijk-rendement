@@ -4,6 +4,7 @@ import pytest
 
 from wr.db import init_db, insert_facts
 from wr.i18n import currency
+from wr.money import Currency
 from wr.parsers.revolut import parse_revolut
 from wr.portfolio import _coverage_for_year, _fact_has_actual_return, _fact_return, _native_fact_return
 
@@ -34,6 +35,9 @@ Jan 4, 2025 From Instant Access Savings {symbol}100.00 {symbol}905.00
     current, deposit = parse_revolut(text, 2025, "account_statement").facts
     assert current.holder_names == deposit.holder_names == ["ALEX EXAMPLE"]
     assert current.currency == deposit.currency == code
+    assert current.currency is deposit.currency is Currency(code)
+    suffix = "" if code == "EUR" else f":{code}"
+    assert current.account_key == f"NL00REVO0000000000{suffix}"
     assert current.account_key != deposit.account_key
     assert current.interest_received == 0
     assert deposit.interest_received == 5
@@ -81,6 +85,22 @@ def test_foreign_currency_never_enters_eur_rollup():
     assert usd['calculated_actual_return'] is None
     assert not usd['included_in_year_total']
     assert usd['exclusion_reason'] == 'requires EUR conversion'
+
+
+def test_database_rejects_unsupported_currency():
+    from wr.models import AccountYearFact
+
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    fact = AccountYearFact(2025, "bank", "account", "Account").__dict__
+    fact["currency"] = "XYZ"
+    with pytest.raises(ValueError, match="not a valid Currency"):
+        insert_facts(conn, "test", [fact])
+
+
+def test_currency_formatter_rejects_unsupported_currency():
+    with pytest.raises(ValueError, match="not a valid Currency"):
+        currency(5, currency_code="XYZ")
 
 
 def test_decision_table_distinguishes_holder_return_from_zero_tax_allocation():

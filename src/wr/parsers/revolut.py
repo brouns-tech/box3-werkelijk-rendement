@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
-from wr.money import add, subtract, total
+from wr.money import Currency, add, subtract, total
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
@@ -12,6 +12,8 @@ from wr.parsers.base import (
 )
 from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_account_id, normalize_iban, parse_en_amount, parse_nl_amount
+
+_CURRENCY_PATTERN = "|".join(currency.value for currency in Currency)
 
 
 def _is_annual_summary(text: str) -> bool:
@@ -37,7 +39,7 @@ def _is_account_statement(text: str) -> bool:
     return (
         "revolut" in text
         and "account (current account)" in text
-        and bool(re.search(r"\b(?:eur|usd|gbp) statement\b", text))
+        and bool(re.search(rf"\b(?:{_CURRENCY_PATTERN}) statement\b", text, re.I))
         and bool(
             re.search(
                 r"(?:transactions|period)\s+from\s+january\s+1.*december\s+31",
@@ -166,10 +168,10 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
     facts: list[AccountYearFact] = []
     iban_m = re.search(r"(NL\d{2}REVO\d+)", text, re.I)
     account_key = normalize_iban(iban_m.group(1)) if iban_m else f"revolut-stmt-{year}"
-    currency_match = re.search(r"^\s*(EUR|USD|GBP) Statement\s*$", text, re.I | re.M)
-    currency = currency_match.group(1).upper() if currency_match else "EUR"
-    if currency != "EUR":
-        account_key = f"{account_key}:{currency}"
+    currency_match = re.search(rf"^\s*({_CURRENCY_PATTERN}) Statement\s*$", text, re.I | re.M)
+    currency = Currency(currency_match.group(1).upper()) if currency_match else Currency.EUR
+    if currency != Currency.EUR:
+        account_key = f"{account_key}:{currency.value}"
 
     # A statement contains distinct products. "Money in" includes interest,
     # so it must not be copied wholesale into external deposits.
@@ -209,7 +211,7 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
             extra={"product": product, "money_in_includes_interest": incoming,
                    "interest_source": "net_interest_transactions" if credits else "no_interest_transactions",
                    "interest_credit_count": len(credits),
-                   "fx_status": "requires_eur_conversion" if currency != "EUR" else "not_required"},
+                   "fx_status": "requires_eur_conversion" if currency != Currency.EUR else "not_required"},
         )
         # Missing deposit transactions do not prove zero savings interest.
         if product == "current" and interest is None:

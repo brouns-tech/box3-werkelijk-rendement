@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
+from wr.money import Currency
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
@@ -56,7 +57,7 @@ def parse_raisin(text: str, tax_year: int | None = None) -> ParseResult:
             account_key=iban,
             account_label=" ".join(label_parts),
             holder_names=_holders(text),
-            currency=am.group(1),
+            currency=Currency(am.group(1)),
             start_balance=parse_nl_amount(am.group(2)),
             end_balance=parse_nl_amount(am.group(3)),
             interest_received=parse_nl_amount(am.group(5)),  # netto

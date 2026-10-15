@@ -18,6 +18,7 @@ from pathlib import Path
 from wr.desktop_storage import (app_data_dir, prepare_workspace, selected_folder,
                                 remembered_language)
 from wr.i18n import translator
+from wr.messages import Messages
 from wr.desktop_platform import open_external
 
 
@@ -245,7 +246,7 @@ def main() -> int:
                 except (OSError, ValueError, KeyError):
                     pass
                 time.sleep(0.2)
-            raise RuntimeError(t("Another instance is still starting. Wait and reopen the application. See {log}.", log=directory / "server.log"))
+            raise RuntimeError(t.instance_starting_log(log=directory / "server.log"))
 
         url = ""
         token = secrets.token_urlsafe(32)
@@ -270,7 +271,7 @@ def main() -> int:
             try:
                 launch_external(str(target))
             except OSError as exc:
-                messagebox.showerror("Werkelijk Rendement", t("Could not open {target}: {error}", target=target, error=exc), parent=window)
+                messagebox.showerror("Werkelijk Rendement", t.could_not_open(target=target, error=exc), parent=window)
 
         window.protocol("WM_DELETE_WINDOW", shutdown)
         attempts = 0
@@ -296,7 +297,7 @@ def main() -> int:
                     if not ready and attempts < 3:
                         start_child()
                     else:
-                        raise RuntimeError(t("Dashboard stopped. See {log}.", log=directory / "server.log"))
+                        raise RuntimeError(t.dashboard_stopped(log=directory / "server.log"))
                 if not ready:
                     try:
                         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -308,11 +309,11 @@ def main() -> int:
                     except OSError:
                         pass
                     if not ready and time.monotonic() > deadline:
-                        raise RuntimeError(t("Startup is taking too long. See {log}.", log=directory / "server.log"))
+                        raise RuntimeError(t.startup_timeout(log=directory / "server.log"))
                 while not events.empty():
                     action, response = events.get_nowait()
                     if action == "folder":
-                        folder = filedialog.askdirectory(parent=window, title=t("Select folder"), initialdir=selected_folder(directory) or str(Path.home()), mustexist=True)
+                        folder = filedialog.askdirectory(parent=window, title=t(Messages.SELECT_FOLDER), initialdir=selected_folder(directory) or str(Path.home()), mustexist=True)
                         response.put({"folder": folder or None})
                     elif action == "data":
                         open_target(directory)

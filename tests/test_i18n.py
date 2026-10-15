@@ -1,4 +1,6 @@
 import ast
+from dataclasses import FrozenInstanceError
+import inspect
 import io
 import json
 import sqlite3
@@ -11,7 +13,8 @@ from streamlit.testing.v1 import AppTest
 
 from wr.demo import create_demo_workspace
 from wr.desktop_storage import prepare_workspace, remember_folder, remember_language, remembered_language, selected_folder
-from wr.i18n import DUTCH, STATUS_MESSAGES, currency, status_label, translate, translator
+from wr.i18n import STATUS_MESSAGES, Translator, coverage_details, currency, status_label, translate, translator
+from wr.messages import Message, Messages, MessageTemplate
 
 
 @pytest.mark.parametrize("language,expected", [("en", "€ -12,345.67"), ("nl", "€ -12.345,67")])
@@ -41,21 +44,101 @@ def test_preference_survives_folder_changes_and_invalid_files(tmp_path):
 
 def test_catalog_covers_ui_and_preserves_format_fields():
     root = Path(__file__).resolve().parents[1]
-    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop.py", "dashboard/settings.py", "dashboard/workspace_settings.py", "dashboard/folder_picker.py"]:
+    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop.py", "dashboard/settings.py", "dashboard/workspace_settings.py", "dashboard/folder_picker.py", "dashboard/localization.py", "src/wr/desktop_smoke.py"]:
         tree = ast.parse((root / filename).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "t":
-                if node.args and isinstance(node.args[0], ast.Constant):
-                    assert node.args[0].value in DUTCH, (filename, node.args[0].value)
-    for english, dutch in DUTCH.items():
-        fields = lambda text: {name for _, name, _, _ in Formatter().parse(text) if name is not None}
-        assert fields(english) == fields(dutch), english
-    assert set(STATUS_MESSAGES.values()) <= set(DUTCH)
+                assert not node.keywords, filename
+                assert not isinstance(node.args[0], ast.Constant), filename
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "Messages":
+                assert isinstance(getattr(Messages, node.attr), (Message, MessageTemplate)), (filename, node.attr)
+    catalog = {name: message for name, message in vars(Messages).items() if not name.startswith("_")}
+    for name, message in catalog.items():
+        assert isinstance(message, (Message, MessageTemplate)), name
+        assert message.en and message.nl, name
+        english_fields = {field for _, field, _, _ in Formatter().parse(message.en) if field is not None}
+        dutch_fields = {field for _, field, _, _ in Formatter().parse(message.nl) if field is not None}
+        assert english_fields == dutch_fields, name
+        if isinstance(message, MessageTemplate):
+            method = getattr(Translator, name.lower())
+            parameters = dict(inspect.signature(method).parameters)
+            parameters.pop("self")
+            assert set(parameters) == english_fields, name
+            assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in parameters.values())
+            arguments = {field: 2 if field in {"number", "count", "parsed", "duplicate", "skipped", "failed"} else "example" for field in english_fields}
+            for language in ("en", "nl"):
+                assert method(translator(language), **arguments) == getattr(message, language).format(**arguments)
+    assert set(STATUS_MESSAGES.values()) <= set(catalog.values())
+    assert list(STATUS_MESSAGES) == sorted(STATUS_MESSAGES)
     assert status_label("INDETERMINATE_MISSING_DATA", "nl") == "Onvolledige gegevens"
     assert status_label("future-unimplemented-code", "nl") == "future-unimplemented-code"
     with pytest.raises(ValueError):
         translator("fr")
-    assert translate("nl", "Folder selection failed: {error}", error="EXAMPLE.pdf") == "Mapselectie mislukt: EXAMPLE.pdf"
+    assert translator("nl").folder_selection_failed(error="EXAMPLE.pdf") == "Mapselectie mislukt: EXAMPLE.pdf"
+
+
+def test_message_schema_rejects_invalid_templates_and_is_immutable():
+    with pytest.raises(ValueError, match="MessageTemplate"):
+        Message(en="Child {number}", nl="Kind {number}")
+    with pytest.raises(ValueError, match="matching parameters"):
+        MessageTemplate(en="Child {number}", nl="Kind {count}")
+    with pytest.raises(ValueError, match="matching parameters"):
+        MessageTemplate(en="Child", nl="Kind")
+    with pytest.raises(FrozenInstanceError):
+        Messages.SETTINGS_SAVED.nl = "changed"
+
+
+def test_translator_constrains_messages_and_parameters_without_shared_language_state():
+    english = translator("en")
+    dutch = translator("nl")
+    assert english(Messages.SETTINGS_SAVED) == "Settings saved."
+    assert dutch(Messages.SETTINGS_SAVED) == "Instellingen opgeslagen."
+    assert english(Messages.SETTINGS_SAVED) == "Settings saved."
+    assert translate("nl", Messages.SELECT_FOLDER) == "Map selecteren"
+    assert dutch.child(number=2) == "Kind 2"
+    assert dutch.folder_selection_failed(error=OSError("example")) == "Mapselectie mislukt: example"
+    with pytest.raises(TypeError, match="Expected a Message"):
+        dutch("Settings saved.")
+    with pytest.raises(TypeError, match="Expected a Message"):
+        dutch(Messages.CHILD)
+    with pytest.raises(TypeError):
+        dutch.child(count=2)
+    with pytest.raises(TypeError):
+        dutch.child()
+
+
+def test_status_and_coverage_translate_known_messages_and_preserve_source_text():
+    assert status_label(None, "nl") == "—"
+    assert status_label("parsed", "nl") == "Verwerkt"
+    assert status_label("Settings saved.", "nl") == "Settings saved."
+    assert coverage_details("Settings saved.", "nl") == "Settings saved."
+    assert coverage_details("example (no actual-return fields)", "nl") == "example (Geen gegevens voor werkelijk rendement)"
+    assert coverage_details("example (requires EUR conversion and currency gain/loss)", "nl") == "example (Omrekening naar EUR en valutawinst/-verlies vereist)"
+
+
+def test_institution_settings_support_messages_and_literal_plugin_text(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from dashboard import workspace_settings
+    from wr.parsers.base import InstitutionSetting
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    plugin = replace(workspace_settings.PLUGINS[0], settings_fields=(
+        InstitutionSetting("translated", Messages.ACCOUNT_LABEL, Messages.DOCUMENT_FOLDER_HELP),
+        InstitutionSetting("literal", "Plugin label", "Plugin help"),
+    ))
+    monkeypatch.setattr(workspace_settings, "PLUGINS", (plugin,))
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
+    assert not app.exception
+    assert app.text_input(key=f"institution_{plugin.issuer}_translated").label == "Account label"
+    assert app.text_input(key=f"institution_{plugin.issuer}_literal").label == "Plugin label"
+    app.selectbox(key="ui_language").select("nl").run()
+    assert not app.exception
+    translated = app.text_input(key=f"institution_{plugin.issuer}_translated")
+    assert translated.label == "Rekeningnaam"
+    assert translated.help == Messages.DOCUMENT_FOLDER_HELP.nl
+    assert app.text_input(key=f"institution_{plugin.issuer}_literal").label == "Plugin label"
+    assert app.text_input(key=f"institution_{plugin.issuer}_literal").help == "Plugin help"
 
 
 def test_dashboard_switches_language_and_retains_year_and_evidence(tmp_path, monkeypatch):

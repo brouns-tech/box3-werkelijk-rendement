@@ -5,7 +5,8 @@ from pathlib import Path
 
 import streamlit as st
 
-from dashboard.localization import ui_text as t
+from dashboard.localization import ui_translator
+from wr.messages import Messages
 from dashboard.explorer_compat import DirPicker
 
 
@@ -16,6 +17,7 @@ def _reset_picker() -> None:
 
 
 def folder_path_input(project_root: Path) -> tuple[str, bool]:
+    t = ui_translator()
     raw = st.session_state.get("document_folder", "").strip()
     try:
         start = Path(raw).expanduser() if raw else project_root
@@ -34,7 +36,7 @@ def folder_path_input(project_root: Path) -> tuple[str, bool]:
     try:
         selected = DirPicker(key=key, start_path=str(start))
     except OSError as exc:
-        st.error(t("Cannot browse this folder: {error}", error=exc))
+        st.error(t.cannot_browse_folder(error=exc))
         _reset_picker()
         selected = None
     if selected:
@@ -45,8 +47,8 @@ def folder_path_input(project_root: Path) -> tuple[str, bool]:
     with path_row:
         field, action, _ = st.columns([4, 1.5, 4.5], vertical_alignment="bottom")
         root = field.text_input(
-            t("Document folder"), key="document_folder", on_change=_reset_picker,
-            help=t("Paste a folder path or browse. Relative paths start at this workspace; ~ refers to your home folder."),
+            t(Messages.DOCUMENT_FOLDER), key="document_folder", on_change=_reset_picker,
+            help=t(Messages.DOCUMENT_FOLDER_HELP),
         )
-        save = action.button(t("Save folder"), key="save_folder")
+        save = action.button(t(Messages.SAVE_FOLDER), key="save_folder")
     return root, save

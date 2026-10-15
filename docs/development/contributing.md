@@ -9,9 +9,16 @@ Keep original Dutch tax terms, document titles, and quoted interface labels wher
 needed for accuracy. The application interface may support Dutch and English;
 documentation language does not determine the interface language.
 
-Application translations live in `src/wr/i18n.py`: English messages are keys and
-the Dutch catalog supplies their translations. Keep formatting placeholders
-identical between languages. Pass the session's language explicitly; do not
+Application translations live in `src/wr/messages.py`. Add a named constant to
+`Messages` with a frozen `Message(en=..., nl=...)`, then use
+`translator(language)(Messages.SETTINGS_SAVED)` at the call site. For text with
+parameters, use `MessageTemplate` and add a method with typed, keyword-only
+parameters to `Translator` in `src/wr/i18n.py`, such as
+`translator(language).child(number=1)`. Keep formatting placeholders identical
+between languages; template construction validates this. Dashboard controls use
+`ui_translator()` to get the current session's translator. Institution setting
+labels and help accept message objects or literal plugin-owned text.
+Pass the session's language explicitly; do not
 change the process-wide locale or translate stored financial facts and policy
 identifiers. Add translations for new UI messages and stable status labels.
 `tests/test_i18n.py` checks catalog coverage, placeholders, language switching,
