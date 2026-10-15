@@ -25,8 +25,16 @@ def create_audit_export(
     fact_rows: list[dict[str, Any]] = []
     tax_rows: list[dict[str, Any]] = []
     conversion_rows: list[dict[str, Any]] = []
+    period_rows: list[dict[str, Any]] = []
 
     for year in selected_years:
+        period_rows.extend(dict(row) for row in conn.execute("""
+            SELECT p.*, d.first_seen_path AS source_path, d.doc_type AS document_type,
+                   d.parse_status, d.processing_profile
+            FROM account_period_facts p JOIN documents d
+              ON d.content_sha256 = p.document_sha256
+            WHERE p.tax_year = ? ORDER BY p.period_start, p.id
+        """, (year,)))
         assets, facts = _asset_and_fact_rows(conn, year)
         asset_rows.extend(assets)
         fact_rows.extend(facts)
@@ -103,6 +111,10 @@ def create_audit_export(
     }
 
     output = io.BytesIO()
+    if period_rows:
+        manifest["files"]["source_period_facts.csv"] = (
+            "Native dated source evidence, including original payloads; annual facts reference these period ids."
+        )
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         bundle.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
         _write_csv(bundle, "yearly_summary.csv", yearly_rows)
@@ -110,6 +122,8 @@ def create_audit_export(
         _write_csv(bundle, "source_facts.csv", fact_rows)
         _write_csv(bundle, "partner_tax_results.csv", tax_rows)
         _write_csv(bundle, "fx_conversions.csv", conversion_rows)
+        if period_rows:
+            _write_csv(bundle, "source_period_facts.csv", period_rows)
     return output.getvalue()
 
 
@@ -339,8 +353,7 @@ def _asset_and_fact_rows(
                                      else "requires EUR conversion; native amounts retained"),
                     "matched_fact_ids": fact_id,
                     "included_fact_ids": fact_id,
-                    "source_document_sha256s": fact["document_sha256"],
-                    "source_paths": fact["first_seen_path"],
+                    **_source_documents(conn, fact),
                 }
             )
 
@@ -383,6 +396,7 @@ def _asset_and_fact_rows(
                 else None,
                 "document_sha256": fact["document_sha256"],
                 "source_path": fact["first_seen_path"],
+                **_source_documents(conn, fact),
                 "processing_profile": fact["processing_profile"],
                 "document_type": fact["doc_type"],
                 "parse_status": fact["parse_status"],
@@ -390,6 +404,13 @@ def _asset_and_fact_rows(
             }
         )
     return asset_rows, fact_rows
+
+
+def _source_documents(conn, fact) -> dict:
+    aggregation = json.loads(fact["extra"] or "{}").get("period_aggregation")
+    hashes = sorted({source["document_sha256"] for source in aggregation["sources"]}) if aggregation else [fact["document_sha256"]]
+    paths = [conn.execute("SELECT first_seen_path FROM documents WHERE content_sha256 = ?", (sha,)).fetchone()[0] or "" for sha in hashes]
+    return {"source_document_sha256s": ";".join(hashes), "source_paths": ";".join(sorted(set(paths)))}
 
 
 def _eur_export_fields(fact) -> dict:

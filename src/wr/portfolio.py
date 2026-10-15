@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from dataclasses import dataclass
 
 from wr.money import add, subtract, total
@@ -25,6 +26,7 @@ class CoverageResult:
 
 
 def rebuild_portfolio(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM yearly_portfolio WHERE tax_year NOT IN (SELECT tax_year FROM account_year_facts WHERE is_canonical = 1)")
     years = {
         r[0]
         for r in conn.execute(
@@ -83,6 +85,11 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     eligible_facts = [f for f in facts if not _is_excluded_box3_fact(f)]
 
     for fact in eligible_facts:
+        issues = period_coverage_issues(fact)
+        if issues:
+            missing.append(
+                f"{fact['issuer']} {fact['account_key']} (" + "; ".join(issues) + ")"
+            )
         if eur_values(fact) is None:
             missing.append(f"{fact['issuer']} {fact['account_key']} (requires EUR conversion and currency gain/loss)")
         elif not _fact_has_actual_return(fact):
@@ -155,7 +162,16 @@ def is_box3_fact(fact) -> bool:
     return not _is_excluded_box3_fact(fact)
 
 
+def period_coverage_issues(fact) -> list[str]:
+    raw = fact["extra"] if "extra" in fact.keys() else None
+    extra = json.loads(raw or "{}") if isinstance(raw, str) else (raw or {})
+    aggregation = extra.get("period_aggregation")
+    return aggregation["issues"] if aggregation else []
+
+
 def _fact_has_actual_return(fact) -> bool:
+    if period_coverage_issues(fact):
+        return False
     if "currency" in fact.keys() and (fact["currency"] or "EUR") != "EUR":
         return eur_conversion(fact) is not None
     if _native_fact_return(fact) is None:

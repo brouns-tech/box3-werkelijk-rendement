@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS partner_tax_results (
 );
 """
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
@@ -129,7 +129,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     applied = {
         row[0] for row in conn.execute("SELECT version FROM schema_migrations")
     }
-    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4)):
+    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4), (5, _migration_5)):
         if version in applied:
             continue
         with conn:
@@ -162,6 +162,33 @@ def _migration_4(conn: sqlite3.Connection) -> None:
         payload TEXT NOT NULL,
         PRIMARY KEY (currency, tax_year)
     )""")
+
+
+def _migration_5(conn: sqlite3.Connection) -> None:
+    conn.execute("""CREATE TABLE IF NOT EXISTS account_period_facts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_sha256 TEXT NOT NULL REFERENCES documents(content_sha256),
+        tax_year INTEGER NOT NULL,
+        issuer TEXT NOT NULL,
+        account_key TEXT NOT NULL,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        UNIQUE(document_sha256, account_key, period_start, period_end)
+    )""")
+
+
+def insert_period_facts(conn: sqlite3.Connection, document_sha: str, facts) -> None:
+    from dataclasses import asdict
+
+    for fact in facts:
+        conn.execute("""INSERT INTO account_period_facts (
+            document_sha256, tax_year, issuer, account_key, period_start, period_end, payload
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(document_sha256, account_key, period_start, period_end)
+        DO UPDATE SET payload = excluded.payload
+        """, (document_sha, fact.tax_year, fact.issuer, fact.account_key,
+              fact.period_start, fact.period_end, json.dumps(asdict(fact))))
 
 
 def _add_column_if_missing(

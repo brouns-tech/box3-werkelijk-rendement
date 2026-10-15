@@ -8,7 +8,7 @@ from wr.config import PartnerSettings
 from wr.identities import effective_partners, identity_slot, similarity
 from wr.money import add, multiply, subtract
 from wr.models import CoverageStatus, PartnerTaxResult, Recommendation
-from wr.portfolio import _fact_return, is_box3_fact
+from wr.portfolio import _fact_return, is_box3_fact, period_coverage_issues
 
 
 def rebuild_recommendations(
@@ -318,6 +318,8 @@ def _individual_portfolio(
                 missing.append(f"{fact['issuer']} {fact['account_key']} (holder needs review)")
             continue
         value = _fact_return(fact)
+        if period_coverage_issues(fact):
+            missing.append(f"{fact['issuer']} {fact['account_key']} (incomplete reporting periods)")
         if value is None:
             reason = "requires EUR conversion and currency gain/loss" if (fact["currency"] or "EUR") != "EUR" else "no actual-return fields"
             missing.append(f"{fact['issuer']} {fact['account_key']} ({reason})")

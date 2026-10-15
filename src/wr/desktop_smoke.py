@@ -82,12 +82,12 @@ def smoke_test(directory: Path) -> None:
         year = guess_tax_year(sample, identified.doc_type)
         original = parse_document(issuer, identified.doc_type, sample, year)
         decoded = parse_document(issuer, identified.doc_type, extracted, year)
-        assert original.facts or original.tax_return
+        assert original.facts or original.period_facts or original.tax_return
         assert asdict(decoded) == asdict(original), issuer
     # Both CLI and frozen desktop use bundled PDFium without external tools.
     text, pages = extract_text(pdf)
     assert "ING Jaaroverzicht 2024" in text and pages == 1
-    assert {p.issuer for p in PLUGINS} == {"ing", "rabobank", "sns", "raisin", "revolut", "degiro", "flatex", "belastingdienst"}
+    assert {p.issuer for p in PLUGINS} == set(SAMPLES)
     db = load_settings(config).resolved_db_path
     report = run_import(documents, db)
     assert report.parsed + report.duplicate == len(SAMPLES) and not report.failed
@@ -103,6 +103,17 @@ def smoke_test(directory: Path) -> None:
 # Fictional layouts exercise the extraction boundary, not just parser strings.
 SAMPLES = {
     "ing": ING_TEXT,
+    "brand_new_day": """Brand New Day
+Kwartaaloverzicht
+Overzicht 1e kwartaal 2024
+Beleggingsrekening NL00BNDA******0000
+De heer ALEX EXAMPLE
+Rendement
+Totale waarde begin Inleg en onttrekkingen Totale waarde einde Netto rendement
+Totaal € 100,00 € 25,00 € 135,25 € 10,25 8,20 %
+Kosten
+Kosten Brand New Day Bank € 0,25 0,20 %
+""",
     "rabobank": """Example User
 Onderwerp Financieel Jaaroverzicht 2024
 Rabobank

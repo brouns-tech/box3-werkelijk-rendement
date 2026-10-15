@@ -14,6 +14,7 @@ from wr.db import (
     connect,
     init_db,
     insert_facts,
+    insert_period_facts,
     update_document,
     upsert_document,
 )
@@ -262,6 +263,7 @@ def _run_import(
 
 
 def _clear_document_records(conn: sqlite3.Connection, sha: str) -> None:
+    conn.execute("DELETE FROM account_period_facts WHERE document_sha256 = ?", (sha,))
     conn.execute("DELETE FROM account_year_facts WHERE document_sha256 = ?", (sha,))
     conn.execute("DELETE FROM tax_returns WHERE document_sha256 = ?", (sha,))
 
@@ -300,6 +302,9 @@ def _persist_parse(conn, sha, classification: Classification, result, page_count
         fact_rows.append(d)
     if fact_rows:
         insert_facts(conn, sha, fact_rows)
+    for fact in result.period_facts:
+        fact.compute_capital_gain()
+    insert_period_facts(conn, sha, result.period_facts)
 
     if result.tax_return is not None:
         tr = result.tax_return

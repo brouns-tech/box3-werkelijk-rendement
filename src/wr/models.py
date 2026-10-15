@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from datetime import date
 from typing import Any
 
 from wr.money import add, subtract
@@ -136,6 +137,25 @@ class AccountYearFact:
         return add(*parts)
 
 
+@dataclass(kw_only=True)
+class AccountPeriodFact(AccountYearFact):
+    """Source evidence for an inclusive date range within one calendar year.
+
+    Adapters retain their native reporting cadence; shared processing creates
+    AccountYearFact summaries. Cross-year reports need separately dated facts,
+    since balances and returns cannot safely be prorated.
+    """
+
+    period_start: str
+    period_end: str
+
+    def __post_init__(self) -> None:
+        start, end = date.fromisoformat(self.period_start), date.fromisoformat(self.period_end)
+        if start > end or start.year != self.tax_year or end.year != self.tax_year:
+            raise ValueError("Period dates must be ordered and within the tax year")
+        self.period_start, self.period_end = start.isoformat(), end.isoformat()
+
+
 @dataclass
 class TaxReturnData:
     tax_year: int
@@ -182,6 +202,7 @@ class ParseResult:
     facts: list[AccountYearFact] = field(default_factory=list)
     tax_return: TaxReturnData | None = None
     notes: list[str] = field(default_factory=list)
+    period_facts: list[AccountPeriodFact] = field(default_factory=list)
 
 
 @dataclass

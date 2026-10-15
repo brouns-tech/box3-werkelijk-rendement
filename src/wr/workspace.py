@@ -15,11 +15,12 @@ def reset_workspace(settings: Settings) -> None:
                 "partner_tax_results",
                 "yearly_portfolio",
                 "account_year_facts",
+                "account_period_facts",
                 "tax_returns",
                 "documents",
             ):
                 conn.execute(f"DELETE FROM {table}")
-            conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('account_year_facts', 'tax_returns')")
+            conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('account_year_facts', 'account_period_facts', 'tax_returns')")
             # Saving inside the transaction rolls back deletions on a write error.
             save_settings(settings, PartnerSettings(), "", institution_options={})
     finally:

@@ -45,7 +45,7 @@ See the [user guide](docs/guide/index.md) for detailed instructions.
 
 ## Coverage and privacy
 
-Supported layouts include **ING, Rabobank, SNS, Raisin, Revolut, DEGIRO, flatex,
+Supported layouts include **ING, Rabobank, SNS, Raisin, Revolut, DEGIRO, flatex, Brand New Day,
 and Belastingdienst** documents. Check the [compatibility matrix](docs/reference/supported-documents.md)
 for exact layouts and limitations. Tax comparison policies cover **2017–2025**.
 

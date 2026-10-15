@@ -107,7 +107,8 @@ def test_child_command_uses_frozen_executable(monkeypatch, tmp_path):
 def test_native_pdf_import_and_audit_smoke_without_poppler(tmp_path, monkeypatch):
     smoke_test(tmp_path)
     result = json.loads((tmp_path / "smoke-result.json").read_text())
-    assert result["parsers"] == 8
+    from wr.parsers import PLUGINS
+    assert result["parsers"] == len(PLUGINS)
     assert (tmp_path / "audit.zip").is_file()
 
 

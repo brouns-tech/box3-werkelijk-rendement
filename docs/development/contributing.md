@@ -54,7 +54,16 @@ pytest
 ```
 
 Keep changes focused and include a regression test for parser fixes. A new parser should fail closed: if the required
-identity or annual-period markers are absent, the document must remain unsupported rather than being partially guessed.
+identity or reporting-period markers are absent, the document must remain unsupported rather than being partially guessed.
+
+For non-annual reports, emit `ParseResult.period_facts` containing
+`AccountPeriodFact` records with ISO `period_start` and `period_end` dates
+(inclusive, within `tax_year`). Keep the adapter focused on the source's cadence;
+the shared period processor persists that evidence and rebuilds annual facts
+before canonical selection. Supply explicit return components or the established
+`earned_return` method for a complete reported period return. Do not invent gross
+deposits and withdrawals from a net cash flow; retain `extra.net_cashflow` instead.
+Annual aggregation preserves source references and warns about incomplete periods.
 
 Pull requests run the test and wheel smoke-test matrix on Python 3.10 through 3.13. Update tax policies explicitly when
 adding support for a new tax year.

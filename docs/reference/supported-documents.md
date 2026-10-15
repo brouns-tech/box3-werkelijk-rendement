@@ -7,6 +7,7 @@ affect classification.
 | Institution | Supported PDF statement | Use and limitations |
 | --- | --- | --- |
 | Belastingdienst | `Aangifte Inkomstenbelasting` copy containing `Eigen kopie, niet opsturen`, `Formulierenversie`, and `Burgerservicenummer`; supported final-assessment layout | Supplies aggregate Box 3 and filed tax figures, never the account inventory. |
+| Brand New Day | `Kwartaaloverzicht` with `Overzicht Ne kwartaal YYYY` for a `Beleggingsrekening` | Retains quarterly balances, net cash flow, reported net return and bank costs. The shared processor aggregates periods into annual summaries; missing quarters remain partial. Pension products are excluded from this template. |
 | DEGIRO | `Jaaropgave` / `Jaaroverzicht` containing opening and closing portfolio totals | Supplies portfolio balances, deposits, withdrawals, and return components. |
 | flatex | `Lijst met financiële klanteninstrumenten en klantenfondsen` dated 31 December | Supplies the year-end securities-and-cash inventory. Adjacent years are needed to derive a full-year value change. |
 | flatex | `Rekeninguittreksel` | Used only for external transfers involving the configured linked bank account. Cash sweeps are excluded. |
@@ -23,13 +24,37 @@ affect classification.
 
 - PDFs must contain extractable text. Image-only scans are not OCRed.
 - CSV files and transaction exports are not supported.
-- Interim statements are unsupported except for the listed flatex account
-  statements.
+- Interim statements are unsupported except for the listed Brand New Day quarterly
+  reports and flatex account statements.
 - A changed institution template may require a parser update even when its
   statement name remains the same.
 
 To add another institution or statement layout, follow the parser workflow in
 [Contributing](../development/contributing.md) and include synthetic fixtures.
+
+## Period reports and annual summaries
+
+Adapters can emit dated `AccountPeriodFact` records instead of annual facts.
+The shared processor supports arbitrary inclusive date ranges within one calendar
+year, including daily, monthly and quarterly reports. Original periods are kept
+separately from regenerated annual facts. Cross-year ranges must be split using
+dated source evidence; amounts are never prorated.
+
+Flows and returns are summed over selected periods. Annual opening and closing
+balances are taken only from periods reaching 1 January and 31 December.
+Unknown flows remain unknown; a reported net cash flow is retained separately
+and does not establish gross deposits or withdrawals. Exact duplicate periods
+count once. Overlapping periods are never added together and leave a warning;
+gaps, missing returns and balance discontinuities also leave coverage partial.
+Native annual evidence takes precedence for the same account and year.
+
+Brand New Day return totals use the quarterly net return plus separately charged
+bank costs, retaining both original amounts for audit. The indicative gross
+return, which also reverses embedded fund costs, is not substituted for portfolio
+value changes. Q4's annual costs page is not counted as another period. This is
+consistent with the [expense treatment in the existing return calculation](https://www.belastingdienst.nl/wps/wcm/connect/nl/box-3/content/wat-is-mijn-werkelijk-rendement).
+Audit bundles include `source_period_facts.csv` when dated evidence is present;
+annual summaries reference every contributing source period and document.
 
 ## Flexible Cash Funds return calculation
 

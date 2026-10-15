@@ -13,6 +13,9 @@ def canonicalize_facts(
     institution_options: InstitutionOptions | None = None,
 ) -> None:
     """Mark one canonical fact per issuer, normalized account key, and tax year."""
+    from wr.periods import rebuild_year_facts
+
+    rebuild_year_facts(conn)
     _enrich_fact_holders(conn)
     conn.execute("UPDATE account_year_facts SET is_canonical = 0")
 
