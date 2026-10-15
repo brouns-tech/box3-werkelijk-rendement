@@ -1,7 +1,7 @@
 """Reset imported workspace data and saved identity preferences."""
 from __future__ import annotations
 
-from wr.models.settings import PartnerSettings, Settings
+from wr.models.settings import HouseholdSettings, Settings
 from wr.storage.connection import connect
 from wr.storage.migrations import init_db
 from wr.workspace.settings import resolve_db_path, save_settings
@@ -14,7 +14,7 @@ def reset_workspace(settings: Settings) -> None:
         init_db(conn)
         with conn:
             for table in (
-                "partner_tax_results",
+                "taxpayer_tax_results",
                 "yearly_portfolio",
                 "account_year_facts",
                 "tax_returns",
@@ -23,6 +23,6 @@ def reset_workspace(settings: Settings) -> None:
                 conn.execute(f"DELETE FROM {table}")
             conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('account_year_facts', 'tax_returns')")
             # Saving inside the transaction rolls back deletions on a write error.
-            save_settings(settings, PartnerSettings(), "", institution_options={})
+            save_settings(settings, HouseholdSettings(), "", institution_options={})
     finally:
         conn.close()

@@ -5,6 +5,7 @@ import urllib.request
 
 import pytest
 
+from wr.models.identities import ChildIdentity, HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
 from wr.models.desktop import FolderResponse, StatusResponse
 from wr.desktop.lock import InstanceLock
 from wr.desktop.process import child_command
@@ -15,16 +16,16 @@ from wr.importing.pipeline import run_import
 
 
 def test_desktop_workspace_persists_and_does_not_overwrite_configuration(tmp_path):
-    from wr.models.settings import PartnerSettings
+
     from wr.workspace.settings import load_settings, save_settings
     prepare_workspace(tmp_path)
-    save_settings(load_settings(tmp_path), PartnerSettings(partner_a="EXAMPLE"), db_path="custom.sqlite")
+    save_settings(load_settings(tmp_path), HouseholdSettings(identities=(TaxpayerIdentity(name="EXAMPLE", position=TaxpayerPosition.PRIMARY),)), db_path="custom.sqlite")
     documents = tmp_path / "space and unicode é"
     documents.mkdir()
     remember_folder(tmp_path, str(documents))
     assert selected_folder(tmp_path) == str(documents)
     assert prepare_workspace(tmp_path) == tmp_path
-    assert load_settings(tmp_path).partners.partner_a == "EXAMPLE"
+    assert load_settings(tmp_path).household.primary.name == "EXAMPLE"
     assert load_settings(tmp_path).resolved_db_path == tmp_path / "custom.sqlite"
     with pytest.raises(ValueError):
         remember_folder(tmp_path, str(tmp_path / ".wr-settings.json"))
@@ -51,29 +52,29 @@ def test_legacy_desktop_storage_migrates_once_and_reset_stays_reset(tmp_path):
     assert prepare_workspace(tmp_path) == tmp_path
     cfg = load_settings(tmp_path)
     assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
-    assert cfg.partners.partner_a == "EXAMPLE"
+    assert cfg.household.primary.name == "EXAMPLE"
     assert selected_folder(tmp_path) == str(documents)
     assert (tmp_path / "config.toml").read_text() == legacy
     reset_workspace(cfg)
     prepare_workspace(tmp_path)
     assert selected_folder(tmp_path) is None
-    assert load_settings(tmp_path).partners.partner_a is None
+    assert load_settings(tmp_path).household.primary is None
     assert documents.is_dir()
 
 
 def test_desktop_folder_selection_preserves_upstream_profiles_and_storage(tmp_path):
-    from wr.models.settings import ChildSettings, PartnerSettings
+
     from wr.workspace.settings import load_settings, save_settings
 
     prepare_workspace(tmp_path)
-    partners = PartnerSettings(partner_a="EXAMPLE", children=(ChildSettings("CHILD", ("C. EXAMPLE",)),))
+    partners = HouseholdSettings(identities=(TaxpayerIdentity(name="EXAMPLE", position=TaxpayerPosition.PRIMARY),) + (ChildIdentity(name="CHILD", aliases=("C. EXAMPLE",)),))
     options = {"flatex": {"beneficial_owner": "EXAMPLE"}}
     save_settings(load_settings(tmp_path), partners, db_path="custom.sqlite", institution_options=options)
     documents = tmp_path / "statements"
     documents.mkdir()
     remember_folder(tmp_path, str(documents))
     cfg = load_settings(tmp_path)
-    assert cfg.partners == partners
+    assert cfg.household == partners
     assert cfg.institution_options["flatex"].model_dump(exclude_unset=True) == options["flatex"]
     assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
     assert cfg.import_root == documents
@@ -267,7 +268,7 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
 
     monkeypatch.setattr(ImportJob, "run", delayed_import)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
-    before = load_settings(tmp_path).partners
+    before = load_settings(tmp_path).household
     try:
         app.button(key="scan_documents").click().run()
         assert not app.exception
@@ -284,7 +285,7 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
     assert app.selectbox(key="ui_language").value == "en"
     expected = "1 duplicate" if already_imported else "1 processed"
     assert any(expected in result.value for result in app.success)
-    assert load_settings(tmp_path).partners == before
+    assert load_settings(tmp_path).household == before
     assignments = [widget for widget in app.selectbox if "_identity_" in (widget.key or "")]
     assert assignments and all(widget.value is not None for widget in assignments)
     assert not any(button.key == "refresh_dashboard" for button in app.button)

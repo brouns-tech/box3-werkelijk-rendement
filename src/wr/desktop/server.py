@@ -11,7 +11,7 @@ def serve(config: Path, port: int) -> None:
     settings = load_settings(config)
     if settings.resolved_db_path.exists():
         # Recover derived results after an interrupted import before displaying them.
-        recompute(settings.resolved_db_path, partner_config=settings.partners,
+        recompute(settings.resolved_db_path, household_config=settings.household,
                   institution_options=settings.institution_options)
     import importlib.util
     app = Path(importlib.util.find_spec("dashboard").origin).parent / "app.py"

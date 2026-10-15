@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
     db_path = resolve_db_path(cfg)
-    partner_config = cfg.partners
+    household_config = cfg.household
 
     if args.cmd == "import":
         root = Path(args.root).expanduser() if args.root else cfg.import_root
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
             root,
             db_path,
             limit=args.limit,
-            partner_config=partner_config,
+            household_config=household_config,
             institution_options=cfg.institution_options,
             progress=_print_import_outcome,
         )
@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "recompute":
         recompute(
             db_path,
-            partner_config=partner_config,
+            household_config=household_config,
             institution_options=cfg.institution_options,
         )
         print("Recomputed canonical facts, coverage, and recommendations")

@@ -119,7 +119,7 @@ def test_currency_formatter_rejects_unsupported_currency():
 def test_decision_table_distinguishes_holder_return_from_zero_tax_allocation():
     from dashboard.app import _decision_rows
     rows = _decision_rows([{
-        'partner': 'a', 'partner_name': 'Alex Example', 'allocation_ratio': 0,
+        'taxpayer_position': 'a', 'taxpayer_name': 'Alex Example', 'allocation_ratio': 0,
         'allocated_actual_return': 0, 'fictitious_return': 0,
         'estimated_box3_tax_actual': 0, 'estimated_box3_tax_fictitious': 0,
         'recommendation': 'EQUAL',

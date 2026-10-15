@@ -213,7 +213,7 @@ def test_upstream_child_editor_survives_language_switch_and_reset(tmp_path, monk
     from wr.workspace.settings import load_settings
 
     def child_name(app):
-        return next(widget for widget in app.text_input if widget.key.endswith("_canonical_child_0"))
+        return [widget for widget in app.text_input if widget.key and "_canonical_" in widget.key][2]
 
     create_demo_workspace(tmp_path)
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
@@ -226,13 +226,13 @@ def test_upstream_child_editor_survives_language_switch_and_reset(tmp_path, monk
     assert child_name(app).value == "Charlie Example"
     assert app.button(key="add_child").label == "Kind toevoegen"
     assert [tab.label for tab in app.tabs] == ["Overzicht", "Documenten", "Belastingplichtigen", "Instellingen"]
-    app.button(key="save_field_canonical_child_0").click().run()
-    assert load_settings(tmp_path).partners.children[0].canonical_name == "Charlie Example"
+    next(button for button in app.button if button.key.startswith("save_field_canonical_")).click().run()
+    assert load_settings(tmp_path).household.children[0].name == "Charlie Example"
     assert "Toerekening" in app.dataframe[1].value.columns
     app.button(key="reset_workspace").click().run()
     app.button(key="confirm_reset_workspace").click().run()
     assert not app.exception
-    assert load_settings(tmp_path).partners.children == ()
+    assert load_settings(tmp_path).household.children == ()
     assert app.selectbox(key="ui_language").value == "nl"
 
 

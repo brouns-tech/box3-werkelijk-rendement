@@ -35,7 +35,7 @@ class ImportJob:
             return
         try:
             self.report = run_import(folder, cfg.resolved_db_path,
-                                     partner_config=cfg.partners,
+                                     household_config=cfg.household,
                                      institution_options=cfg.institution_options,
                                      progress=self.outcomes.append, cancelled=self.stop.is_set)
         except Exception as exc:

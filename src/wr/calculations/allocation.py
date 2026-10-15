@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from wr.calculations.returns import fact_return, is_box3_fact
-from wr.identities.matching import identity_slot, same_person
+from wr.identities.matching import resolve_identity, same_person
 from wr.models import CoverageStatus, Ownership
-from wr.models.settings import PartnerSettings
+from wr.models.identities import HouseholdSettings, IdentityRole
 from wr.models.storage import FactRecord
 from wr.money import Currency, add, multiply
 
@@ -12,10 +12,10 @@ def individual_portfolio(
     facts: list[FactRecord],
     year: int,
     filer_name: str | None,
-    partner_cfg: PartnerSettings,
+    household: HouseholdSettings,
 ) -> tuple[float | None, str, str | None]:
-    aliases = _aliases_for_filer(filer_name, partner_cfg)
-    filer_slot = identity_slot(filer_name, partner_cfg)
+    aliases = _aliases_for_filer(filer_name, household)
+    filer_identity = resolve_identity(filer_name, household)
     total = 0.0
     used = 0
     missing: list[str] = []
@@ -23,15 +23,19 @@ def individual_portfolio(
         if not is_box3_fact(fact):
             continue
         holders = fact.holder_names
-        holder_slots = [identity_slot(holder, partner_cfg) for holder in holders]
-        matches = [identity_slot(holder, partner_cfg) == filer_slot if filer_slot else _matches_alias(holder, aliases) for holder in holders]
-        has_child = any(slot and slot.startswith("child_") for slot in holder_slots)
-        child_pool = has_child and all(holder_slots) and (
-            all(slot.startswith("child_") for slot in holder_slots) or fact.ownership == Ownership.JOINT
+        holder_identities = [resolve_identity(holder, household) for holder in holders]
+        matches = [
+            identity is not None and identity.id == filer_identity.id
+            if filer_identity is not None else _matches_alias(holder, aliases)
+            for holder, identity in zip(holders, holder_identities)
+        ]
+        has_child = any(identity is not None and identity.role is IdentityRole.CHILD for identity in holder_identities)
+        child_pool = has_child and all(holder_identities) and (
+            all(identity.role is IdentityRole.CHILD for identity in holder_identities) or fact.ownership == Ownership.JOINT
         )
         if child_pool:
             # Child assets belong to the parents' joint pool, never a child tax result.
-            portion = 1.0 / len([name for _, name in partner_cfg.configured() if name])
+            portion = 1.0 / len(household.taxpayers)
         elif len(holders) == 1 and matches[0]:
             portion = 1.0
         elif fact.ownership == Ownership.JOINT and len(holders) >= 2 and any(matches):
@@ -40,7 +44,7 @@ def individual_portfolio(
             missing.append(f"{fact.issuer} {fact.account_key} (holder unknown)")
             continue
         else:
-            if any(identity_slot(holder, partner_cfg) is None for holder in holders):
+            if any(resolve_identity(holder, household) is None for holder in holders):
                 missing.append(f"{fact.issuer} {fact.account_key} (holder needs review)")
             continue
         value = fact_return(fact)
@@ -60,12 +64,12 @@ def individual_portfolio(
 
 
 def _aliases_for_filer(
-    filer_name: str | None, partner_cfg: PartnerSettings
+    filer_name: str | None, household: HouseholdSettings
 ) -> list[str]:
     aliases = [filer_name or ""]
-    for slot, configured in partner_cfg.configured():
-        if same_person(filer_name, configured):
-            aliases.extend([configured or "", *partner_cfg.aliases_for(slot)])
+    for identity in household.taxpayers:
+        if same_person(filer_name, identity.name):
+            aliases.extend([identity.name, *identity.aliases])
     return aliases
 
 

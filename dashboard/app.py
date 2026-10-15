@@ -14,11 +14,11 @@ import streamlit as st
 
 from wr.models.facts import Ownership
 from wr.models.storage import FactRecord
-from wr.models.settings import PartnerSettings
+from wr.models.identities import HouseholdSettings, IdentityRole
 from wr.workspace.settings import load_settings, resolve_db_path
 from wr.storage.connection import connect
 from wr.storage.migrations import init_db
-from wr.identities.matching import identity_slot, name_key
+from wr.identities.matching import resolve_identity, name_key
 from wr.storage.identities import observed_names
 from wr.calculations.service import rebuild_recommendations
 from wr.calculations.allocation import individual_portfolio
@@ -29,7 +29,7 @@ from wr.money import Currency, subtract
 from wr.i18n import currency, coverage_details, status_label, translator
 from wr.messages import Messages
 from dashboard.localization import select_language
-from dashboard.ownership import PURPLE, UNKNOWN, slot_color, table_style
+from dashboard.ownership import PURPLE, UNKNOWN, identity_color, table_style
 from wr.calculations.returns import native_fact_return, is_box3_fact
 from wr.importing.reprocessing import pending_reprocessing
 
@@ -54,8 +54,8 @@ def _decision_rows(results, language: str = "en", statement_returns=None) -> lis
             savings = max(0.0, subtract(fictitious_tax, actual_tax))
         rows.append(
             {
-                t(Messages.TAXPAYER): result["partner_name"],
-                **({t(Messages.STATEMENT_RETURN_BY_HOLDER): money(statement_returns.get(result["partner"]))} if statement_returns is not None else {}),
+                t(Messages.TAXPAYER): result["taxpayer_name"],
+                **({t(Messages.STATEMENT_RETURN_BY_HOLDER): money(statement_returns.get(result["taxpayer_position"]))} if statement_returns is not None else {}),
                 t(Messages.TAX_ALLOCATION): "—" if result["allocation_ratio"] is None else f"{result['allocation_ratio']:.0%}",
                 t(Messages.ALLOCATED_ACTUAL_RETURN): money(result["allocated_actual_return"]),
                 t(Messages.FICTITIOUS_RETURN): money(result["fictitious_return"]),
@@ -94,13 +94,12 @@ def _holder_label(value: str | None, canonical_names: dict[str, str] | None = No
     return ", ".join(normalized)
 
 
-def _canonical_name_map(partner_cfg: PartnerSettings) -> dict[str, str]:
+def _canonical_name_map(household: HouseholdSettings) -> dict[str, str]:
     names = {}
-    for slot, canonical in partner_cfg.identities():
-        if not canonical:
-            continue
+    for identity in household.identities:
+        canonical = identity.name
         surname = _person_key(canonical.split()[-1])
-        for alias in [canonical, *partner_cfg.aliases_for(slot)]:
+        for alias in [canonical, *identity.aliases]:
             alias_key = _person_key(alias)
             if alias_key != surname:
                 names[alias_key] = canonical
@@ -115,11 +114,11 @@ def _owner_style(value: str, colors: dict[str, str], *, muted: bool = False, joi
     return table_style(matches.pop() if matches else UNKNOWN, muted=muted)
 
 
-def _owner_colors(partner_cfg: PartnerSettings, canonical_names: dict[str, str]) -> dict[str, str]:
+def _owner_colors(household: HouseholdSettings, canonical_names: dict[str, str]) -> dict[str, str]:
     return {
-        alias: slot_color(slot)
-        for slot, canonical in partner_cfg.identities() if canonical
-        for alias, name in canonical_names.items() if name == canonical
+        alias: identity_color(identity)
+        for identity in household.identities
+        for alias, name in canonical_names.items() if name == identity.name
     }
 
 
@@ -176,15 +175,15 @@ def main() -> None:
         with documents:
             documents_ui(cfg)
         with taxpayers:
-            partner_cfg = taxpayers_ui(cfg, conn)
+            household = taxpayers_ui(cfg, conn)
         with overview:
-            rebuild_recommendations(conn, partner_cfg)
-            _overview(conn, partner_cfg, language)
+            rebuild_recommendations(conn, household)
+            _overview(conn, household, language)
     finally:
         conn.close()
 
 
-def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
+def _overview(conn, household: HouseholdSettings, language: str = "en") -> None:
     t = translator(language)
     money = partial(_currency, language=language)
     if pending := pending_reprocessing(conn):
@@ -221,15 +220,15 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
         "SELECT * FROM yearly_portfolio WHERE tax_year = ?", (year,)
     ).fetchone()
     results = conn.execute(
-        "SELECT * FROM partner_tax_results WHERE tax_year = ? ORDER BY partner",
+        "SELECT * FROM taxpayer_tax_results WHERE tax_year = ? ORDER BY taxpayer_position",
         (year,),
     ).fetchall()
-    canonical_names = _canonical_name_map(partner_cfg)
+    canonical_names = _canonical_name_map(household)
     for name in observed_names(conn):
-        slot = identity_slot(name, partner_cfg)
-        if slot:
-            canonical_names[_person_key(name)] = partner_cfg.canonical_for(slot)
-    owner_colors = _owner_colors(partner_cfg, canonical_names)
+        identity = resolve_identity(name, household)
+        if identity is not None:
+            canonical_names[_person_key(name)] = identity.name
+    owner_colors = _owner_colors(household, canonical_names)
 
     col1, col2, col3 = st.columns(3)
     if portfolio:
@@ -247,7 +246,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     st.subheader(t(Messages.DECISION_OVERVIEW))
     if results:
         statement_returns = {
-            result["partner"]: individual_portfolio(canonical_facts(conn, year), year, result["partner_name"], partner_cfg)[0]
+            result["taxpayer_position"]: individual_portfolio(canonical_facts(conn, year), year, result["taxpayer_name"], household)[0]
             for result in results
         }
         st.caption(t(Messages.STATEMENT_RETURNS_HELP))
@@ -277,7 +276,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     for fact in facts:
         account_money = partial(_currency, language=language, currency_code=fact.currency or Currency.EUR)
         child_account = any(
-            (identity_slot(holder, partner_cfg) or "").startswith("child_")
+            (identity := resolve_identity(holder, household)) is not None and identity.role is IdentityRole.CHILD
             for holder in fact.holder_names
         )
         fact_rows.append(

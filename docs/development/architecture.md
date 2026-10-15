@@ -19,6 +19,30 @@ calculation helpers.
 `money`, `messages`, and `i18n` remain focused top-level modules. Audit
 assembly lives in `export`; its output schemas live in `models.audit`.
 
+## Household identities
+
+`models.identities.HouseholdSettings` contains immutable, validated identities.
+Each person has a stable UUID, a name, and aliases. `TaxpayerIdentity` has role
+`taxpayer` and a `TaxpayerPosition` (`primary` or `secondary`); `ChildIdentity`
+has role `child` and cannot have a taxpayer position. Names, household roles,
+and tax-return positions are not person identifiers.
+
+`identities.matching.resolve_identity` returns the matched identity object or
+`None` for unknown, excluded, or ambiguous names. Allocation checks typed roles
+and IDs, not string prefixes. Dashboard drafts also use the stable IDs, so
+renaming a person or deleting another child keeps drafts associated with the
+same people.
+
+Workspace settings version 3 migrates the former `partners` configuration into
+`household.identities`, preserving aliases and exclusions and assigning IDs once.
+SQLite migration 4 replaces `partner_tax_results` with `taxpayer_tax_results`:
+`partner` becomes `taxpayer_position` (`a` → `primary`, `b` → `secondary`), and
+`partner_name` becomes `taxpayer_name`. Existing result values are preserved.
+Audit format version 2 uses these same column names and values in
+`taxpayer_tax_results.csv`. The source-evidence fields `partner_a_name`,
+`allocation_a`, and their B counterparts in parsed tax returns still describe
+the ordering on the original document, not household identity IDs or roles.
+
 ## Dependency direction
 
 Models depend on other models, money helpers, and validation libraries. They do

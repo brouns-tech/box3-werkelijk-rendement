@@ -5,7 +5,7 @@ import re
 from typing import NamedTuple
 import unicodedata
 
-from wr.models.settings import PartnerSettings
+from wr.models.identities import ChildIdentity, HouseholdSettings, TaxpayerIdentity
 
 
 NO_MATCH = 0.0
@@ -22,7 +22,7 @@ SURNAME_SIMILARITY_THRESHOLD = 0.9
 
 class _IdentityMatch(NamedTuple):
     score: float
-    slot: str
+    identity: TaxpayerIdentity | ChildIdentity
 
 
 def name_tokens(name: str) -> tuple[str, ...]:
@@ -73,18 +73,17 @@ def similarity(left: str, right: str) -> float:
     return NO_MATCH
 
 
-def identity_slot(name: str | None, partners: PartnerSettings) -> str | None:
-    """Return 'a', 'b', or 'child_<index>' for a unique match, otherwise None."""
+def resolve_identity(name: str | None, household: HouseholdSettings) -> TaxpayerIdentity | ChildIdentity | None:
+    """Return the uniquely matched household identity, otherwise None."""
     if not name:
         return None
-    if any(name_key(name) == name_key(excluded) for excluded in partners.unassigned_names):
+    if any(name_key(name) == name_key(excluded) for excluded in household.unassigned_names):
         return None
     matches: list[_IdentityMatch] = []
-    for slot, canonical in partners.identities():
-        if canonical:
-            score = max(similarity(name, alias) for alias in (canonical, *partners.aliases_for(slot)))
-            matches.append(_IdentityMatch(score=score, slot=slot))
-    matches.sort(reverse=True)
+    for identity in household.identities:
+        score = max(similarity(name, alias) for alias in (identity.name, *identity.aliases))
+        matches.append(_IdentityMatch(score=score, identity=identity))
+    matches.sort(key=lambda match: match.score, reverse=True)
     if not matches:
         return None
     best_match = matches[0]
@@ -92,10 +91,10 @@ def identity_slot(name: str | None, partners: PartnerSettings) -> str | None:
     if best_match.score < MIN_IDENTITY_SCORE:
         return None
     if best_match.score == EXACT_MATCH and (runner_up is None or runner_up.score < EXACT_MATCH):
-        return best_match.slot
+        return best_match.identity
     if runner_up is not None and best_match.score - runner_up.score < MIN_IDENTITY_MARGIN:
         return None
-    return best_match.slot
+    return best_match.identity
 
 
 def same_person(left: str | None, right: str | None) -> bool:

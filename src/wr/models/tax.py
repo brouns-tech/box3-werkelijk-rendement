@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from wr.models.identities import TaxpayerPosition
+
 
 class Recommendation(str, Enum):
     ACTUAL_BETTER = "ACTUAL_BETTER"
@@ -52,10 +54,10 @@ class TaxReturnData:
 
 
 @dataclass
-class PartnerTaxResult:
+class TaxpayerTaxResult:
     tax_year: int
-    partner: str
-    partner_name: str
+    taxpayer_position: TaxpayerPosition
+    taxpayer_name: str
     allocation_ratio: float | None
     allocated_actual_return: float | None
     fictitious_return: float | None
@@ -65,6 +67,9 @@ class PartnerTaxResult:
     recommendation: str
     coverage_status: str
     notes: str = ""
+
+    def __post_init__(self) -> None:
+        self.taxpayer_position = TaxpayerPosition(self.taxpayer_position)
 
 
 @dataclass(frozen=True)

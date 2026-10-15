@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS partner_tax_results (
 );
 """
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def init_db(conn: sqlite3.Connection) -> None:
@@ -118,10 +118,12 @@ def init_db(conn: sqlite3.Connection) -> None:
     applied = {
         row[0] for row in conn.execute("SELECT version FROM schema_migrations")
     }
-    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3)):
+    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4)):
         if version in applied:
             continue
         with conn:
+            if not conn.in_transaction:
+                conn.execute("BEGIN")
             migration(conn)
             conn.execute(
                 "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
@@ -142,6 +144,42 @@ def _migration_2(conn: sqlite3.Connection) -> None:
 
 def _migration_3(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "documents", "processing_profile", "TEXT")
+
+
+def _migration_4(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE taxpayer_tax_results (
+            tax_year INTEGER NOT NULL,
+            taxpayer_position TEXT NOT NULL CHECK (taxpayer_position IN ('primary', 'secondary')),
+            taxpayer_name TEXT,
+            allocation_ratio REAL,
+            allocated_actual_return REAL,
+            fictitious_return REAL,
+            estimated_box3_tax_actual REAL,
+            estimated_box3_tax_fictitious REAL,
+            estimated_tax_savings REAL,
+            recommendation TEXT NOT NULL DEFAULT 'NEEDS_MANUAL_RSAMW',
+            coverage_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+            notes TEXT,
+            PRIMARY KEY (tax_year, taxpayer_position)
+        )
+        """
+    )
+    old_columns = {row[1] for row in conn.execute("PRAGMA table_info(partner_tax_results)")}
+    columns = ["tax_year", "taxpayer_position"]
+    expressions = ["tax_year", "CASE partner WHEN 'a' THEN 'primary' WHEN 'b' THEN 'secondary' ELSE partner END"]
+    for row in conn.execute("PRAGMA table_info(taxpayer_tax_results)"):
+        name = row[1]
+        source = "partner_name" if name == "taxpayer_name" else name
+        if name not in columns and source in old_columns:
+            columns.append(name)
+            expressions.append(source)
+    conn.execute(
+        f"INSERT INTO taxpayer_tax_results ({', '.join(columns)}) "
+        f"SELECT {', '.join(expressions)} FROM partner_tax_results"
+    )
+    conn.execute("DROP TABLE partner_tax_results")
 
 
 def _add_column_if_missing(

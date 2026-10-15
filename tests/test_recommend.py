@@ -1,6 +1,7 @@
 import sqlite3
 
-from wr.models.settings import PartnerSettings
+
+from wr.models.identities import HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
 from wr.storage.migrations import init_db
 from wr.calculations.service import results_for_year
 
@@ -43,10 +44,10 @@ def test_individual_return_uses_taxpayer_from_return_without_configuration():
     )
     conn.commit()
 
-    result = results_for_year(conn, 2023, PartnerSettings())
+    result = results_for_year(conn, 2023, HouseholdSettings())
 
     assert len(result) == 1
-    assert result[0].partner_name == "Alex Example"
+    assert result[0].taxpayer_name == "Alex Example"
     assert result[0].allocation_ratio == 1.0
     assert result[0].recommendation == "ACTUAL_BETTER"
 
@@ -83,15 +84,12 @@ def test_single_configured_taxpayer_does_not_create_empty_partner_result():
     result = results_for_year(
         conn,
         2023,
-        PartnerSettings(
-            partner_a="Sophie de Vries",
-            partner_a_aliases=("S. de Vries",),
-        ),
+        HouseholdSettings(identities=(TaxpayerIdentity(name="Sophie de Vries", position=TaxpayerPosition.PRIMARY, aliases=("S. de Vries",)),)),
     )
 
     assert len(result) == 1
-    assert result[0].partner == "a"
-    assert result[0].partner_name == "Sophie de Vries"
+    assert result[0].taxpayer_position is TaxpayerPosition.PRIMARY
+    assert result[0].taxpayer_name == "Sophie de Vries"
 
 
 def test_prefers_sent_tax_return_over_unsent_draft():
@@ -129,7 +127,7 @@ def test_prefers_sent_tax_return_over_unsent_draft():
     )
     conn.commit()
 
-    result = results_for_year(conn, 2025, PartnerSettings())
+    result = results_for_year(conn, 2025, HouseholdSettings())
 
     assert result[0].fictitious_return == 100
 
@@ -144,9 +142,9 @@ def test_missing_base_keeps_both_partner_decisions_without_zero_tax_claim(tmp_pa
     with connect(cfg.resolved_db_path) as conn:
         # A stale ZERO_BASE marker must not override an absent input figure.
         conn.execute("UPDATE tax_returns SET grondslag = NULL, allocation_a = NULL, allocation_b = NULL, allocation_status = 'ZERO_BASE'")
-        results = results_for_year(conn, 2024, cfg.partners)
-    assert [r.partner for r in results] == ['a', 'b']
-    assert [r.partner_name for r in results] == [cfg.partners.partner_a, cfg.partners.partner_b]
+        results = results_for_year(conn, 2024, cfg.household)
+    assert [r.taxpayer_position for r in results] == [TaxpayerPosition.PRIMARY, TaxpayerPosition.SECONDARY]
+    assert [r.taxpayer_name for r in results] == [cfg.household.primary.name, cfg.household.secondary.name]
     assert all(r.recommendation == 'NEEDS_MANUAL_RSAMW' for r in results)
     assert all(r.estimated_box3_tax_actual is None and r.estimated_tax_savings is None for r in results)
 
@@ -161,9 +159,9 @@ def test_explicit_zero_base_keeps_both_partners_without_allocating_combined_retu
     with connect(cfg.resolved_db_path) as conn:
         conn.execute("UPDATE tax_returns SET grondslag = 0, allocation_a = NULL, allocation_b = NULL, allocation_status = 'ZERO_BASE'")
         # The filed ordering is the reverse of the configured taxpayer ordering.
-        conn.execute("UPDATE tax_returns SET partner_a_name = ?, partner_b_name = ?", (cfg.partners.partner_b, cfg.partners.partner_a))
-        results = results_for_year(conn, 2024, cfg.partners)
-    assert [r.partner_name for r in results] == [cfg.partners.partner_a, cfg.partners.partner_b]
+        conn.execute("UPDATE tax_returns SET partner_a_name = ?, partner_b_name = ?", (cfg.household.secondary.name, cfg.household.primary.name))
+        results = results_for_year(conn, 2024, cfg.household)
+    assert [r.taxpayer_name for r in results] == [cfg.household.primary.name, cfg.household.secondary.name]
     assert all(r.recommendation == 'NOT_APPLICABLE' for r in results)
     assert all(r.estimated_box3_tax_actual == 0 and r.estimated_tax_savings == 0 for r in results)
     assert all(r.allocated_actual_return is None and r.allocation_ratio is None for r in results)
@@ -178,7 +176,7 @@ def test_statements_without_returns_keep_all_configured_taxpayers_visible(tmp_pa
     cfg = load_settings(tmp_path)
     with connect(cfg.resolved_db_path) as conn:
         conn.execute('DELETE FROM tax_returns')
-        results = results_for_year(conn, 2024, cfg.partners)
-    assert [r.partner for r in results] == ['a', 'b']
+        results = results_for_year(conn, 2024, cfg.household)
+    assert [r.taxpayer_position for r in results] == [TaxpayerPosition.PRIMARY, TaxpayerPosition.SECONDARY]
     assert all(r.recommendation == 'NEEDS_MANUAL_RSAMW' for r in results)
     assert all(r.fictitious_return is None and r.estimated_tax_savings is None for r in results)

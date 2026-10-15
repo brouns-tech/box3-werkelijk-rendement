@@ -3,8 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from wr.models.identities import HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
 from wr.cli import main
-from wr.models.settings import PartnerSettings, Settings
+from wr.models.settings import Settings
 from wr.workspace.settings import load_settings, resolve_db_path, save_settings
 from wr.models.importing import ImportReport
 from wr.importing.pipeline import run_import
@@ -16,19 +17,19 @@ def test_settings_default_to_current_workspace(monkeypatch, tmp_path):
     settings = load_settings()
     assert settings.settings_path == tmp_path / ".wr-settings.json"
     assert resolve_db_path(settings) == tmp_path / "data" / "wr.sqlite"
-    assert settings.partners == PartnerSettings()
+    assert settings.household == HouseholdSettings()
 
 
 def test_settings_persist_all_options_across_updates(tmp_path):
     settings = Settings(project_root=tmp_path, db_path=Path("state/results.sqlite"),
                         institution_options={"broker": {"linked_account": "NL00 TEST 0000 0000 00"}})
-    save_settings(settings, PartnerSettings(partner_a="Sophie de Vries", partner_a_aliases=("S. de Vries",)), "documents")
+    save_settings(settings, HouseholdSettings(identities=(TaxpayerIdentity(name="Sophie de Vries", position=TaxpayerPosition.PRIMARY, aliases=("S. de Vries",)),)), "documents")
     loaded = load_settings(tmp_path)
     assert loaded.resolved_db_path == tmp_path / "state" / "results.sqlite"
-    assert loaded.partners.partner_b is None
+    assert loaded.household.secondary is None
     save_settings(loaded, import_root="other-documents")
     reloaded = load_settings(tmp_path)
-    assert reloaded.partners == loaded.partners
+    assert reloaded.household == loaded.household
     assert reloaded.institution_options == settings.institution_options
     assert reloaded.import_root == Path("other-documents")
     assert reloaded.db_path == settings.db_path
@@ -46,7 +47,7 @@ def test_legacy_settings_are_migrated_once_and_then_ignored(tmp_path):
     settings = load_settings(tmp_path)
     assert settings.import_root == Path("statements")
     assert settings.resolved_db_path == tmp_path / "state" / "results.sqlite"
-    assert settings.partners.partner_a == "Alex Example"
+    assert settings.household.primary.name == "Alex Example"
     assert settings.institution_options["broker"].model_dump() == {"linked_account": "NL00 TEST 0000 0000 00"}
     assert settings.settings_path.is_file()
     legacy.write_text("invalid and retired TOML")
@@ -57,11 +58,11 @@ def test_migration_preserves_existing_ui_overrides(tmp_path):
     (tmp_path / "config.toml").write_text('db_path = "custom.sqlite"\n[partners]\npartner_a = "Legacy Person"\n[institutions.flatex]\nlinked_account = "NL00TEST0000000000"\n')
     (tmp_path / ".wr-settings.json").write_text(json.dumps({"partners": {}, "import_root": None}))
     settings = load_settings(tmp_path)
-    assert settings.partners == PartnerSettings()
+    assert settings.household == HouseholdSettings()
     assert settings.import_root is None
     assert settings.db_path == Path("custom.sqlite")
     assert settings.institution_options["flatex"].linked_account == "NL00TEST0000000000"
-    assert json.loads(settings.settings_path.read_text())["version"] == 2
+    assert json.loads(settings.settings_path.read_text())["version"] == 3
 
 
 def test_workspace_must_be_a_directory(tmp_path):
@@ -145,7 +146,7 @@ def test_dashboard_and_demo_launch_with_workspace_settings(tmp_path, monkeypatch
     assert calls[0][:2] == (tmp_path, 8502)
     assert main(["demo", "--port", "8503"]) == 0
     assert calls[1][1] == 8503
-    assert calls[1][2].partners.partner_a == "Sophie de Vries"
+    assert calls[1][2].household.primary.name == "Sophie de Vries"
     assert not calls[1][0].exists()
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from wr.models.settings import PartnerSettings
+from wr.models.identities import HouseholdSettings
 
 
 _REVISION = "_taxpayer_editor_revision"
@@ -11,8 +11,8 @@ _SOURCE = "_taxpayer_editor_source"
 _WIDGET_PREFIX = "taxpayer_input_"
 
 
-def prepare_taxpayer_editor(database: str, partners: PartnerSettings, names: list[str]) -> None:
-    source = (database, partners, tuple(names))
+def prepare_taxpayer_editor(database: str, household: HouseholdSettings, names: list[str]) -> None:
+    source = (database, household, tuple(names))
     if st.session_state.get(_SOURCE) == source:
         return
     # Reusing keys lets Streamlit restore deleted state from the browser. Rotate

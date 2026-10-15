@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import sqlite3
+from uuid import NAMESPACE_URL, UUID, uuid5
 
-from wr.identities.matching import identity_slot, name_key, name_tokens, same_person
-from wr.models.settings import ChildSettings, IdentitySuggestions, PartnerSettings
+from wr.identities.matching import resolve_identity, name_key, name_tokens, same_person
+from wr.models.identities import ChildIdentity, HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
+from wr.models.settings import IdentitySuggestions
 from wr.storage.identities import filer_names, observed_names, tax_identity_names
 
 
@@ -36,48 +37,58 @@ def suggest_identities(conn: sqlite3.Connection) -> IdentitySuggestions:
     chosen = primary[:2]
     unresolved.extend(n for g in primary[2:] for n in g)
     children = [g for g in groups if g not in primary] if tax_names else []
-    values = {}
-    for slot, group in zip(("a", "b"), chosen):
-        values[f"partner_{slot}"] = group[0]
-        values[f"partner_{slot}_aliases"] = tuple(group[1:])
-    values["children"] = tuple(ChildSettings(g[0], tuple(g[1:])) for g in children)
-    return IdentitySuggestions(PartnerSettings(**values), tuple(sorted(unresolved)))
+    identities = tuple(
+        TaxpayerIdentity(
+            id=_suggested_id(group[0]), name=group[0], aliases=tuple(group[1:]), position=position,
+        )
+        for position, group in zip(TaxpayerPosition, chosen)
+    ) + tuple(
+        ChildIdentity(id=_suggested_id(group[0]), name=group[0], aliases=tuple(group[1:]))
+        for group in children
+    )
+    return IdentitySuggestions(HouseholdSettings(identities=identities), tuple(sorted(unresolved)))
 
 
-def effective_partners(conn: sqlite3.Connection, configured: PartnerSettings | None) -> PartnerSettings:
-    if configured and configured.children and not any(name for _, name in configured.configured()):
-        detected = suggest_identities(conn).partners
-        primary = [(slot, name) for slot, name in detected.configured() if name and identity_slot(name, configured) is None]
-        values = {}
-        for new_slot, (slot, name) in zip(("a", "b"), primary):
-            values[f"partner_{new_slot}"] = name
-            values[f"partner_{new_slot}_aliases"] = detected.aliases_for(slot)
-        return replace(configured, **values)
-    if configured and any(name for _, name in configured.configured()):
-        # Preserve reviewed profiles; suggest newly imported, distinct holders only.
-        detected = suggest_identities(conn).partners
+def _suggested_id(name: str) -> UUID:
+    return uuid5(NAMESPACE_URL, "wr:identity:" + " ".join(name_key(name)))
+
+
+def effective_household(conn: sqlite3.Connection, configured: HouseholdSettings | None) -> HouseholdSettings:
+    if configured and configured.children and not configured.taxpayers:
+        detected = suggest_identities(conn).household
+        primary = [
+            identity for identity in detected.taxpayers
+            if resolve_identity(identity.name, configured) is None
+        ]
+        taxpayers = tuple(
+            identity.model_copy(update={"position": position})
+            for position, identity in zip(TaxpayerPosition, primary)
+        )
+        return HouseholdSettings(
+            identities=taxpayers + configured.children, unassigned_names=configured.unassigned_names,
+        )
+    if configured and configured.taxpayers:
+        detected = suggest_identities(conn).household
         additions = tuple(
             child for child in detected.children
-            if len(name_tokens(child.canonical_name)) >= 2
-            and identity_slot(child.canonical_name, configured) is None
-            and not any(name_key(child.canonical_name) == name_key(n) for n in configured.unassigned_names)
-            and not any(same_person(child.canonical_name, name) for _, name in configured.identities() if name)
+            if len(name_tokens(child.name)) >= 2
+            and resolve_identity(child.name, configured) is None
+            and not any(name_key(child.name) == name_key(name) for name in configured.unassigned_names)
+            and not any(same_person(child.name, identity.name) for identity in configured.identities)
         )
-        return replace(configured, children=configured.children + additions) if additions else configured
-    return suggest_identities(conn).partners
+        return HouseholdSettings(
+            identities=configured.identities + additions, unassigned_names=configured.unassigned_names,
+        )
+    return suggest_identities(conn).household
 
 
-def validate_partners(partners: PartnerSettings) -> None:
-    seen: dict[tuple[str, ...], str] = {}
-    for slot, canonical in partners.identities():
-        aliases = partners.aliases_for(slot)
-        if aliases and not canonical:
-            raise ValueError("Provide a taxpayer name before assigning aliases.")
-        for name in ((canonical,) if canonical else ()) + aliases:
+def validate_household(household: HouseholdSettings) -> None:
+    seen: dict[tuple[str, ...], UUID] = {}
+    for identity in household.identities:
+        for name in (identity.name, *identity.aliases):
             key = name_key(name)
             if not key:
                 raise ValueError("Names must contain letters.")
-            if key in seen and seen[key] != slot:
-                description = "both taxpayers" if {slot, seen[key]} <= {"a", "b"} else "multiple people"
-                raise ValueError(f"Name or alias assigned to {description}: {name}")
-            seen[key] = slot
+            if key in seen and seen[key] != identity.id:
+                raise ValueError(f"Name or alias assigned to multiple people: {name}")
+            seen[key] = identity.id

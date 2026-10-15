@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import sqlite3
 
-from wr.models.tax import PartnerTaxResult
+from wr.models.tax import TaxpayerTaxResult
 
 
-def save_recommendation(conn: sqlite3.Connection, result: PartnerTaxResult) -> None:
+def save_recommendation(conn: sqlite3.Connection, result: TaxpayerTaxResult) -> None:
     conn.execute(
         """
-        INSERT INTO partner_tax_results (
-            tax_year, partner, partner_name, allocation_ratio,
+        INSERT INTO taxpayer_tax_results (
+            tax_year, taxpayer_position, taxpayer_name, allocation_ratio,
             allocated_actual_return, fictitious_return,
             estimated_box3_tax_actual, estimated_box3_tax_fictitious,
             estimated_tax_savings, recommendation, coverage_status, notes
@@ -17,8 +17,8 @@ def save_recommendation(conn: sqlite3.Connection, result: PartnerTaxResult) -> N
         """,
         (
             result.tax_year,
-            result.partner,
-            result.partner_name,
+            result.taxpayer_position.value,
+            result.taxpayer_name,
             result.allocation_ratio,
             result.allocated_actual_return,
             result.fictitious_return,
@@ -39,4 +39,4 @@ def comparison_years(conn: sqlite3.Connection) -> set[int]:
 
 
 def clear_recommendations(conn: sqlite3.Connection) -> None:
-    conn.execute("DELETE FROM partner_tax_results")
+    conn.execute("DELETE FROM taxpayer_tax_results")

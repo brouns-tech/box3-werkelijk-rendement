@@ -14,7 +14,7 @@ from wr.importing.classification import classify, guess_tax_year
 from wr.importing.persistence import persist_parse
 from wr.importing.scanner import scan_pdfs
 from wr.models.importing import DocumentImportOutcome, ImportReport, ImportStatus, ProgressCallback
-from wr.models.settings import PartnerSettings
+from wr.models.settings import HouseholdSettings
 from wr.parsers import parse_document
 from wr.parsers.base import InstitutionOptions
 from wr.storage.connection import connect
@@ -27,7 +27,7 @@ def run_import(
     db_path: str | Path,
     limit: int | None = None,
     *,
-    partner_config: PartnerSettings | None = None,
+    household_config: HouseholdSettings | None = None,
     institution_options: InstitutionOptions | None = None,
     progress: ProgressCallback | None = None,
     cancelled: Callable[[], bool] | None = None,
@@ -37,7 +37,7 @@ def run_import(
         raise ValueError(f"Import root is not a directory: {root}")
     conn = connect(db_path)
     try:
-        return _run_import(root, conn, limit, partner_config, institution_options, progress, cancelled)
+        return _run_import(root, conn, limit, household_config, institution_options, progress, cancelled)
     finally:
         conn.close()
 
@@ -46,7 +46,7 @@ def _run_import(
     root: Path,
     conn: sqlite3.Connection,
     limit: int | None,
-    partner_config: PartnerSettings | None,
+    household_config: HouseholdSettings | None,
     institution_options: InstitutionOptions | None,
     progress: ProgressCallback | None,
     cancelled: Callable[[], bool] | None,
@@ -198,7 +198,7 @@ def _run_import(
 
     canonicalize_facts(conn, institution_options)
     rebuild_portfolio(conn)
-    rebuild_recommendations(conn, partner_config)
+    rebuild_recommendations(conn, household_config)
     return report
 
 

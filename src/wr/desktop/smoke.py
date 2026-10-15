@@ -99,7 +99,7 @@ def smoke_test(directory: Path) -> None:
         row = conn.execute("SELECT interest_received FROM account_year_facts WHERE issuer='ing'").fetchone()
         assert row and row[0] == 12.34
         assert conn.execute("SELECT grondslag FROM tax_returns").fetchone()[0] == 160000
-        assert conn.execute("SELECT COUNT(*) FROM partner_tax_results WHERE tax_year=2024").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM taxpayer_tax_results WHERE tax_year=2024").fetchone()[0] == 2
     write_audit_export(db, directory / "audit.zip")
     (directory / "smoke-result.json").write_text(json.dumps({"version": app_version(), "parsers": len(PLUGINS), "pdf_backend": "pdfium", "config": str(config)}))
 

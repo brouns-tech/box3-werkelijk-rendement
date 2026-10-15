@@ -6,19 +6,18 @@ import json
 from wr.calculations.service import rebuild_portfolio
 from wr.calculations.service import rebuild_recommendations
 from wr.models.facts import GainMethod, Ownership
-from wr.models.settings import PartnerSettings, Settings
+from wr.models.settings import Settings
+from wr.models.identities import HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
 from wr.storage.connection import connect
 from wr.storage.migrations import init_db
 from wr.workspace.settings import save_settings
 
 
 DEMO_YEAR = 2024
-PARTNERS = PartnerSettings(
-    partner_a="Sophie de Vries",
-    partner_b="Daan Jansen",
-    partner_a_aliases=("S. de Vries",),
-    partner_b_aliases=("D. Jansen",),
-)
+HOUSEHOLD = HouseholdSettings(identities=(
+    TaxpayerIdentity(name="Sophie de Vries", aliases=("S. de Vries",), position=TaxpayerPosition.PRIMARY),
+    TaxpayerIdentity(name="Daan Jansen", aliases=("D. Jansen",), position=TaxpayerPosition.SECONDARY),
+))
 
 _FACTS = (
     {
@@ -114,10 +113,10 @@ def create_demo_workspace(directory: str | Path) -> Path:
     init_db(conn)
     _insert_demo_data(conn)
     rebuild_portfolio(conn)
-    rebuild_recommendations(conn, PARTNERS)
+    rebuild_recommendations(conn, HOUSEHOLD)
     conn.close()
 
-    save_settings(Settings(project_root=workspace.resolve(), db_path=Path("wr-demo.sqlite"), partners=PARTNERS))
+    save_settings(Settings(project_root=workspace.resolve(), db_path=Path("wr-demo.sqlite"), household=HOUSEHOLD))
     return workspace.resolve()
 
 

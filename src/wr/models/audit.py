@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from wr.models.base import Record
+from wr.models.identities import TaxpayerPosition
 from wr.models.facts import GainMethod, Ownership
 from wr.money import Currency
 
@@ -94,10 +95,10 @@ class SourceFactExportRow(Record):
     extra: str
 
 
-class PartnerTaxExportRow(Record):
+class TaxpayerTaxExportRow(Record):
     tax_year: int
-    partner: str
-    partner_name: str | None
+    taxpayer_position: TaxpayerPosition
+    taxpayer_name: str | None
     allocation_ratio: float | None
     allocated_actual_return: float | None
     fictitious_return: float | None
@@ -111,7 +112,7 @@ class PartnerTaxExportRow(Record):
 
 class AuditManifest(Record):
     format: str = "werkelijk-rendement-audit"
-    version: int = 1
+    version: int = 2
     pending_pdf_reprocessing: int
     document_processing_profiles: list[str]
     generated_at_utc: str

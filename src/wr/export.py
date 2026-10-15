@@ -14,7 +14,7 @@ from wr.importing.reprocessing import pending_reprocessing
 from wr.models.audit import (
     AssetExportRow,
     AuditManifest,
-    PartnerTaxExportRow,
+    TaxpayerTaxExportRow,
     SourceFactExportRow,
     YearSummary,
 )
@@ -36,19 +36,19 @@ def create_audit_export(
     yearly_rows = [_year_summary(conn, year) for year in selected_years]
     asset_rows: list[AssetExportRow] = []
     fact_rows: list[SourceFactExportRow] = []
-    tax_rows: list[PartnerTaxExportRow] = []
+    tax_rows: list[TaxpayerTaxExportRow] = []
 
     for year in selected_years:
         assets, facts = _asset_and_fact_rows(conn, year)
         asset_rows.extend(assets)
         fact_rows.extend(facts)
         tax_rows.extend(
-            PartnerTaxExportRow.model_validate(dict(row))
+            TaxpayerTaxExportRow.model_validate(dict(row))
             for row in conn.execute(
                 """
                 SELECT tax_year,
-                       partner,
-                       partner_name,
+                       taxpayer_position,
+                       taxpayer_name,
                        allocation_ratio,
                        allocated_actual_return,
                        fictitious_return,
@@ -58,9 +58,9 @@ def create_audit_export(
                        recommendation,
                        coverage_status,
                        notes
-                FROM partner_tax_results
+                FROM taxpayer_tax_results
                 WHERE tax_year = ?
-                ORDER BY partner
+                ORDER BY taxpayer_position
                 """,
                 (year,),
             )
@@ -83,7 +83,7 @@ def create_audit_export(
             "source_facts.csv": (
                 "Canonical parsed account facts with source PDF identity and asset attribution."
             ),
-            "partner_tax_results.csv": "Per-partner tax estimates and recommendation.",
+            "taxpayer_tax_results.csv": "Per-taxpayer tax estimates and recommendation.",
         },
         calculation_notes= [
             "actual_return follows the same gain-method rules as the portfolio calculation.",
@@ -103,7 +103,7 @@ def create_audit_export(
         _write_csv(bundle, "yearly_summary.csv", yearly_rows)
         _write_csv(bundle, "assets.csv", asset_rows)
         _write_csv(bundle, "source_facts.csv", fact_rows)
-        _write_csv(bundle, "partner_tax_results.csv", tax_rows)
+        _write_csv(bundle, "taxpayer_tax_results.csv", tax_rows)
     return output.getvalue()
 
 
@@ -135,7 +135,7 @@ def _selected_years(
         FROM account_year_facts
         UNION
         SELECT tax_year
-        FROM partner_tax_results
+        FROM taxpayer_tax_results
         ORDER BY tax_year
         """
     ).fetchall()
@@ -148,7 +148,7 @@ def _year_summary(conn: sqlite3.Connection, year: int) -> YearSummary:
     savings = conn.execute(
         """
         SELECT SUM(estimated_tax_savings)
-        FROM partner_tax_results
+        FROM taxpayer_tax_results
         WHERE tax_year = ?
         """,
         (year,),

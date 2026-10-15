@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from wr.calculations.allocation import individual_portfolio
 from wr.calculations.tax import BOX3_RATE_BY_YEAR, compare_partner
-from wr.identities.matching import identity_slot, same_person
-from wr.models import CoverageStatus, PartnerTaxResult, Recommendation
-from wr.models.settings import PartnerSettings
+from wr.identities.matching import resolve_identity, same_person
+from wr.models import CoverageStatus, TaxpayerTaxResult, Recommendation
+from wr.models.identities import HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
 from wr.models.storage import FactRecord, PortfolioRecord, TaxReturnRecord
 from wr.money import multiply, subtract
 
@@ -14,20 +14,20 @@ def recommendations_for_year(
     portfolio: PortfolioRecord | None,
     returns: list[TaxReturnRecord],
     facts: list[FactRecord],
-    partner_cfg: PartnerSettings,
-) -> list[PartnerTaxResult]:
+    household: HouseholdSettings,
+) -> list[TaxpayerTaxResult]:
     coverage = portfolio.coverage_status if portfolio else CoverageStatus.UNKNOWN.value
     known_actual = portfolio.known_combined_actual_return if portfolio else None
     missing = portfolio.missing_asset_summary if portfolio else "no portfolio"
 
     if not returns:
-        if any(name for _, name in partner_cfg.configured()):
-            return _individual_results(year, returns, facts, partner_cfg)
+        if household.taxpayers:
+            return _individual_results(year, returns, facts, household)
         return [
-            PartnerTaxResult(
+            TaxpayerTaxResult(
                 tax_year=year,
-                partner="a",
-                partner_name="unknown",
+                taxpayer_position=TaxpayerPosition.PRIMARY,
+                taxpayer_name="unknown",
                 allocation_ratio=None,
                 allocated_actual_return=known_actual,
                 fictitious_return=None,
@@ -49,14 +49,14 @@ def recommendations_for_year(
             1 if r.allocation_a is not None else 0,
             1 if r.filer_name and "unknown" not in (r.filer_name or "").lower() else 0,
             1 if r.filer_name and "datum" not in (r.filer_name or "").lower() else 0,
-            1 if identity_slot(r.filer_name, partner_cfg) == "a" else 0,
+            1 if _position_for(r.filer_name, household) is TaxpayerPosition.PRIMARY else 0,
             abs(r.grondslag or 0),
         ),
     )
 
     full_year = bool(primary.full_year_fiscal_partners)
     if not full_year:
-        return _individual_results(year, returns, facts, partner_cfg)
+        return _individual_results(year, returns, facts, household)
 
     # Absence of a parsed base is not evidence of a zero base. Keep both
     # partners visible even when allocation or comparison cannot be established.
@@ -77,7 +77,7 @@ def recommendations_for_year(
 
     fict_a, fict_b = primary.voordeel_a, primary.voordeel_b
     tax_a, tax_b = primary.box3_tax_a, primary.box3_tax_b
-    if identity_slot(name_b, partner_cfg) == "a" and identity_slot(name_a, partner_cfg) != "a":
+    if _position_for(name_b, household) is TaxpayerPosition.PRIMARY and _position_for(name_a, household) is not TaxpayerPosition.PRIMARY:
         name_a, name_b = name_b, name_a
         alloc_a, alloc_b = alloc_b, alloc_a
         fict_a, fict_b = fict_b, fict_a
@@ -85,11 +85,12 @@ def recommendations_for_year(
 
     incomplete = coverage != CoverageStatus.COMPLETE.value
     results = []
-    for slot, name, ratio, fict, filed_tax in (
-        ("a", name_a, alloc_a, fict_a, tax_a),
-        ("b", name_b, alloc_b, fict_b, tax_b),
+    for position, name, ratio, fict, filed_tax in (
+        (TaxpayerPosition.PRIMARY, name_a, alloc_a, fict_a, tax_a),
+        (TaxpayerPosition.SECONDARY, name_b, alloc_b, fict_b, tax_b),
     ):
-        name = name or getattr(partner_cfg, f"partner_{slot}")
+        configured_identity = household.taxpayer(position)
+        name = name or (configured_identity.name if configured_identity else None)
         allocated = (
             None if known_actual is None or ratio is None else multiply(known_actual, ratio)
         )
@@ -117,11 +118,12 @@ def recommendations_for_year(
         if tax_fict is None and fict is not None and rate is not None:
             tax_fict = multiply(fict, rate)
 
+        matched_identity = resolve_identity(name, household)
         results.append(
-            PartnerTaxResult(
+            TaxpayerTaxResult(
                 tax_year=year,
-                partner=slot,
-                partner_name=getattr(partner_cfg, f"partner_{identity_slot(name, partner_cfg)}", None) or name or slot,
+                taxpayer_position=position,
+                taxpayer_name=(matched_identity.name if matched_identity else name) or position.value,
                 allocation_ratio=ratio,
                 allocated_actual_return=allocated,
                 fictitious_return=fict,
@@ -150,25 +152,23 @@ def _submission_rank(excerpt: str | None) -> int:
 
 
 def _individual_results(
-    year: int, returns: list[TaxReturnRecord], facts: list[FactRecord], partner_cfg: PartnerSettings
-) -> list[PartnerTaxResult]:
-    configured = [
-        (slot, name) for slot, name in partner_cfg.configured() if name is not None
-    ]
+    year: int, returns: list[TaxReturnRecord], facts: list[FactRecord], household: HouseholdSettings
+) -> list[TaxpayerTaxResult]:
+    configured = [(identity.position, identity.name) for identity in household.taxpayers]
     if not configured:
-        configured = [(chr(ord("a") + index), row.filer_name) for index, row in enumerate(returns)]
+        configured = [(position, row.filer_name) for position, row in zip(TaxpayerPosition, returns)]
     results = []
-    for slot, name in configured:
+    for position, name in configured:
         matching = [row for row in returns if (
-            identity_slot(row.filer_name, partner_cfg) == slot
-            if any(n for _, n in partner_cfg.configured())
+            _position_for(row.filer_name, household) == position
+            if household.taxpayers
             else same_person(row.filer_name, name)
         )]
         tax_return = max(matching, key=lambda row: _submission_rank(row.raw_text_excerpt)) if matching else None
-        known_actual, coverage, missing = individual_portfolio(facts, year, name, partner_cfg)
+        known_actual, coverage, missing = individual_portfolio(facts, year, name, household)
         if tax_return is None:
-            results.append(PartnerTaxResult(
-                tax_year=year, partner=slot, partner_name=name or slot, allocation_ratio=1.0,
+            results.append(TaxpayerTaxResult(
+                tax_year=year, taxpayer_position=position, taxpayer_name=name or position.value, allocation_ratio=1.0,
                 allocated_actual_return=known_actual, fictitious_return=None,
                 estimated_box3_tax_actual=None, estimated_box3_tax_fictitious=None,
                 estimated_tax_savings=None, recommendation=Recommendation.NEEDS_MANUAL_RSAMW.value,
@@ -187,11 +187,16 @@ def _individual_results(
             if fictitious is not None and year in BOX3_RATE_BY_YEAR
             else None
         )
-        results.append(PartnerTaxResult(
-            tax_year=year, partner=slot, partner_name=name or tax_return.filer_name or slot,
+        results.append(TaxpayerTaxResult(
+            tax_year=year, taxpayer_position=position, taxpayer_name=name or tax_return.filer_name or position.value,
             allocation_ratio=1.0, allocated_actual_return=known_actual, fictitious_return=fictitious,
             estimated_box3_tax_actual=estimated_actual_tax, estimated_box3_tax_fictitious=tax_fictitious,
             estimated_tax_savings=(subtract(tax_fictitious, estimated_actual_tax) if tax_fictitious is not None and estimated_actual_tax is not None else None),
             recommendation=recommendation, coverage_status=coverage, notes=notes,
         ))
     return results
+
+
+def _position_for(name: str | None, household: HouseholdSettings) -> TaxpayerPosition | None:
+    identity = resolve_identity(name, household)
+    return identity.position if isinstance(identity, TaxpayerIdentity) else None

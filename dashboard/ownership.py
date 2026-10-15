@@ -1,5 +1,8 @@
 """Shared ownership colors for tables and taxpayer editors."""
 
+from wr.models.identities import ChildIdentity, TaxpayerIdentity, TaxpayerPosition, IdentityRole
+
+
 BLUE = "#6a8dad"
 GREEN = "#6a9b7c"
 PURPLE = "#9572ad"
@@ -7,12 +10,10 @@ UNASSIGNED = "#ad6a6a"
 UNKNOWN = "#778493"
 
 
-def slot_color(slot: str | None) -> str:
-    if slot == "a":
-        return BLUE
-    if slot == "b":
-        return GREEN
-    if slot and slot.startswith("child_"):
+def identity_color(identity: TaxpayerIdentity | ChildIdentity | None) -> str:
+    if isinstance(identity, TaxpayerIdentity):
+        return BLUE if identity.position is TaxpayerPosition.PRIMARY else GREEN
+    if isinstance(identity, ChildIdentity):
         return PURPLE
     return UNASSIGNED
 
@@ -35,7 +36,7 @@ def table_style(color: str, *, muted: bool = False) -> str:
 
 def editor_styles() -> str:
     rules = []
-    for kind, color in (("a", BLUE), ("b", GREEN), ("child", PURPLE), ("unassigned", UNASSIGNED)):
+    for kind, color in (("primary", BLUE), ("secondary", GREEN), ("child", PURPLE), ("unassigned", UNASSIGNED)):
         channels = ", ".join(map(str, rgb(color)))
         selector = f'div[class*="st-key-owner_{kind}_"]'
         rules.append(f"""
@@ -52,8 +53,6 @@ def editor_styles() -> str:
     return "\n".join(rules)
 
 
-def editor_key(slot: str | None, suffix: str) -> str:
-    kind = "child" if slot and slot.startswith("child_") else slot
-    if kind not in ("a", "b", "child"):
-        kind = "unassigned"
-    return f"owner_{kind}_{suffix}"
+def editor_key(kind: TaxpayerPosition | IdentityRole | None, suffix: str) -> str:
+    label = kind.value if kind is not None else "unassigned"
+    return f"owner_{label}_{suffix}"
