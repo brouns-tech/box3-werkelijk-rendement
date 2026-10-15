@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from wr.models import AccountYearFact, ParseResult
+from wr.models import AccountYearFact, GainMethod, ParseResult
 from wr.models.metadata import FactMetadata
 from wr.money import Currency, add, subtract, total
 from wr.parsers._text import normalize_account_id, normalize_iban, parse_en_amount, parse_nl_amount
@@ -160,7 +160,7 @@ def _parse_savings(text: str, year: int) -> ParseResult:
         deposits=purchased,
         withdrawals=sold,
         capital_gain=add(earned or 0.0, fees or 0.0) if earned is not None else None,
-        gain_method="earned_return" if earned is not None else "unknown",
+        gain_method=GainMethod.EARNED_RETURN if earned is not None else GainMethod.UNKNOWN,
         extra=RevolutMetadata(fees=fees, earned_return=earned),
     )
     if fact.capital_gain is None:
@@ -212,7 +212,7 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
             deposits=subtract(incoming, interest or 0),
             withdrawals=parse_en_amount(row.group(3)),
             interest_received=interest,
-            gain_method="interest_only" if interest is not None else "unknown",
+            gain_method=GainMethod.INTEREST_ONLY if interest is not None else GainMethod.UNKNOWN,
             capital_gain=interest,
             extra=RevolutMetadata(
                 product=product,

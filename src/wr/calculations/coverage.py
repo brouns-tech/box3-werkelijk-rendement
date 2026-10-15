@@ -4,7 +4,7 @@ from wr.calculations.returns import fact_return, has_actual_return, is_excluded_
 from wr.models import CoverageStatus
 from wr.models.calculations import CoverageResult
 from wr.models.storage import FactRecord, MoneyField
-from wr.money import add, subtract, total
+from wr.money import Currency, add, subtract, total
 
 
 def coverage_for_year(year: int, facts: list[FactRecord]) -> CoverageResult:
@@ -12,23 +12,23 @@ def coverage_for_year(year: int, facts: list[FactRecord]) -> CoverageResult:
     eligible_facts = [f for f in facts if not is_excluded_box3_fact(f)]
 
     for fact in eligible_facts:
-        if (fact.currency or "EUR") != "EUR":
+        if (fact.currency or Currency.EUR) != Currency.EUR:
             missing.append(f"{fact.issuer} {fact.account_key} (requires EUR conversion and currency gain/loss)")
         elif not has_actual_return(fact):
             missing.append(
                 f"{fact.issuer} {fact.account_key} (no actual-return fields)"
             )
 
-    used_facts = [f for f in eligible_facts if (f.currency or "EUR") == "EUR"]
-    start = _sum(used_facts, "start_balance")
-    end = _sum(used_facts, "end_balance")
-    deposits = _sum(used_facts, "deposits")
-    withdrawals = _sum(used_facts, "withdrawals")
+    used_facts = [f for f in eligible_facts if (f.currency or Currency.EUR) == Currency.EUR]
+    start = _sum(used_facts, MoneyField.START_BALANCE)
+    end = _sum(used_facts, MoneyField.END_BALANCE)
+    deposits = _sum(used_facts, MoneyField.DEPOSITS)
+    withdrawals = _sum(used_facts, MoneyField.WITHDRAWALS)
     interest = subtract(
-        _sum(used_facts, "interest_received"), _sum(used_facts, "interest_paid")
+        _sum(used_facts, MoneyField.INTEREST_RECEIVED), _sum(used_facts, MoneyField.INTEREST_PAID)
     )
     dividends = subtract(
-        _sum(used_facts, "dividends_gross"), _sum(used_facts, "withholding_tax")
+        _sum(used_facts, MoneyField.DIVIDENDS_GROSS), _sum(used_facts, MoneyField.WITHHOLDING_TAX)
     )
     capital = 0.0
     known_return = 0.0
@@ -62,4 +62,4 @@ def coverage_for_year(year: int, facts: list[FactRecord]) -> CoverageResult:
 
 
 def _sum(rows: list[FactRecord], col: MoneyField) -> float:
-    return total((getattr(row, col) or 0) for row in rows)
+    return total((getattr(row, col.value) or 0) for row in rows)

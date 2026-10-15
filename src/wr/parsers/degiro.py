@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from wr.models import AccountYearFact, ParseResult
+from wr.models import AccountYearFact, Ownership, ParseResult
 from wr.models.metadata import FactMetadata
 from wr.parsers._text import parse_nl_amount
 from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
@@ -74,7 +74,7 @@ def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
         account_key=account_key,
         account_label=f"DEGIRO {'Pensioen' if is_pensioen else 'Beleggingsrekening'} {account_key}",
         holder_names=holders,
-        ownership="unknown",
+        ownership=Ownership.UNKNOWN,
         start_balance=start,
         end_balance=end,
         deposits=deposits if deposits is not None else 0.0,

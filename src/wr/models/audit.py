@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from wr.models.base import Record
+from wr.models.facts import GainMethod, Ownership
+from wr.money import Currency
 
 
 class YearSummary(Record):
@@ -49,7 +51,7 @@ class AssetExportRow(Record):
     market_value_change: float | None
     actual_return_from_sources: float | None
     return_used: float
-    currency: str | None = None
+    currency: Currency | None = None
     native_actual_return: float | None = None
     return_basis: str
     matched_fact_ids: int | str
@@ -65,8 +67,8 @@ class SourceFactExportRow(Record):
     account_key: str
     account_label: str | None
     holder_names: str
-    ownership: str | None
-    currency: str
+    ownership: Ownership | None
+    currency: Currency
     start_capital: float | None
     end_capital: float | None
     deposits: float | None
@@ -76,7 +78,7 @@ class SourceFactExportRow(Record):
     dividends_gross: float | None
     withholding_tax: float | None
     capital_gain: float | None
-    gain_method: str | None
+    gain_method: GainMethod | None
     calculated_actual_return: float | None
     native_actual_return: float | None
     has_usable_actual_return: bool

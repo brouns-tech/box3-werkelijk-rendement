@@ -10,6 +10,7 @@ from wr.storage.migrations import init_db
 from wr.storage.facts import insert_facts
 from wr.i18n import currency
 from wr.money import Currency
+from wr.models import GainMethod, Ownership
 from wr.parsers.revolut import parse_revolut
 from wr.calculations.coverage import coverage_for_year
 from wr.calculations.returns import has_actual_return, fact_return, native_fact_return
@@ -87,6 +88,12 @@ def test_foreign_currency_never_enters_eur_rollup():
     from wr.export import _asset_and_fact_rows
     assets, sources = _asset_and_fact_rows(conn, 2025)
     usd = next(row for row in sources if row.currency == 'USD')
+    assert usd.currency is Currency.USD
+    assert usd.ownership is Ownership.UNKNOWN
+    assert usd.gain_method is GainMethod.INTEREST_ONLY
+    assert usd.model_dump(mode="json")["ownership"] == "unknown"
+    assert usd.model_dump(mode="json")["gain_method"] == "interest_only"
+    assert usd.model_dump(mode="json")["currency"] == "USD"
     assert usd.native_actual_return == 20
     assert usd.calculated_actual_return is None
     assert not usd.included_in_year_total

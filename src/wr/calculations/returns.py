@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from wr.models.storage import FactRecord
-from wr.money import add, subtract
+from wr.models.facts import GainMethod
+from wr.models.storage import FactRecord, MoneyField
+from wr.money import Currency, add, subtract
 
 
 def is_excluded_box3_fact(fact: FactRecord) -> bool:
@@ -17,7 +18,7 @@ def is_box3_fact(fact: FactRecord) -> bool:
 
 
 def has_actual_return(fact: FactRecord) -> bool:
-    if fact.currency != "EUR":
+    if fact.currency != Currency.EUR:
         return False
     if native_fact_return(fact) is None:
         return False
@@ -26,10 +27,10 @@ def has_actual_return(fact: FactRecord) -> bool:
     if fact.dividends_gross is not None:
         return True
     if fact.capital_gain is not None and fact.gain_method in {
-        "balance_flow",
-        "earned_return",
-        "interest_only",
-        "explicit",
+        GainMethod.BALANCE_FLOW,
+        GainMethod.EARNED_RETURN,
+        GainMethod.INTEREST_ONLY,
+        GainMethod.EXPLICIT,
     }:
         return True
     # Start/end alone without flows is not enough for investments
@@ -45,18 +46,23 @@ def has_actual_return(fact: FactRecord) -> bool:
 
 def fact_return(fact: FactRecord) -> float | None:
     """Return usable in EUR totals; native-currency evidence stays separate."""
-    if fact.currency != "EUR":
+    if fact.currency != Currency.EUR:
         return None
     return native_fact_return(fact)
 
 
 def native_fact_return(fact: FactRecord) -> float | None:
-    method = fact.gain_method or ""
-    if method == "earned_return" and fact.capital_gain is not None:
+    method = fact.gain_method or GainMethod.UNKNOWN
+    if method == GainMethod.EARNED_RETURN and fact.capital_gain is not None:
         return fact.capital_gain
-    if method == "balance_flow":
-        required = ("start_balance", "end_balance", "deposits", "withdrawals")
-        if all(getattr(fact, field) is not None for field in required):
+    if method == GainMethod.BALANCE_FLOW:
+        required = (
+            MoneyField.START_BALANCE,
+            MoneyField.END_BALANCE,
+            MoneyField.DEPOSITS,
+            MoneyField.WITHDRAWALS,
+        )
+        if all(getattr(fact, field.value) is not None for field in required):
             balance_return = add(
                 subtract(
                     fact.end_balance, fact.start_balance, fact.deposits
@@ -70,7 +76,7 @@ def native_fact_return(fact: FactRecord) -> float | None:
                 -(fact.interest_paid or 0),
             )
         return fact.capital_gain
-    if method == "interest_only":
+    if method == GainMethod.INTEREST_ONLY:
         return subtract(fact.interest_received or 0, fact.interest_paid or 0)
     total = 0.0
     has = False
@@ -86,7 +92,7 @@ def native_fact_return(fact: FactRecord) -> float | None:
             subtract(fact.dividends_gross, fact.withholding_tax or 0),
         )
         has = True
-    if fact.capital_gain is not None and method not in {"interest_only", "balance_delta_incomplete"}:
+    if fact.capital_gain is not None and method not in {GainMethod.INTEREST_ONLY, GainMethod.BALANCE_DELTA_INCOMPLETE}:
         if not has:
             total = add(total, fact.capital_gain)
             has = True

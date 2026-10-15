@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from wr.models import AccountYearFact, ParseResult
+from wr.models import AccountYearFact, GainMethod, ParseResult
 from wr.models.metadata import FactMetadata
 from wr.parsers._text import normalize_iban, parse_nl_amount
 from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
@@ -83,7 +83,7 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
             for product in ("betaalrekening", "creditcardrekening")
         ):
             fact.capital_gain = 0.0
-            fact.gain_method = "explicit"
+            fact.gain_method = GainMethod.EXPLICIT
             fact.extra = FactMetadata(return_assumption="zero_by_product")
         fact.compute_capital_gain()
         facts.append(fact)

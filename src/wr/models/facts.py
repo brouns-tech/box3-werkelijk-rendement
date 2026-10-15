@@ -20,6 +20,21 @@ class ParseStatus(str, Enum):
     FAILED = "failed"
 
 
+class Ownership(str, Enum):
+    UNKNOWN = "unknown"
+    INDIVIDUAL = "individual"
+    JOINT = "joint"
+
+
+class GainMethod(str, Enum):
+    UNKNOWN = "unknown"
+    INTEREST_ONLY = "interest_only"
+    BALANCE_DELTA_INCOMPLETE = "balance_delta_incomplete"
+    BALANCE_FLOW = "balance_flow"
+    EXPLICIT = "explicit"
+    EARNED_RETURN = "earned_return"
+
+
 @dataclass
 class AccountYearFact:
     tax_year: int
@@ -27,7 +42,7 @@ class AccountYearFact:
     account_key: str
     account_label: str
     holder_names: list[str] = field(default_factory=list)
-    ownership: str = "unknown"
+    ownership: Ownership = Ownership.UNKNOWN
     currency: Currency = Currency.EUR
     start_balance: float | None = None
     end_balance: float | None = None
@@ -38,11 +53,13 @@ class AccountYearFact:
     dividends_gross: float | None = None
     withholding_tax: float | None = None
     capital_gain: float | None = None
-    gain_method: str = "unknown"
+    gain_method: GainMethod = GainMethod.UNKNOWN
     logical_group: str | None = None
     extra: FactMetadata = field(default_factory=FactMetadata)
 
     def __post_init__(self) -> None:
+        self.ownership = Ownership(self.ownership)
+        self.gain_method = GainMethod(self.gain_method)
         self.currency = Currency(self.currency)
         if not isinstance(self.extra, FactMetadata):
             self.extra = FactMetadata.model_validate(self.extra)
@@ -55,7 +72,7 @@ class AccountYearFact:
                 self.capital_gain = subtract(
                     self.interest_received or 0.0, self.interest_paid or 0.0
                 )
-                self.gain_method = "interest_only"
+                self.gain_method = GainMethod.INTEREST_ONLY
             return
         deposits = self.deposits if self.deposits is not None else 0.0
         withdrawals = self.withdrawals if self.withdrawals is not None else 0.0
@@ -66,10 +83,10 @@ class AccountYearFact:
                 self.capital_gain = subtract(
                     self.interest_received or 0.0, self.interest_paid or 0.0
                 )
-                self.gain_method = "interest_only"
+                self.gain_method = GainMethod.INTEREST_ONLY
                 return
             self.capital_gain = subtract(self.end_balance, self.start_balance)
-            self.gain_method = "balance_delta_incomplete"
+            self.gain_method = GainMethod.BALANCE_DELTA_INCOMPLETE
             return
         balance_flow_return = add(
             subtract(self.end_balance, self.start_balance, deposits), withdrawals
@@ -84,13 +101,13 @@ class AccountYearFact:
         # Keep market value change separate so gross dividends can be included
         # exactly once in taxable actual return.
         self.capital_gain = subtract(balance_flow_return, net_interest, net_dividends)
-        self.gain_method = "balance_flow"
+        self.gain_method = GainMethod.BALANCE_FLOW
 
     @property
     def actual_return_component(self) -> float | None:
         """Contribution to combined actual return for this fact."""
         if (
-            self.gain_method == "balance_flow"
+            self.gain_method == GainMethod.BALANCE_FLOW
             and self.start_balance is not None
             and self.end_balance is not None
             and self.deposits is not None
@@ -112,17 +129,17 @@ class AccountYearFact:
             )
         if self.dividends_gross is not None:
             parts.append(self.dividends_gross)
-        if self.gain_method == "interest_only":
+        if self.gain_method == GainMethod.INTEREST_ONLY:
             # Already counted via interest above.
             pass
         elif self.capital_gain is not None and self.gain_method in (
-            "balance_flow",
-            "explicit",
-            "earned_return",
+            GainMethod.BALANCE_FLOW,
+            GainMethod.EXPLICIT,
+            GainMethod.EARNED_RETURN,
         ):
             # For investments, capital_gain is market value change net of flows
             # and separately reported income.
-            if self.gain_method == "earned_return":
+            if self.gain_method == GainMethod.EARNED_RETURN:
                 parts = [self.capital_gain]
             else:
                 parts.append(self.capital_gain)

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal
+from enum import Enum
 import json
 
 from pydantic import Field, SerializeAsAny, field_validator
 
 from wr.models.base import Record
+from wr.models.facts import GainMethod, Ownership
 from wr.models.metadata import FactMetadata
 from wr.money import Currency
 
@@ -18,7 +19,7 @@ class FactRecord(Record):
     account_key: str = ""
     account_label: str | None = None
     holder_names: list[str] = Field(default_factory=list)
-    ownership: str | None = "unknown"
+    ownership: Ownership | None = Ownership.UNKNOWN
     currency: Currency = Currency.EUR
     start_balance: float | None = None
     end_balance: float | None = None
@@ -29,7 +30,7 @@ class FactRecord(Record):
     dividends_gross: float | None = None
     withholding_tax: float | None = None
     capital_gain: float | None = None
-    gain_method: str | None = "unknown"
+    gain_method: GainMethod | None = GainMethod.UNKNOWN
     logical_group: str | None = None
     is_canonical: bool = False
     extra: SerializeAsAny[FactMetadata] = Field(default_factory=FactMetadata)
@@ -121,4 +122,13 @@ class TaxReturnRecord(Record):
     raw_text_excerpt: str | None = None
 
 
-MoneyField = Literal["start_balance", "end_balance", "deposits", "withdrawals", "interest_received", "interest_paid", "dividends_gross", "withholding_tax", "capital_gain"]
+class MoneyField(str, Enum):
+    START_BALANCE = "start_balance"
+    END_BALANCE = "end_balance"
+    DEPOSITS = "deposits"
+    WITHDRAWALS = "withdrawals"
+    INTEREST_RECEIVED = "interest_received"
+    INTEREST_PAID = "interest_paid"
+    DIVIDENDS_GROSS = "dividends_gross"
+    WITHHOLDING_TAX = "withholding_tax"
+    CAPITAL_GAIN = "capital_gain"

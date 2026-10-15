@@ -12,6 +12,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
+from wr.models.facts import Ownership
 from wr.models.storage import FactRecord
 from wr.models.settings import PartnerSettings
 from wr.workspace.settings import load_settings, resolve_db_path
@@ -274,7 +275,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     st.subheader(t(Messages.ACCOUNT_OVERVIEW))
     fact_rows = []
     for fact in facts:
-        account_money = partial(_currency, language=language, currency_code=fact.currency or "EUR")
+        account_money = partial(_currency, language=language, currency_code=fact.currency or Currency.EUR)
         child_account = any(
             (identity_slot(holder, partner_cfg) or "").startswith("child_")
             for holder in fact.holder_names
@@ -282,7 +283,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
         fact_rows.append(
             {
                 t(Messages.ACCOUNT_HOLDER): _holder_label(json.dumps(fact.holder_names), canonical_names, language),
-                t(Messages.ALLOCATION): t(Messages.JOINT) if child_account or fact.ownership == "joint" else t(Messages.INDIVIDUAL),
+                t(Messages.ALLOCATION): t(Messages.JOINT) if child_account or fact.ownership == Ownership.JOINT else t(Messages.INDIVIDUAL),
                 t(Messages.BOX_3): t(Messages.YES) if is_box3_fact(fact) else t(Messages.NO),
                 t(Messages.SOURCE): fact.issuer.upper(),
                 t(Messages.ACCOUNT_LABEL): fact.account_label,
@@ -297,7 +298,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
                 t(Messages.WITHHOLDING_TAX): account_money(fact.withholding_tax),
                 t(Messages.CALCULATED_ACTUAL_RETURN): account_money(native_fact_return(fact)),
                 t(Messages.MARKET_VALUE_COMPONENT_INTERNAL): account_money(fact.capital_gain),
-                t(Messages.CURRENCY): fact.currency or "EUR",
+                t(Messages.CURRENCY): (fact.currency or Currency.EUR).value,
                 t(Messages.CALCULATION_METHOD): status_label(fact.gain_method, language),
             }
         )

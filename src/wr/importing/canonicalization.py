@@ -4,6 +4,7 @@ from collections import defaultdict
 import json
 import sqlite3
 
+from wr.models.facts import Ownership
 from wr.models.storage import FactRecord
 from wr.parsers import canonical_priority, postprocess_facts
 from wr.parsers.base import InstitutionOptions
@@ -58,10 +59,10 @@ def _enrich_fact_holders(conn: sqlite3.Connection) -> None:
         holders = row.holder_names
         if not holders:
             continue
-        if row.ownership == "unknown":
+        if row.ownership == Ownership.UNKNOWN:
             conn.execute(
                 "UPDATE account_year_facts SET ownership = ? WHERE id = ?",
-                ("individual" if len(holders) == 1 else "joint", row.id),
+                ((Ownership.INDIVIDUAL if len(holders) == 1 else Ownership.JOINT).value, row.id),
             )
         by_account[(row.issuer, _account_family(row.account_key))].update(holders)
         by_issuer[row.issuer].update(holders)
@@ -73,13 +74,13 @@ def _enrich_fact_holders(conn: sqlite3.Connection) -> None:
             holders = by_issuer[row.issuer]
         if len(holders) == 1:
             conn.execute(
-                "UPDATE account_year_facts SET holder_names = ?, ownership = 'individual' WHERE id = ?",
-                (json.dumps(sorted(holders)), row.id),
+                "UPDATE account_year_facts SET holder_names = ?, ownership = ? WHERE id = ?",
+                (json.dumps(sorted(holders)), Ownership.INDIVIDUAL.value, row.id),
             )
         elif len(holders) == 2:
             conn.execute(
-                "UPDATE account_year_facts SET holder_names = ?, ownership = 'joint' WHERE id = ?",
-                (json.dumps(sorted(holders)), row.id),
+                "UPDATE account_year_facts SET holder_names = ?, ownership = ? WHERE id = ?",
+                (json.dumps(sorted(holders)), Ownership.JOINT.value, row.id),
             )
 
 

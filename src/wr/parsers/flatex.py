@@ -6,7 +6,7 @@ import sqlite3
 
 from pydantic import Field, field_validator
 
-from wr.models import AccountYearFact, ParseResult
+from wr.models import AccountYearFact, GainMethod, ParseResult
 from wr.models.base import Record
 from wr.models.metadata import FactMetadata
 from wr.models.settings import InstitutionSettings
@@ -143,7 +143,7 @@ def parse_flatex(
         account_label="flatex (legacy)",
         holder_names=_holder_names(text),
         interest_received=interest,
-        gain_method="interest_only" if interest is not None else "unknown",
+        gain_method=GainMethod.INTEREST_ONLY if interest is not None else GainMethod.UNKNOWN,
         capital_gain=interest,
     )
     return ParseResult(
@@ -270,7 +270,7 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
         deposits=linked_deposits,
         withdrawals=linked_withdrawals,
         capital_gain=0.0,
-        gain_method="explicit",
+        gain_method=GainMethod.EXPLICIT,
         extra=FlatexMetadata(
             linked_account=linked_account,
             statement_number=statement_number,
@@ -373,15 +373,16 @@ def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None
     conn.execute(
         """
         UPDATE account_year_facts
-        SET capital_gain = NULL, gain_method = 'unknown'
+        SET capital_gain = NULL, gain_method = ?
         WHERE issuer = 'flatex'
           AND id IN (
               SELECT f.id
               FROM account_year_facts f
               JOIN documents d ON d.content_sha256 = f.document_sha256
-              WHERE d.doc_type = 'account_statement' AND f.gain_method = 'balance_flow'
+              WHERE d.doc_type = 'account_statement' AND f.gain_method = ?
           )
-        """
+        """,
+        (GainMethod.UNKNOWN.value, GainMethod.BALANCE_FLOW.value),
     )
     _select_statement_canonicals(conn)
     inventories = conn.execute(
@@ -450,7 +451,7 @@ def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None
             """
             UPDATE account_year_facts
             SET start_balance = ?, deposits = ?, withdrawals = ?,
-                capital_gain = ?, gain_method = 'balance_flow', extra = ?
+                capital_gain = ?, gain_method = ?, extra = ?
             WHERE id = ?
             """,
             (
@@ -458,6 +459,7 @@ def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None
                 deposits,
                 withdrawals,
                 capital_gain,
+                GainMethod.BALANCE_FLOW.value,
                 extra.model_dump_json(exclude_unset=True),
                 inventory["id"],
             ),

@@ -20,6 +20,7 @@ from wr.models.audit import (
 )
 from wr.models.base import Record
 from wr.models.storage import FactRecord, MoneyField
+from wr.money import Currency
 from wr.storage.connection import connect
 from wr.storage.facts import canonical_facts_with_documents
 from wr.storage.migrations import init_db
@@ -208,19 +209,19 @@ def _asset_and_fact_rows(
                 interest_received=fact.interest_received,
                 interest_paid=fact.interest_paid,
                 net_interest=_optional_net(
-                    [fact], "interest_received", "interest_paid"
+                    [fact], MoneyField.INTEREST_RECEIVED, MoneyField.INTEREST_PAID
                 ),
                 dividends_gross=fact.dividends_gross,
                 withholding_tax=fact.withholding_tax,
                 net_dividends=_optional_net(
-                    [fact], "dividends_gross", "withholding_tax"
+                    [fact], MoneyField.DIVIDENDS_GROSS, MoneyField.WITHHOLDING_TAX
                 ),
                 market_value_change=fact.capital_gain,
                 actual_return_from_sources=actual_return,
                 return_used=actual_return or 0.0,
                 currency=fact.currency,
                 native_actual_return=native_fact_return(fact),
-                return_basis="canonical statement fact" if (fact.currency or "EUR") == "EUR" else "requires EUR conversion; native amounts retained",
+                return_basis="canonical statement fact" if (fact.currency or Currency.EUR) == Currency.EUR else "requires EUR conversion; native amounts retained",
                 matched_fact_ids=fact_id,
                 included_fact_ids=fact_id,
                 source_document_sha256s=fact.document_sha256,
@@ -232,7 +233,7 @@ def _asset_and_fact_rows(
     for fact in facts:
         fact_id = int(fact.id)
         excluded = is_excluded_box3_fact(fact)
-        included = fact_id in included_fact_ids and (fact.currency or "EUR") == "EUR"
+        included = fact_id in included_fact_ids and (fact.currency or Currency.EUR) == Currency.EUR
         fact_rows.append(
             SourceFactExportRow(
                 tax_year=year,
@@ -260,7 +261,7 @@ def _asset_and_fact_rows(
                 primary_asset_id=None,
                 included_in_year_total=included,
                 exclusion_reason=(
-                    "excluded from Box 3" if excluded else ("requires EUR conversion" if (fact.currency or "EUR") != "EUR" else "unmatched to declared inventory")
+                    "excluded from Box 3" if excluded else ("requires EUR conversion" if (fact.currency or Currency.EUR) != Currency.EUR else "unmatched to declared inventory")
                 )
                 if not included
                 else None,
@@ -288,7 +289,7 @@ def _write_csv(
 
 
 def _optional_sum(rows: Iterable[FactRecord], key: MoneyField) -> float | None:
-    values = [getattr(row, key) for row in rows if getattr(row, key) is not None]
+    values = [getattr(row, key.value) for row in rows if getattr(row, key.value) is not None]
     return float(sum(values)) if values else None
 
 

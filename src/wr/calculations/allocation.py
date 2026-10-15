@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from wr.calculations.returns import fact_return, is_box3_fact
 from wr.identities.matching import identity_slot, similarity, same_person
-from wr.models import CoverageStatus
+from wr.models import CoverageStatus, Ownership
 from wr.models.settings import PartnerSettings
 from wr.models.storage import FactRecord
-from wr.money import add, multiply
+from wr.money import Currency, add, multiply
 
 
 def individual_portfolio(
@@ -27,14 +27,14 @@ def individual_portfolio(
         matches = [identity_slot(holder, partner_cfg) == filer_slot if filer_slot else _matches_alias(holder, aliases) for holder in holders]
         has_child = any(slot and slot.startswith("child_") for slot in holder_slots)
         child_pool = has_child and all(holder_slots) and (
-            all(slot.startswith("child_") for slot in holder_slots) or fact.ownership == "joint"
+            all(slot.startswith("child_") for slot in holder_slots) or fact.ownership == Ownership.JOINT
         )
         if child_pool:
             # Child assets belong to the parents' joint pool, never a child tax result.
             portion = 1.0 / len([name for _, name in partner_cfg.configured() if name])
         elif len(holders) == 1 and matches[0]:
             portion = 1.0
-        elif fact.ownership == "joint" and len(holders) >= 2 and any(matches):
+        elif fact.ownership == Ownership.JOINT and len(holders) >= 2 and any(matches):
             portion = 0.5
         elif not holders:
             missing.append(f"{fact.issuer} {fact.account_key} (holder unknown)")
@@ -45,7 +45,7 @@ def individual_portfolio(
             continue
         value = fact_return(fact)
         if value is None:
-            reason = "requires EUR conversion and currency gain/loss" if (fact.currency or "EUR") != "EUR" else "no actual-return fields"
+            reason = "requires EUR conversion and currency gain/loss" if (fact.currency or Currency.EUR) != Currency.EUR else "no actual-return fields"
             missing.append(f"{fact.issuer} {fact.account_key} ({reason})")
             continue
         total = add(total, multiply(value, portion))

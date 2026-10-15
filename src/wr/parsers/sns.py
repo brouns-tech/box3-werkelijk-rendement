@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 
-from wr.models import AccountYearFact, ParseResult
+from wr.models import AccountYearFact, Ownership, ParseResult
 from wr.models.metadata import FactMetadata
 from wr.models.settings import InstitutionSettings
 from wr.parsers._text import normalize_iban, parse_nl_amount
@@ -136,7 +136,7 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
             for part in (m.group("holders"), m.group("holder_tail") or "")
             if part.strip()
         )
-        ownership = "joint" if "e/o" in holders_raw.lower() else "unknown"
+        ownership = Ownership.JOINT if "e/o" in holders_raw.lower() else Ownership.UNKNOWN
         label = m.group("label").strip()
         account_type = _account_type(label)
         interest = None if account_type == "savings" else 0.0
