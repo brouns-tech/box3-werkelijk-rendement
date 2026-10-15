@@ -32,6 +32,22 @@ def _decision_label(recommendation: str, language: str = "en") -> str:
     return status_label(recommendation, language)
 
 
+def _coverage_indicator(status: str, language: str) -> None:
+    t = translator(language)
+    st.markdown(t("Coverage"))
+    if status == "COMPLETE":
+        st.badge(t("Ready to review"), color="green", icon=":material/check_circle:")
+        st.caption(t("All imported Box 3 accounts have usable return data in EUR."))
+    elif status in {"PARTIAL", "MISSING"}:
+        st.badge(t("Needs attention"), color="yellow", icon=":material/warning:")
+        st.caption(t("Some imported accounts need more return data or currency conversion.")
+                   if status == "PARTIAL" else t("Return data is missing. Import the relevant Box 3 statements."))
+    else:
+        st.badge(t("No data yet"), color="gray", icon=":material/info:")
+        st.caption(t("Import supported Box 3 statements to calculate returns for this year."))
+    st.caption(t("Based on imported accounts only. Check that all your accounts and assets are included."))
+
+
 def _return_components(fact) -> dict[str, float | None]:
     """Keep reported income distinct from FX and other changes in value."""
     raw_extra = fact["extra"]
@@ -285,10 +301,8 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     ).fetchall()
     if portfolio:
         coverage_col, sources_col = st.columns(2)
-        coverage_col.metric(
-            t("Coverage"), status_label(portfolio["coverage_status"], language),
-            help=t("Coverage concerns imported statements only; it does not establish that all assets or partner documents are present."),
-        )
+        with coverage_col:
+            _coverage_indicator(portfolio["coverage_status"], language)
         sources_col.metric(t("Statement sources"), portfolio["source_fact_count"] or 0)
         if portfolio["missing_asset_summary"]:
             st.warning(t("Missing / partial: {details}", details=coverage_details(portfolio["missing_asset_summary"], language)))

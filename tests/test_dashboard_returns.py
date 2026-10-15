@@ -74,7 +74,13 @@ def test_unconverted_foreign_income_is_not_mislabelled_as_eur_or_zero_fx():
     ("nl", ["Verdiend rendement", "Valutawinst / -verlies", "Effectief rendement"],
      ["€ 74,11", "€ -60,00", "€ 14,11"]),
 ])
-def test_dashboard_headers_show_metadata_and_figures_stay_in_account_table(tmp_path, monkeypatch, language, labels, amounts):
+@pytest.mark.parametrize("coverage,color,label", [
+    ("COMPLETE", "green", "Ready to review"),
+    ("PARTIAL", "yellow", "Needs attention"),
+    ("MISSING", "yellow", "Needs attention"),
+    ("UNKNOWN", "gray", "No data yet"),
+])
+def test_dashboard_headers_show_metadata_and_figures_stay_in_account_table(tmp_path, monkeypatch, language, labels, amounts, coverage, color, label):
     import sys
     from wr.desktop_storage import remember_language
 
@@ -87,13 +93,17 @@ def test_dashboard_headers_show_metadata_and_figures_stay_in_account_table(tmp_p
         insert_facts(conn, "synthetic", [asdict(f) for f in [fund("USD", 40.9876, -60), fund("EUR", 33.1234, 0)]])
         conn.execute("UPDATE account_year_facts SET is_canonical=1")
         rebuild_portfolio(conn)
+        conn.execute('UPDATE yearly_portfolio SET coverage_status=?', (coverage,))
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
     monkeypatch.delenv("WR_CONTROL_URL", raising=False)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert not app.exception
     metrics = {metric.label: metric.value for metric in app.metric}
-    assert metrics == ({'Coverage': 'Available evidence', 'Statement sources': '2'} if language == 'en'
-                       else {'Documentdekking': 'Beschikbare gegevens', 'Brongegevens uit overzichten': '2'})
+    assert metrics == ({'Statement sources': '2'} if language == 'en'
+                       else {'Brongegevens uit overzichten': '2'})
+    from wr.i18n import translate
+    assert any(f':{color}-badge[' in text.value and translate(language, label) in text.value for text in app.markdown)
+    assert any(translate(language, 'Based on imported accounts only. Check that all your accounts and assets are included.') == caption.value for caption in app.caption)
     frame = next(frame.value for frame in app.dataframe if ("Account label" if language == "en" else "Rekeningnaam") in frame.value.columns)
     name = "Account label" if language == "en" else "Rekeningnaam"
     fx_label = "Currency gain / loss (EUR)" if language == "en" else "Valutawinst / -verlies (EUR)"

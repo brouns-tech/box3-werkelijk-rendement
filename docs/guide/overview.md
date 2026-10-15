@@ -3,12 +3,23 @@
 The header shows coverage status and the number of statement sources. Financial
 figures appear in the tables, alongside their account or taxpayer context.
 
+Coverage uses both color and a text label:
+
+- **Green — Ready to review:** all imported Box 3 accounts have usable return
+  data in EUR.
+- **Yellow — Needs attention:** return data or currency conversion is missing.
+- **Gray — No data yet:** no eligible Box 3 account evidence is available.
+
+These statuses concern imported accounts only. They do not establish that every
+account or asset has been supplied. No current coverage status represents a hard
+failure; red is reserved for actual errors.
+
 Select **Tax year** in **Overview**, then work through these sections:
 
 1. **Coverage** and warnings: establish which evidence is present and which
    accounts or figures are missing or partial. An actual-return amount can be a
    known subtotal while the overall result remains indeterminate.
-   **Available evidence** means the imported Box 3 statements have usable return
+   **Ready to review** means the imported Box 3 statements have usable return
    fields; it does not establish that all your assets or tax-return evidence are present.
 2. **Decision overview**: inspect the actual-return and fictitious-return
    comparison, taxpayer allocation, and result status. A missing-data or

@@ -638,4 +638,4 @@ def test_overview_keeps_both_partners_when_combined_taxable_base_is_missing(tmp_
     decision = next(table.value for table in app.dataframe if 'Taxpayer' in table.value.columns)
     assert decision['Taxpayer'].tolist() == [cfg.partners.partner_a, cfg.partners.partner_b]
     assert decision['Decision'].tolist() == ['Manual review needed', 'Manual review needed']
-    assert next(metric for metric in app.metric if metric.label == 'Coverage').value == 'Available evidence'
+    assert any(':green-badge[' in text.value and 'Ready to review' in text.value for text in app.markdown)
