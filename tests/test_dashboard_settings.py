@@ -8,6 +8,36 @@ from wr.config import load_settings
 APP = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
 
 
+def test_pre_filing_partnership_checkbox_persists_and_updates_overview(tmp_path, monkeypatch):
+    from wr.db import connect
+    from wr.demo import create_demo_workspace
+
+    create_demo_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = load_settings()
+    with connect(cfg.resolved_db_path) as conn:
+        conn.execute('DELETE FROM tax_returns')
+    app = AppTest.from_file(str(APP)).run()
+    assert not app.exception
+    checkbox = next(widget for widget in app.checkbox if widget.key.endswith('_assume_fiscal_partnership'))
+    assert checkbox.value is True
+    decision = next(table.value for table in app.dataframe if 'Taxpayer' in table.value.columns)
+    assert decision['Decision'].tolist() == ['Pre-filing', 'Pre-filing']
+    for field in ['Tax allocation', 'Allocated actual return', 'Fictitious return', 'Potential tax savings']:
+        assert decision[field].tolist() == ['—', '—']
+    assert all(value != '—' for value in decision['Statement return by holder'])
+    assert any('Pre-filing overview' in info.value for info in app.info)
+    effective = next(metric.value for metric in app.metric if metric.label == 'Effective return')
+    checkbox.uncheck().run()
+    assert not app.exception
+    assert load_settings().partners.assume_fiscal_partnership is False
+    assert next(metric.value for metric in app.metric if metric.label == 'Effective return') == effective
+    decision = next(table.value for table in app.dataframe if 'Taxpayer' in table.value.columns)
+    assert all(value != '—' for value in decision['Allocated actual return'])
+    restarted = AppTest.from_file(str(APP)).run()
+    assert not next(widget for widget in restarted.checkbox if widget.key.endswith('_assume_fiscal_partnership')).value
+
+
 def test_initial_variants_are_assigned_and_labeled_without_manual_assignments(tmp_path, monkeypatch):
     from dataclasses import replace
     from dashboard.app import _canonical_name_map, _holder_label

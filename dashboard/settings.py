@@ -177,7 +177,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
                 if st.session_state.get(key) == f"child_{delete_index}":
                     st.session_state[key] = "unassigned"
 
-    st.info(t("Tax returns identify primary taxpayers and fiscal partners. Other distinct account holders are suggested as minor children; review these guesses, especially missing adult returns and shared initials. Fiscal partnership and allocation come from each tax return."))
+    st.info(t("Review taxpayer and child suggestions from imported documents. Tax returns provide fiscal partnership and allocation when available; otherwise the partnership setting below applies."))
     st.markdown(_EDITOR_STYLE, unsafe_allow_html=True)
     columns = st.columns(2)
     values = {}
@@ -194,7 +194,14 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
             key=_editor_widget_key(f"aliases_{slot}", "\n".join(partners.aliases_for(slot))),
         )
         _field_actions(column, f"aliases_{slot}", values[f"aliases_{slot}"], "\n".join(partners.aliases_for(slot)))
-    st.caption(t("For one identity, clear the second name and assign its spellings to the remaining person. Two identities do not imply full-year fiscal partnership."))
+    partnership = st.checkbox(
+        t("Assume full-year fiscal partnership when no tax return is available"),
+        value=partners.assume_fiscal_partnership,
+        key=taxpayer_widget_key("assume_fiscal_partnership"),
+        on_change=_assignment_changed,
+        help=t("Applies to years without tax returns when both taxpayers are named. Tax-return evidence takes precedence. No tax allocation is assumed."),
+    )
+    st.caption(t("For one identity, clear the second name and assign its spellings to the remaining person."))
     st.subheader(t("Minor children (assets attributed to parents)"))
     st.caption(t("Minderjarige kinderen: use this category for children whose Box 3 assets are attributed to the parents. Their documents appear as joint (purple) in the overview. Review ages and parental authority for the relevant tax year."))
     if st.button(t("Add child"), key="add_child"):
@@ -258,6 +265,7 @@ def taxpayers_ui(cfg, conn) -> PartnerSettings:
                 if assignment != "unassigned":
                     aliases[assignment].add(name)
             updated = PartnerSettings(
+                assume_fiscal_partnership=partnership,
                 partner_a=values["a"].strip() or None,
                 partner_b=values["b"].strip() or None,
                 partner_a_aliases=tuple(sorted(aliases["a"] - {values["a"].strip()})),

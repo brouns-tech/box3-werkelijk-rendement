@@ -75,24 +75,7 @@ def _results_for_year(
     missing = portfolio["missing_asset_summary"] if portfolio else "no portfolio"
 
     if not returns:
-        if any(name for _, name in partner_cfg.configured()):
-            return _individual_results(conn, year, returns, partner_cfg)
-        return [
-            PartnerTaxResult(
-                tax_year=year,
-                partner="a",
-                partner_name="unknown",
-                allocation_ratio=None,
-                allocated_actual_return=known_actual,
-                fictitious_return=None,
-                estimated_box3_tax_actual=None,
-                estimated_box3_tax_fictitious=None,
-                estimated_tax_savings=None,
-                recommendation=Recommendation.NEEDS_MANUAL_RSAMW.value,
-                coverage_status=coverage,
-                notes="No tax return parsed for this year",
-            )
-        ]
+        return _pre_filing_results(conn, year, partner_cfg, known_actual, coverage, missing)
 
     primary = max(
         returns,
@@ -201,6 +184,45 @@ def _submission_rank(excerpt: str | None) -> int:
     if "nog niet verstuurd" in text:
         return 0
     return 1
+
+
+def _pre_filing_results(
+    conn: sqlite3.Connection,
+    year: int,
+    partners: PartnerSettings,
+    known_actual: float | None,
+    coverage: str,
+    missing: str | None,
+) -> list[PartnerTaxResult]:
+    configured = [(slot, name) for slot, name in partners.configured() if name]
+    joint = partners.assume_fiscal_partnership and len(configured) == 2
+    results = []
+    for slot, name in configured or [("a", "unknown")]:
+        if joint or not configured:
+            actual, status, gaps = known_actual, coverage, missing
+        else:
+            actual, status, gaps = _individual_portfolio(conn, year, name, partners)
+        complete = status == CoverageStatus.COMPLETE.value and actual is not None
+        notes = (
+            "Pre-filing: actual returns are calculated from imported statements. "
+            "Tax allocation, fictitious return and tax savings are not needed to prepare "
+            "the actual-return figures and remain empty until tax-return evidence is available. "
+        )
+        notes += (
+            "Fiscal partnership is assumed from taxpayer settings; the combined return is not yet allocated."
+            if joint else "Statement returns follow account ownership."
+        )
+        if not complete:
+            notes += f" Missing statement data: {gaps or 'unknown'}."
+        results.append(PartnerTaxResult(
+            tax_year=year, partner=slot, partner_name=name,
+            allocation_ratio=None, allocated_actual_return=None if joint else actual,
+            fictitious_return=None, estimated_box3_tax_actual=None,
+            estimated_box3_tax_fictitious=None, estimated_tax_savings=None,
+            recommendation=(Recommendation.PRE_FILING.value if complete else Recommendation.INDETERMINATE_MISSING_DATA.value),
+            coverage_status=status, notes=notes,
+        ))
+    return results
 
 
 def _same_person(a: str | None, b: str | None) -> bool:

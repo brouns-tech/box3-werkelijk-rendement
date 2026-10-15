@@ -130,7 +130,8 @@ def effective_partners(conn: sqlite3.Connection, configured: PartnerSettings | N
             and not any(similarity(child.canonical_name, name) >= 0.8 for _, name in configured.identities() if name)
         )
         return replace(configured, children=configured.children + additions) if additions else configured
-    return suggest_identities(conn).partners
+    detected = suggest_identities(conn).partners
+    return replace(detected, assume_fiscal_partnership=configured.assume_fiscal_partnership) if configured else detected
 
 
 def identity_slot(name: str | None, partners: PartnerSettings) -> str | None:

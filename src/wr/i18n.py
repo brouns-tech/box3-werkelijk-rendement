@@ -7,6 +7,15 @@ LANGUAGES = {"nl": "Nederlands", "en": "English"}
 
 # English messages are the keys, so no external locale files need bundling.
 DUTCH = {
+    "Select a folder with annual statements and, optionally, tax returns. Source files stay unchanged. Importing does not prove that your entire financial situation is covered.": "Selecteer een map met jaaroverzichten en eventueel aangiften. De bronbestanden blijven ongewijzigd. Importeren bewijst niet dat uw totale financiële situatie volledig is gedekt.",
+    "Pre-filing": "Voor aangifte",
+    "Review taxpayer and child suggestions from imported documents. Tax returns provide fiscal partnership and allocation when available; otherwise the partnership setting below applies.": "Controleer de voorgestelde belastingplichtigen en kinderen uit de geïmporteerde documenten. Beschikbare aangiften bepalen het fiscale partnerschap en de verdeling; anders geldt de instelling hieronder.",
+    "Assume full-year fiscal partnership when no tax return is available": "Ga uit van fiscaal partnerschap voor het hele jaar als er geen aangifte beschikbaar is",
+    "Applies to years without tax returns when both taxpayers are named. Tax-return evidence takes precedence. No tax allocation is assumed.": "Geldt voor jaren zonder aangiften als beide belastingplichtigen zijn ingevuld. Gegevens uit aangiften gaan voor. Er wordt geen fiscale verdeling aangenomen.",
+    "For one identity, clear the second name and assign its spellings to the remaining person.": "Wis bij één persoon de tweede naam en wijs de bijbehorende schrijfwijzen toe aan de overgebleven persoon.",
+    "Pre-filing overview: actual returns are calculated from your imported statements so you can prepare your tax return before filing. Tax allocation, fictitious return and potential tax savings are shown as — because no tax return is available; they are not required for the actual-return calculation. Pre-filing means the imported statement data supports that calculation. Coverage still concerns imported accounts only; check that all relevant assets are included.": "Overzicht voor aangifte: het werkelijke rendement wordt berekend uit uw geïmporteerde overzichten, zodat u uw aangifte vóór indiening kunt voorbereiden. Fiscale verdeling, forfaitair rendement en mogelijke belastingbesparing worden als — getoond omdat er geen aangifte beschikbaar is; ze zijn niet nodig voor de berekening van het werkelijke rendement. Voor aangifte betekent dat de geïmporteerde gegevens die berekening ondersteunen. De dekking betreft alleen geïmporteerde rekeningen; controleer of alle relevante bezittingen zijn opgenomen.",
+    "Full-year fiscal partnership is assumed from your taxpayer settings. The effective return above is the combined return; no tax allocation has been applied.": "Op basis van uw instellingen wordt uitgegaan van fiscaal partnerschap voor het hele jaar. Het effectieve rendement hierboven is het gezamenlijke rendement; er is geen fiscale verdeling toegepast.",
+    "Statement returns follow account ownership; joint accounts are split equally for this view.": "Rendement uit overzichten volgt het rekeninghouderschap; gezamenlijke rekeningen worden in deze weergave gelijk verdeeld.",
     "PDF extraction has been updated. Scan your document folder again to refresh {count} previously imported documents before reviewing the calculation.": "De PDF-verwerking is bijgewerkt. Scan uw documentenmap opnieuw om {count} eerder geïmporteerde documenten te vernieuwen voordat u de berekening beoordeelt.",
     "Closing the browser tab leaves the application running. Use Exit application to stop it.": "Als u het browsertabblad sluit, blijft de applicatie actief. Gebruik Applicatie afsluiten om deze te stoppen.",
     "The application is stopping. You can close this browser tab.": "De applicatie wordt afgesloten. U kunt dit browsertabblad sluiten.",
@@ -218,6 +227,7 @@ def currency(value: float | None, language: str = "en", currency_code: str = "EU
 
 
 STATUS_MESSAGES = {
+    "PRE_FILING": "Pre-filing",
     "ACTUAL_BETTER": "Actual return better", "FICTITIOUS_BETTER": "Fictitious return better",
     "EQUAL": "No material difference", "INDETERMINATE_MISSING_DATA": "Incomplete data",
     "NEEDS_MANUAL_RSAMW": "Manual review needed", "NOT_APPLICABLE": "Not applicable",

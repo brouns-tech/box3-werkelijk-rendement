@@ -293,11 +293,19 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
 
     st.subheader(t("Decision overview"))
     if results:
+        pre_filing = not conn.execute("SELECT 1 FROM tax_returns WHERE tax_year = ? LIMIT 1", (year,)).fetchone()
+        if pre_filing:
+            st.info(t("Pre-filing overview: actual returns are calculated from your imported statements so you can prepare your tax return before filing. Tax allocation, fictitious return and potential tax savings are shown as — because no tax return is available; they are not required for the actual-return calculation. Pre-filing means the imported statement data supports that calculation. Coverage still concerns imported accounts only; check that all relevant assets are included."))
+            if partner_cfg.assume_fiscal_partnership and all(name for _, name in partner_cfg.configured()):
+                st.caption(t("Full-year fiscal partnership is assumed from your taxpayer settings. The effective return above is the combined return; no tax allocation has been applied."))
         statement_returns = {
             result["partner"]: _individual_portfolio(conn, year, result["partner_name"], partner_cfg)[0]
             for result in results
         }
-        st.caption(t("Statement returns follow account ownership; joint accounts are split equally for this view. Tax estimates use the filed fiscal-partner allocation of the combined return."))
+        if pre_filing:
+            st.caption(t("Statement returns follow account ownership; joint accounts are split equally for this view."))
+        else:
+            st.caption(t("Statement returns follow account ownership; joint accounts are split equally for this view. Tax estimates use the filed fiscal-partner allocation of the combined return."))
         st.dataframe(
             _styled_table(_decision_rows(results, language, statement_returns), t("Taxpayer"), owner_colors),
             width="stretch",

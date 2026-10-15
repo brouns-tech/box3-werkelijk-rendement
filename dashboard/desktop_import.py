@@ -47,7 +47,7 @@ def render(cfg, language: str):
     t = translator(language)
     directory = cfg.project_root
     st.caption(t("Version {version} · Local processing · Data: {directory}", version=app_version(), directory=directory))
-    st.info(t("Select a folder with annual statements and tax returns. Source files stay unchanged. Importing does not prove that your entire financial situation is covered."))
+    st.info(t("Select a folder with annual statements and, optionally, tax returns. Source files stay unchanged. Importing does not prove that your entire financial situation is covered."))
     job = st.session_state.get("import_job")
     active = job is not None and not job.done.is_set()
     if st.button(t("Select folder"), disabled=active, key="select_folder"):

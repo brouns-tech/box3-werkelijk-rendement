@@ -15,6 +15,7 @@ class CoverageStatus(str, Enum):
 
 
 class Recommendation(str, Enum):
+    PRE_FILING = "PRE_FILING"
     ACTUAL_BETTER = "ACTUAL_BETTER"
     FICTITIOUS_BETTER = "FICTITIOUS_BETTER"
     EQUAL = "EQUAL"

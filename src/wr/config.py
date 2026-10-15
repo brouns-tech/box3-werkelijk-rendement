@@ -24,6 +24,7 @@ class PartnerSettings:
     partner_b_aliases: tuple[str, ...] = field(default_factory=tuple)
     unassigned_names: tuple[str, ...] = field(default_factory=tuple)
     children: tuple[ChildSettings, ...] = field(default_factory=tuple)
+    assume_fiscal_partnership: bool = True
 
     def identities(self) -> tuple[tuple[str, str | None], ...]:
         return self.configured() + tuple(
@@ -140,6 +141,7 @@ def _settings_from_mapping(raw: dict[str, Any], root: Path) -> Settings:
             partner_b_aliases=_string_tuple(partner_raw.get("partner_b_aliases"), "partners.partner_b_aliases"),
             unassigned_names=_string_tuple(partner_raw.get("unassigned_names"), "partners.unassigned_names"),
             children=_children(partner_raw.get("children", [])),
+            assume_fiscal_partnership=_boolean(partner_raw.get("assume_fiscal_partnership", True), "partners.assume_fiscal_partnership"),
         ),
         institution_options={name: _mapping(options, f"institutions.{name}") for name, options in institution_raw.items()},
     )
@@ -150,6 +152,12 @@ def _mapping(value: Any, name: str) -> dict[str, Any]:
         return {}
     if not isinstance(value, dict):
         raise ValueError(f"{name} must be an object")
+    return value
+
+
+def _boolean(value: Any, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
     return value
 
 

@@ -15,6 +15,18 @@ def test_settings_default_to_current_workspace(monkeypatch, tmp_path):
     assert settings.settings_path == tmp_path / ".wr-settings.json"
     assert resolve_db_path(settings) == tmp_path / "data" / "wr.sqlite"
     assert settings.partners == PartnerSettings()
+    assert settings.partners.assume_fiscal_partnership is True
+
+
+def test_partnership_setting_persists_and_rejects_non_boolean_values(tmp_path):
+    save_settings(Settings(project_root=tmp_path), PartnerSettings(assume_fiscal_partnership=False))
+    assert load_settings(tmp_path).partners.assume_fiscal_partnership is False
+    path = tmp_path / '.wr-settings.json'
+    raw = json.loads(path.read_text())
+    raw['partners']['assume_fiscal_partnership'] = 'false'
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match='must be a boolean'):
+        load_settings(tmp_path)
 
 
 def test_settings_persist_all_options_across_updates(tmp_path):
