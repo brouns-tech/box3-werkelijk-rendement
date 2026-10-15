@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from wr.calculations.returns import fact_return, is_box3_fact
-from wr.identities.matching import identity_slot, similarity, same_person
+from wr.identities.matching import identity_slot, same_person
 from wr.models import CoverageStatus, Ownership
 from wr.models.settings import PartnerSettings
 from wr.models.storage import FactRecord
@@ -70,4 +70,4 @@ def _aliases_for_filer(
 
 
 def _matches_alias(name: str, aliases: list[str]) -> bool:
-    return any(similarity(name, alias) >= 0.8 for alias in aliases)
+    return any(same_person(name, alias) for alias in aliases)

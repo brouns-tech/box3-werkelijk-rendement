@@ -7,7 +7,15 @@ from wr.models.settings import ChildSettings, PartnerSettings
 from wr.workspace.settings import load_settings, save_settings
 from wr.storage.migrations import init_db
 from wr.identities.service import effective_partners, suggest_identities
-from wr.identities.matching import identity_slot, similarity
+from wr.identities.matching import (
+    EXACT_MATCH,
+    FIRST_NAME_MATCH,
+    FUZZY_NAME_MATCH,
+    INITIALS_MATCH,
+    NO_MATCH,
+    identity_slot,
+    similarity,
+)
 from wr.calculations.service import rebuild_recommendations
 
 
@@ -15,6 +23,38 @@ INITIAL_VARIANTS = (
     "A B C Example", "A.B.C. Example", "A.B.C. EXAMPLE", "ABC Example",
     "ABC EXAMPLE", "a. b. c. example", "  A  B  C   Example  ",
 )
+
+
+@pytest.mark.parametrize("left,right,expected", [
+    ("", "Alex Example", NO_MATCH),
+    ("Alex Example", "Blair Example", NO_MATCH),
+    ("Alex Example", "ALEX EXAMPLE", EXACT_MATCH),
+    ("Alex", "Alex Example", FIRST_NAME_MATCH),
+    ("A. Example", "Alex Example", INITIALS_MATCH),
+    ("A. B. Example", "Alex Blair Example", INITIALS_MATCH),
+    ("Sophi Example", "Sophie Example", FUZZY_NAME_MATCH),
+    ("Alex Examples", "Alex Example", FUZZY_NAME_MATCH),
+])
+def test_named_similarity_scores(left, right, expected):
+    assert similarity(left, right) == expected
+    assert similarity(right, left) == expected
+
+
+@pytest.mark.parametrize("name,expected", [
+    (None, None),
+    ("", None),
+    ("Unknown Person", None),
+    ("Alex Example", "a"),
+    ("Blair Example", "b"),
+    ("Charlie Example", "child_0"),
+    ("A. Example", None),
+])
+def test_identity_slot_return_values(name, expected):
+    partners = PartnerSettings(
+        partner_a="Alex Example", partner_b="Blair Example",
+        children=(ChildSettings("Charlie Example"), ChildSettings("Alice Example")),
+    )
+    assert identity_slot(name, partners) == expected
 
 
 @pytest.mark.parametrize("left", INITIAL_VARIANTS)

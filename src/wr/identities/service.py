@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import sqlite3
 
-from wr.identities.matching import identity_slot, name_key, name_tokens, similarity
+from wr.identities.matching import identity_slot, name_key, name_tokens, same_person
 from wr.models.settings import ChildSettings, IdentitySuggestions, PartnerSettings
 from wr.storage.identities import filer_names, observed_names, tax_identity_names
 
@@ -16,7 +16,7 @@ def suggest_identities(conn: sqlite3.Connection) -> IdentitySuggestions:
     unresolved = []
     for name in ranked:
         exact = [group for group in groups if any(name_key(name) == name_key(alias) for alias in group)]
-        candidates = exact or [group for group in groups if similarity(name, group[0]) >= 0.8]
+        candidates = exact or [group for group in groups if same_person(name, group[0])]
         if len(candidates) == 1:
             candidates[0].append(name)
         elif len(candidates) > 1:
@@ -61,7 +61,7 @@ def effective_partners(conn: sqlite3.Connection, configured: PartnerSettings | N
             if len(name_tokens(child.canonical_name)) >= 2
             and identity_slot(child.canonical_name, configured) is None
             and not any(name_key(child.canonical_name) == name_key(n) for n in configured.unassigned_names)
-            and not any(similarity(child.canonical_name, name) >= 0.8 for _, name in configured.identities() if name)
+            and not any(same_person(child.canonical_name, name) for _, name in configured.identities() if name)
         )
         return replace(configured, children=configured.children + additions) if additions else configured
     return suggest_identities(conn).partners

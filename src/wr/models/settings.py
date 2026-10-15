@@ -52,7 +52,7 @@ class PartnerSettings:
         return dict(self.identities()).get(slot)
 
     def configured(self) -> tuple[tuple[str, str | None], ...]:
-        return (("a", self.partner_a), ("b", self.partner_b))
+        return ("a", self.partner_a), ("b", self.partner_b)
 
     def aliases_for(self, slot: str) -> tuple[str, ...]:
         if slot == "a":
