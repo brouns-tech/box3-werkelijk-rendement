@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 
 from wr.cli import main
-from wr.config import PartnerSettings, Settings, load_settings, resolve_db_path, save_settings
-from wr.import_pipeline import ImportReport, run_import
+from wr.models.settings import PartnerSettings, Settings
+from wr.workspace.settings import load_settings, resolve_db_path, save_settings
+from wr.models.importing import ImportReport
+from wr.importing.pipeline import run_import
 from wr.parsers import parse_document
 
 

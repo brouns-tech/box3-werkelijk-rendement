@@ -1,4 +1,4 @@
-from wr.classify import classify
+from wr.importing.classification import classify
 from wr.parsers.rabobank import parse_rabobank
 
 

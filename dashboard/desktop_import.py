@@ -7,12 +7,12 @@ from pathlib import Path
 
 import streamlit as st
 
-from wr.desktop import desktop_request
-from wr.desktop_models import FolderResponse
-from wr.desktop_storage import app_version, remember_folder, selected_folder
+from wr.desktop.control import desktop_request
+from wr.models.desktop import FolderResponse
+from wr.desktop.storage import app_version, remember_folder, selected_folder
 from wr.i18n import status_label, translator
 from wr.messages import Messages
-from wr.import_pipeline import run_import
+from wr.importing.pipeline import run_import
 from dashboard.ui_state import refresh_taxpayer_editor
 
 _IMPORT_LOCK = threading.Lock()

@@ -14,10 +14,13 @@ from wr.messages import Messages
 from dashboard.folder_picker import folder_path_input
 from dashboard.ui_state import prepare_taxpayer_editor, refresh_taxpayer_editor, taxpayer_widget_key
 from dashboard.ownership import editor_key, editor_styles
-from wr.config import ChildSettings, PartnerSettings, resolve_db_path, save_settings
-from wr.identities import effective_partners, identity_slot, observed_names
-from wr.import_pipeline import run_import
-from wr.recommend import rebuild_recommendations
+from wr.models.settings import ChildSettings, PartnerSettings
+from wr.workspace.settings import resolve_db_path, save_settings
+from wr.identities.service import effective_partners
+from wr.identities.matching import identity_slot
+from wr.storage.identities import observed_names
+from wr.importing.pipeline import run_import
+from wr.calculations.service import rebuild_recommendations
 
 
 _EDITOR_STYLE = "<style>" + editor_styles() + """

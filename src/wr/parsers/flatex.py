@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from collections import defaultdict
 import re
 import sqlite3
-from collections import defaultdict
 
 from pydantic import Field, field_validator
 
 from wr.models import AccountYearFact, ParseResult
-from wr.records import FactMetadata, InstitutionSettings, Record
+from wr.models.base import Record
+from wr.models.metadata import FactMetadata
+from wr.models.settings import InstitutionSettings
 from wr.money import add, subtract, total
+from wr.parsers._text import normalize_iban, parse_nl_amount
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
@@ -17,7 +20,6 @@ from wr.parsers.base import (
     ParserRegistration,
 )
 from wr.parsers.common import resolve_tax_year
-from wr.pdf import normalize_iban, parse_nl_amount
 
 
 class FlatexSettings(InstitutionSettings):

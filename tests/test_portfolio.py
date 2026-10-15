@@ -1,7 +1,9 @@
+
+from wr.storage.facts import canonical_facts
 import sqlite3
 
-from wr.db import init_db
-from wr.portfolio import _coverage_for_year
+from wr.storage.migrations import init_db
+from wr.calculations.coverage import coverage_for_year
 
 
 def test_derives_inventory_from_canonical_statements_without_filed_assets():
@@ -33,7 +35,7 @@ def test_derives_inventory_from_canonical_statements_without_filed_assets():
     )
     conn.commit()
 
-    result = _coverage_for_year(conn, 2024)
+    result = coverage_for_year(2024, canonical_facts(conn, 2024))
 
     assert result.coverage_status == "COMPLETE"
     assert result.known_combined_actual_return == 2007.58
@@ -64,7 +66,7 @@ def test_excludes_degiro_pension_fact_from_box3_rollup():
     )
     conn.commit()
 
-    result = _coverage_for_year(conn, 2023)
+    result = coverage_for_year(2023, canonical_facts(conn, 2023))
 
     assert result.coverage_status == "UNKNOWN"
     assert result.known_combined_actual_return is None

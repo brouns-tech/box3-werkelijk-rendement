@@ -1,6 +1,6 @@
 from dashboard.app import _canonical_name_map, _owner_colors, _owner_style, _styled_table
 from dashboard.ownership import BLUE, GREEN, PURPLE, editor_key, slot_color, table_style
-from wr.config import ChildSettings, PartnerSettings
+from wr.models.settings import ChildSettings, PartnerSettings
 
 
 def test_owner_colors_agree_with_editor_and_joint_rows():

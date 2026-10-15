@@ -3,10 +3,12 @@ import sqlite3
 
 import pytest
 
-from wr.config import ChildSettings, PartnerSettings, load_settings, save_settings
-from wr.db import init_db
-from wr.identities import effective_partners, identity_slot, similarity, suggest_identities
-from wr.recommend import rebuild_recommendations
+from wr.models.settings import ChildSettings, PartnerSettings
+from wr.workspace.settings import load_settings, save_settings
+from wr.storage.migrations import init_db
+from wr.identities.service import effective_partners, suggest_identities
+from wr.identities.matching import identity_slot, similarity
+from wr.calculations.service import rebuild_recommendations
 
 
 INITIAL_VARIANTS = (
@@ -238,7 +240,7 @@ def test_parent_child_joint_account_belongs_fully_to_sole_parent():
 def test_child_assets_follow_filed_split_for_full_year_partners():
     conn = identity_db(["Charlie Example"], ["Alex Example"])
     conn.execute("UPDATE tax_returns SET full_year_fiscal_partners = 1, partner_a_name = 'Alex Example', partner_b_name = 'Blair Example', grondslag = 1000, allocation_a = 0.8, allocation_b = 0.2")
-    from wr.portfolio import rebuild_portfolio
+    from wr.calculations.service import rebuild_portfolio
 
     rebuild_portfolio(conn)
     rebuild_recommendations(conn)

@@ -1,9 +1,11 @@
 import pytest
 
-from wr.config import PartnerSettings, load_settings, save_settings
-from wr.db import SCHEMA_VERSION, connect
+from wr.models.settings import PartnerSettings
+from wr.workspace.settings import load_settings, save_settings
+from wr.storage.migrations import SCHEMA_VERSION
+from wr.storage.connection import connect
 from wr.demo import create_demo_workspace
-from wr.workspace import reset_workspace
+from wr.workspace.reset import reset_workspace
 
 
 TABLES = ("documents", "account_year_facts", "tax_returns", "yearly_portfolio", "partner_tax_results")
@@ -47,7 +49,7 @@ def test_reset_rolls_back_database_if_settings_cannot_be_saved(tmp_path, monkeyp
     def fail_save(*args, **kwargs):
         raise OSError("Settings are read-only")
 
-    monkeypatch.setattr("wr.workspace.save_settings", fail_save)
+    monkeypatch.setattr("wr.workspace.reset.save_settings", fail_save)
     with pytest.raises(OSError, match="read-only"):
         reset_workspace(cfg)
     with connect(cfg.resolved_db_path) as conn:

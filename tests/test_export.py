@@ -3,7 +3,7 @@ import io
 import sqlite3
 import zipfile
 
-from wr.db import init_db
+from wr.storage.migrations import init_db
 from wr.export import create_audit_export
 
 

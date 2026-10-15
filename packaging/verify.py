@@ -13,8 +13,8 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 
-from wr.desktop import control_request, free_port
-from wr.desktop_models import InstanceMetadata
+from wr.desktop.control import control_request, free_port
+from wr.models.desktop import InstanceMetadata
 
 
 def await_status(directory, process):

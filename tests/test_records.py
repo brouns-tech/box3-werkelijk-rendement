@@ -1,15 +1,19 @@
+
+from wr.storage.adapters import fact_from_row
 import json
 import sqlite3
 
 import pytest
 from pydantic import ValidationError
 
-from wr.config import load_settings, save_settings
-from wr.db import init_db, insert_facts, update_document, upsert_document
+from wr.workspace.settings import load_settings, save_settings
+from wr.storage.migrations import init_db
+from wr.storage.facts import insert_facts
+from wr.storage.documents import update_document, upsert_document
 from wr.models import AccountYearFact
 from wr.parsers.flatex import FlatexMetadata, ReturnEvidence, SecurityPosition
-from wr.portfolio import is_box3_fact
-from wr.records import FactRecord
+from wr.calculations.returns import is_box3_fact
+from wr.models.storage import FactRecord
 
 
 def test_nested_metadata_survives_database_round_trip():
@@ -27,7 +31,7 @@ def test_nested_metadata_survives_database_round_trip():
     )
     insert_facts(conn, "synthetic", [fact])
     row = conn.execute("SELECT * FROM account_year_facts").fetchone()
-    restored = FactRecord.from_row(row)
+    restored = fact_from_row(row)
     assert isinstance(restored.extra, FlatexMetadata)
     assert restored.extra.positions[0].market_value == 125
     assert restored.extra.return_derived_from.external_flow_documents == 2
@@ -41,7 +45,7 @@ def test_nested_metadata_survives_database_round_trip():
 @pytest.mark.parametrize("metadata", ['{"box3": "false"}', '{"box_3": false}', '[]', '{invalid', [], False])
 def test_invalid_exclusion_metadata_fails_closed(metadata):
     with pytest.raises(ValidationError):
-        is_box3_fact({"extra": metadata})
+        is_box3_fact(fact_from_row({"extra": metadata}))
 
 
 def test_fact_fields_are_validated_before_database_write():
@@ -81,4 +85,4 @@ def test_settings_validate_known_options_and_preserve_extension_namespaces(tmp_p
 @pytest.mark.parametrize("holders", ['{"name": "Alex Example"}', '[123]', '"Alex Example"'])
 def test_holder_json_must_be_a_list_of_strings(holders):
     with pytest.raises(ValidationError):
-        FactRecord.from_row({"holder_names": holders})
+        fact_from_row({"holder_names": holders})

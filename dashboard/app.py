@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from wr.storage.facts import canonical_facts
+
+from wr.storage.adapters import fact_from_row
+
 import argparse
 import json
 import os
@@ -8,11 +12,15 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
-from wr.records import FactRecord
-from wr.config import PartnerSettings, load_settings, resolve_db_path
-from wr.db import connect, init_db
-from wr.identities import identity_slot, observed_names, name_key
-from wr.recommend import rebuild_recommendations, _individual_portfolio
+from wr.models.storage import FactRecord
+from wr.models.settings import PartnerSettings
+from wr.workspace.settings import load_settings, resolve_db_path
+from wr.storage.connection import connect
+from wr.storage.migrations import init_db
+from wr.identities.matching import identity_slot, name_key
+from wr.storage.identities import observed_names
+from wr.calculations.service import rebuild_recommendations
+from wr.calculations.allocation import individual_portfolio
 from dashboard.settings import documents_ui, taxpayers_ui
 from dashboard.workspace_settings import workspace_settings_ui
 from wr.export import create_audit_export
@@ -21,8 +29,8 @@ from wr.i18n import currency, coverage_details, status_label, translator
 from wr.messages import Messages
 from dashboard.localization import select_language
 from dashboard.ownership import PURPLE, UNKNOWN, slot_color, table_style
-from wr.portfolio import _native_fact_return, is_box3_fact
-from wr.import_pipeline import pending_reprocessing
+from wr.calculations.returns import native_fact_return, is_box3_fact
+from wr.importing.reprocessing import pending_reprocessing
 
 
 def _currency(value: float | None, language: str = "en", currency_code: Currency | str = Currency.EUR) -> str:
@@ -144,7 +152,7 @@ def main() -> None:
 
     job = st.session_state.get("import_job")
     if os.environ.get("WR_CONTROL_URL"):
-        from wr.desktop import desktop_request
+        from wr.desktop.control import desktop_request
         with st.sidebar:
             st.caption(t(Messages.BROWSER_CLOSE_HELP))
             if st.button(t(Messages.OPEN_LOCAL_DATA), key="open_local_data"):
@@ -238,7 +246,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     st.subheader(t(Messages.DECISION_OVERVIEW))
     if results:
         statement_returns = {
-            result["partner"]: _individual_portfolio(conn, year, result["partner_name"], partner_cfg)[0]
+            result["partner"]: individual_portfolio(canonical_facts(conn, year), year, result["partner_name"], partner_cfg)[0]
             for result in results
         }
         st.caption(t(Messages.STATEMENT_RETURNS_HELP))
@@ -262,10 +270,10 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
         """,
         (year,),
     ).fetchall()
+    facts = [fact_from_row(row) for row in facts]
     st.subheader(t(Messages.ACCOUNT_OVERVIEW))
     fact_rows = []
-    for fact_row in facts:
-        fact = FactRecord.from_row(fact_row)
+    for fact in facts:
         account_money = partial(_currency, language=language, currency_code=fact.currency or "EUR")
         child_account = any(
             (identity_slot(holder, partner_cfg) or "").startswith("child_")
@@ -287,7 +295,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
                 t(Messages.PAID_INTEREST): account_money(fact.interest_paid),
                 t(Messages.GROSS_DIVIDENDS): account_money(fact.dividends_gross),
                 t(Messages.WITHHOLDING_TAX): account_money(fact.withholding_tax),
-                t(Messages.CALCULATED_ACTUAL_RETURN): account_money(_native_fact_return(fact)),
+                t(Messages.CALCULATED_ACTUAL_RETURN): account_money(native_fact_return(fact)),
                 t(Messages.MARKET_VALUE_COMPONENT_INTERNAL): account_money(fact.capital_gain),
                 t(Messages.CURRENCY): fact.currency or "EUR",
                 t(Messages.CALCULATION_METHOD): status_label(fact.gain_method, language),

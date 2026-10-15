@@ -1,4 +1,4 @@
-from wr.pdf import parse_en_amount, parse_nl_amount
+from wr.parsers._text import parse_en_amount, parse_nl_amount
 
 
 def test_parse_nl_thousands():

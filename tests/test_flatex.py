@@ -1,7 +1,7 @@
 import sqlite3
 
-from wr.dedupe import canonicalize_facts
-from wr.db import init_db
+from wr.importing.canonicalization import canonicalize_facts
+from wr.storage.migrations import init_db
 from wr.parsers.flatex import parse_flatex
 
 

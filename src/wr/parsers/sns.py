@@ -3,17 +3,12 @@ from __future__ import annotations
 import re
 import sqlite3
 
-from wr.records import FactMetadata, InstitutionSettings
-
 from wr.models import AccountYearFact, ParseResult
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    doc_type_parser,
-)
+from wr.models.metadata import FactMetadata
+from wr.models.settings import InstitutionSettings
+from wr.parsers._text import normalize_iban, parse_nl_amount
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, doc_type_parser
 from wr.parsers.common import resolve_tax_year
-from wr.pdf import normalize_iban, parse_nl_amount
 
 
 def _is_annual_overview(text: str) -> bool:

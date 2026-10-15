@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from wr.config import PartnerSettings
+from wr.models.settings import PartnerSettings
 
 
 _REVISION = "_taxpayer_editor_revision"

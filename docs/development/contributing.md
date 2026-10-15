@@ -1,5 +1,8 @@
 # Contributing
 
+See [package structure and dependency boundaries](architecture.md) before adding
+new modules or moving shared functionality.
+
 Contributions that add support for more bank and broker statement templates are welcome.
 
 ## Language
@@ -60,6 +63,9 @@ SQLite and JSON are validation boundaries. Use `FactRecord`, `PortfolioRecord`,
 and `TaxReturnRecord` for calculation inputs and typed export records for audit
 output. Convert to dictionaries only when binding SQL parameters or writing
 CSV/JSON. `insert_facts` accepts parsed `AccountYearFact` objects directly.
+Models live under `wr.models`; use `wr.storage.adapters.fact_from_row` to decode
+stored facts with their institution-specific metadata schema. Calculation
+functions under `wr.calculations` receive validated records directly.
 Document updates validate their column names and distinguish omitted fields from
 explicit null values. Keep ordinary lookup tables and translated display columns
 as dictionaries; they do not represent fixed record schemas.

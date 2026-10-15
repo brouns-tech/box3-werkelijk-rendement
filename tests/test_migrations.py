@@ -1,6 +1,6 @@
 import sqlite3
 
-from wr.db import SCHEMA_VERSION, init_db
+from wr.storage.migrations import SCHEMA_VERSION, init_db
 
 
 def test_database_migrations_are_versioned_and_idempotent():

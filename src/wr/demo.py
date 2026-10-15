@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+import json
 
-from wr.config import PartnerSettings, Settings, save_settings
-from wr.db import connect, init_db
-from wr.portfolio import rebuild_portfolio
-from wr.recommend import rebuild_recommendations
+from wr.calculations.service import rebuild_portfolio
+from wr.calculations.service import rebuild_recommendations
+from wr.models.settings import PartnerSettings, Settings
+from wr.storage.connection import connect
+from wr.storage.migrations import init_db
+from wr.workspace.settings import save_settings
+
 
 DEMO_YEAR = 2024
 PARTNERS = PartnerSettings(

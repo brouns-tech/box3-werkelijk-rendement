@@ -5,15 +5,18 @@ import urllib.request
 
 import pytest
 
-from wr.desktop_models import FolderResponse, StatusResponse
-from wr.desktop import InstanceLock, child_command, control_request, make_control_server
-from wr.desktop_smoke import smoke_test, synthetic_pdf
-from wr.desktop_storage import prepare_workspace, remember_folder, selected_folder
-from wr.import_pipeline import run_import
+from wr.models.desktop import FolderResponse, StatusResponse
+from wr.desktop.lock import InstanceLock
+from wr.desktop.process import child_command
+from wr.desktop.control import control_request, make_control_server
+from wr.desktop.smoke import smoke_test, synthetic_pdf
+from wr.desktop.storage import prepare_workspace, remember_folder, selected_folder
+from wr.importing.pipeline import run_import
 
 
 def test_desktop_workspace_persists_and_does_not_overwrite_configuration(tmp_path):
-    from wr.config import PartnerSettings, load_settings, save_settings
+    from wr.models.settings import PartnerSettings
+    from wr.workspace.settings import load_settings, save_settings
     prepare_workspace(tmp_path)
     save_settings(load_settings(tmp_path), PartnerSettings(partner_a="EXAMPLE"), db_path="custom.sqlite")
     documents = tmp_path / "space and unicode é"
@@ -37,8 +40,8 @@ def test_single_instance_lock_recovers_after_close(tmp_path):
 
 
 def test_legacy_desktop_storage_migrates_once_and_reset_stays_reset(tmp_path):
-    from wr.config import load_settings
-    from wr.workspace import reset_workspace
+    from wr.workspace.settings import load_settings
+    from wr.workspace.reset import reset_workspace
 
     documents = tmp_path / "statements"
     documents.mkdir()
@@ -59,7 +62,8 @@ def test_legacy_desktop_storage_migrates_once_and_reset_stays_reset(tmp_path):
 
 
 def test_desktop_folder_selection_preserves_upstream_profiles_and_storage(tmp_path):
-    from wr.config import ChildSettings, PartnerSettings, load_settings, save_settings
+    from wr.models.settings import ChildSettings, PartnerSettings
+    from wr.workspace.settings import load_settings, save_settings
 
     prepare_workspace(tmp_path)
     partners = PartnerSettings(partner_a="EXAMPLE", children=(ChildSettings("CHILD", ("C. EXAMPLE",)),))
@@ -152,7 +156,7 @@ def test_server_bootstrap_applies_security_options_before_run(monkeypatch, tmp_p
     prepare_workspace(tmp_path)
     from streamlit import config
     from streamlit.web import bootstrap
-    from wr.desktop import serve
+    from wr.desktop.server import serve
 
     def check_run(app, _, args, options):
         assert config.get_option("server.address") == "127.0.0.1"
@@ -241,8 +245,8 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
     from pathlib import Path
     from streamlit.testing.v1 import AppTest
     from dashboard.desktop_import import ImportJob
-    from wr.config import load_settings
-    from wr.desktop_storage import remember_language
+    from wr.workspace.settings import load_settings
+    from wr.desktop.storage import remember_language
 
     workspace = prepare_workspace(tmp_path)
     documents = tmp_path / "statements"
@@ -304,7 +308,7 @@ def test_completed_import_fragment_requests_one_full_dashboard_refresh(monkeypat
     app = AppTest.from_string(f'''
 import streamlit as st
 from dashboard.desktop_import import ImportJob, _render_job
-from wr.import_pipeline import ImportReport
+from wr.models.importing import ImportReport
 if "job" not in st.session_state:
     job = ImportJob(report=ImportReport(cancelled={cancelled}))
     job.done.set()
@@ -323,7 +327,7 @@ _render_job(st.session_state.job, "en")
 
 def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_path, monkeypatch):
     import sys
-    from wr import desktop, desktop_smoke
+    from wr.desktop import launcher as desktop, smoke as desktop_smoke
 
     def fail(_directory):
         raise RuntimeError("synthetic extraction failure")
@@ -341,7 +345,7 @@ def test_desktop_sidebar_controls_open_storage_and_stop_without_launcher_window(
     prepare_workspace(tmp_path)
     actions = []
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
-    monkeypatch.setattr("wr.desktop.desktop_request", lambda action: actions.append(action) or {})
+    monkeypatch.setattr("wr.desktop.control.desktop_request", lambda action: actions.append(action) or {})
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert not app.exception
@@ -362,7 +366,7 @@ def test_instance_lock_contention_from_another_process_is_not_a_startup_error(tm
     script = """
 from pathlib import Path
 import sys
-from wr.desktop import InstanceLock
+from wr.desktop.lock import InstanceLock
 lock = InstanceLock(Path(sys.argv[1]))
 print(lock.acquire())
 lock.close()

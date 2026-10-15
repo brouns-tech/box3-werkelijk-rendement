@@ -1,4 +1,4 @@
-from wr.compare.base import compare_partner
+from wr.calculations.tax import compare_partner
 
 
 def test_unknown_tax_year_requires_manual_rSAMw():

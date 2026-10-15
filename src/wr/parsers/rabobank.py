@@ -3,14 +3,9 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    simple_parser,
-)
+from wr.parsers._text import normalize_iban
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
 from wr.parsers.common import amount_after_label, first_holder, resolve_tax_year
-from wr.pdf import normalize_iban
 
 
 def _is_supported_document(text: str) -> bool:

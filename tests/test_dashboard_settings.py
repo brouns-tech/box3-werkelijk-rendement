@@ -2,7 +2,7 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
-from wr.config import load_settings
+from wr.workspace.settings import load_settings
 
 
 APP = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
@@ -11,8 +11,8 @@ APP = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
 def test_initial_variants_are_assigned_and_labeled_without_manual_assignments(tmp_path, monkeypatch):
     from dataclasses import replace
     from dashboard.app import _canonical_name_map, _holder_label
-    from wr.config import save_settings
-    from wr.db import connect
+    from wr.workspace.settings import save_settings
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -33,7 +33,7 @@ def test_initial_variants_are_assigned_and_labeled_without_manual_assignments(tm
 
 def test_empty_assignment_does_not_crash_or_change_existing_ownership(tmp_path, monkeypatch):
     from wr.demo import create_demo_workspace
-    from wr.identities import identity_slot
+    from wr.identities.matching import identity_slot
     create_demo_workspace(tmp_path)
     monkeypatch.chdir(tmp_path)
     app = AppTest.from_file(str(APP)).run()
@@ -85,8 +85,9 @@ def test_delete_child_unassigns_documents_and_does_not_redetect(tmp_path, monkey
     from dataclasses import replace
     from types import SimpleNamespace
     from streamlit.elements.lib import policies
-    from wr.config import ChildSettings, save_settings
-    from wr.db import connect
+    from wr.models.settings import ChildSettings
+    from wr.workspace.settings import save_settings
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -143,7 +144,8 @@ def test_delete_unsaved_child_and_discard_new_child_draft(tmp_path, monkeypatch)
 
 def test_child_columns_keep_half_width_and_section_headers_match(tmp_path, monkeypatch):
     from dataclasses import replace
-    from wr.config import ChildSettings, save_settings
+    from wr.models.settings import ChildSettings
+    from wr.workspace.settings import save_settings
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -167,8 +169,9 @@ def test_child_columns_keep_half_width_and_section_headers_match(tmp_path, monke
 
 def test_children_dynamic_editor_assignments_and_purple_overview(tmp_path, monkeypatch):
     from dashboard.app import _canonical_name_map, _holder_label, _owner_colors, _owner_style
-    from wr.config import ChildSettings, PartnerSettings, save_settings
-    from wr.db import connect
+    from wr.models.settings import ChildSettings, PartnerSettings
+    from wr.workspace.settings import save_settings
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -224,7 +227,7 @@ def test_settings_can_be_saved_before_first_import(tmp_path, monkeypatch):
 
 
 def test_detected_name_assignment_updates_results_and_survives_restart(tmp_path, monkeypatch):
-    from wr.db import connect
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -271,7 +274,7 @@ def test_document_folder_controls_are_in_documents_tab(tmp_path, monkeypatch):
 
 
 def test_folder_import_recurses_deduplicates_and_refreshes_identities(tmp_path, monkeypatch):
-    from wr.db import connect
+    from wr.storage.connection import connect
 
     monkeypatch.chdir(tmp_path)
     folder = tmp_path / "statements"
@@ -284,7 +287,7 @@ ING Betaalrekening: NL00 INGB 0000 0000 00 Mevr. Sophie de Vries
 Saldo op 01-01-2023 900,00
 Saldo op 31-12-2023 2.318,06
 """
-    monkeypatch.setattr("wr.import_pipeline.extract_text", lambda path: (text, 1))
+    monkeypatch.setattr("wr.importing.pipeline.extract_text", lambda path: (text, 1))
     app = AppTest.from_file(str(APP)).run()
     app.text_input(key="document_folder").set_value(str(folder)).run()
     app.button(key="import_documents").click().run()
@@ -323,7 +326,8 @@ def test_assignment_options_show_canonical_names_and_update_on_rename(tmp_path, 
 
 
 def test_folder_path_saves_without_changing_taxpayers(tmp_path, monkeypatch):
-    from wr.config import PartnerSettings, save_settings
+    from wr.models.settings import PartnerSettings
+    from wr.workspace.settings import save_settings
 
     monkeypatch.chdir(tmp_path)
     folder = tmp_path / "statements"
@@ -345,7 +349,8 @@ def test_folder_path_saves_without_changing_taxpayers(tmp_path, monkeypatch):
 
 
 def test_invalid_folder_preserves_saved_path(tmp_path, monkeypatch):
-    from wr.config import PartnerSettings, save_settings
+    from wr.models.settings import PartnerSettings
+    from wr.workspace.settings import save_settings
 
     monkeypatch.chdir(tmp_path)
     save_settings(load_settings(), PartnerSettings(), str(tmp_path))
@@ -438,7 +443,7 @@ def test_explorer_dialog_navigates_selects_and_cancels(tmp_path, monkeypatch, ca
 
 
 def test_reset_requires_confirmation_and_refreshes_the_workspace(tmp_path, monkeypatch):
-    from wr.db import connect
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -476,7 +481,7 @@ def test_reset_requires_confirmation_and_refreshes_the_workspace(tmp_path, monke
 
 
 def test_storage_and_institution_options_persist_across_tabs_and_sessions(tmp_path, monkeypatch):
-    from wr.db import connect
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -525,7 +530,7 @@ def test_taxpayer_fields_refresh_through_repeated_reset_and_import_without_reloa
             1,
         )
 
-    monkeypatch.setattr("wr.import_pipeline.extract_text", extract)
+    monkeypatch.setattr("wr.importing.pipeline.extract_text", extract)
     app = AppTest.from_file(str(APP)).run()
     seen_keys = set()
     for _ in range(2):
@@ -555,7 +560,7 @@ def test_taxpayer_fields_refresh_through_repeated_reset_and_import_without_reloa
 
 
 def test_alias_assignments_save_and_recompute_immediately(tmp_path, monkeypatch):
-    from wr.db import connect
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
 
     create_demo_workspace(tmp_path)
@@ -596,7 +601,7 @@ def test_alias_assignments_save_and_recompute_immediately(tmp_path, monkeypatch)
 
 
 def test_overview_keeps_both_partners_when_combined_taxable_base_is_missing(tmp_path, monkeypatch):
-    from wr.db import connect
+    from wr.storage.connection import connect
     from wr.demo import create_demo_workspace
     create_demo_workspace(tmp_path)
     monkeypatch.chdir(tmp_path)

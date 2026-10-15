@@ -2,18 +2,12 @@ from __future__ import annotations
 
 import re
 
-from wr.records import FactMetadata
-
 from wr.models import AccountYearFact, ParseResult
+from wr.models.metadata import FactMetadata
 from wr.money import Currency
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    simple_parser,
-)
+from wr.parsers._text import normalize_iban, parse_nl_amount
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
 from wr.parsers.common import first_holder, resolve_tax_year
-from wr.pdf import normalize_iban, parse_nl_amount
 
 
 class RaisinMetadata(FactMetadata):

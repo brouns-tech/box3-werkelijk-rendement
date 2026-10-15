@@ -3,14 +3,9 @@ from __future__ import annotations
 import re
 
 from wr.models import ParseResult, TaxReturnData
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    simple_parser,
-)
+from wr.parsers._text import parse_nl_amount
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
 from wr.parsers.common import guess_tax_year
-from wr.pdf import parse_nl_amount
 
 
 def _is_supported_document(text: str) -> bool:

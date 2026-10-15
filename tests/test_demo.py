@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from wr.config import load_settings, resolve_db_path
+from wr.workspace.settings import load_settings, resolve_db_path
 from wr.demo import create_demo_workspace
 
 
