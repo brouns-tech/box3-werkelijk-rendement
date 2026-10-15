@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from decimal import Decimal
 
 from wr.models import AccountYearFact, ParseResult
@@ -236,6 +237,48 @@ def _parse_savings(text: str, year: int) -> ParseResult:
     return ParseResult("revolut", "savings_statement", year, facts=facts, notes=notes)
 
 
+def _usd_cash_evidence(body: str, year: int, opening: float, closing: float,
+                       incoming: float, outgoing: float) -> dict:
+    """Retain dated cash flows only when every transaction reconciles."""
+    months = {name: index for index, name in enumerate(
+        ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1)}
+    transactions = []
+    balance = Decimal(str(opening))
+    money_in = money_out = Decimal(0)
+    last_day = date(year, 1, 1)
+    for line in body.splitlines():
+        match = re.match(r"^\s*([A-Z][a-z]{2})\s+(\d{1,2}),\s+(20\d{2})\s+(.*)", line)
+        if not match:
+            continue
+        try:
+            day = date(int(match[3]), months[match[1]], int(match[2]))
+        except (KeyError, ValueError):
+            return {"reconciled": False, "reason": "invalid transaction date"}
+        values = re.findall(r"\$\s*(-?[\d,]+\.\d{2})", match[4])
+        if day.year != year or day < last_day or len(values) != 2:
+            return {"reconciled": False, "reason": "unsupported transaction row"}
+        value, after = (Decimal(v.replace(",", "")) for v in values)
+        delta = after - balance
+        if value <= 0 or abs(delta) != value:
+            return {"reconciled": False, "reason": "transaction balance mismatch"}
+        is_interest = bool(re.search(r"Net Interest Paid to", match[4], re.I))
+        if re.search(r"interest", match[4], re.I) and not is_interest:
+            return {"reconciled": False, "reason": "unsupported interest transaction"}
+        direction = "in" if delta > 0 else "out"
+        if is_interest and direction != "in":
+            return {"reconciled": False, "reason": "unexpected debit interest"}
+        transactions.append({"date": day.isoformat(), "amount": str(value),
+                             "direction": direction, "kind": "interest" if is_interest else "transfer"})
+        if delta > 0:
+            money_in += value
+        else:
+            money_out += value
+        last_day, balance = day, after
+    reconciled = (balance == Decimal(str(closing)) and money_in == Decimal(str(incoming))
+                  and money_out == Decimal(str(outgoing)))
+    return {"reconciled": reconciled, "transactions": transactions}
+
+
 def _parse_account_statement(text: str, year: int) -> ParseResult:
     # Partial statements — extract opening/closing if present; often incomplete for Box 3.
     facts: list[AccountYearFact] = []
@@ -286,6 +329,19 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
                    "interest_credit_count": len(credits),
                    "fx_status": "requires_eur_conversion" if currency != "EUR" else "not_required"},
         )
+        if currency == "USD":
+            evidence = _usd_cash_evidence(body, year, fact.start_balance, fact.end_balance,
+                                          incoming, fact.withdrawals)
+            # The transaction heading establishes the full-year section, even
+            # for an unused account whose zero summary has no transaction rows.
+            evidence["reconciled"] = bool(section) and evidence["reconciled"]
+            fact.extra["fx_evidence"] = evidence
+            if evidence["reconciled"]:
+                fact.interest_received = total(
+                    item["amount"] for item in evidence["transactions"] if item["kind"] == "interest")
+                fact.deposits = subtract(incoming, fact.interest_received)
+                fact.capital_gain = fact.interest_received
+                fact.gain_method = "interest_only"
         # Missing deposit transactions do not prove zero savings interest.
         if product == "current" and interest is None:
             fact.compute_capital_gain()

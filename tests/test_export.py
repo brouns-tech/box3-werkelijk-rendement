@@ -52,6 +52,7 @@ def test_audit_export_traces_asset_return_to_source_document():
             "assets.csv",
             "source_facts.csv",
             "partner_tax_results.csv",
+            "fx_conversions.csv",
         }
         asset = _csv_rows(bundle, "assets.csv")[0]
         fact = _csv_rows(bundle, "source_facts.csv")[0]

@@ -29,3 +29,42 @@ missing. A missing figure requires review; it is not treated as a zero taxable b
 Choose **Download audit export** to save a ZIP for the selected year. It includes
 yearly totals, asset calculations, source facts, and tax results. Use it alongside
 the original PDFs to inspect the inputs and calculation assumptions.
+
+## Currency conversion
+
+Original cash-account amounts retain their source currency. For supported Revolut
+USD Current Account and Deposit statements, the app can derive EUR values from
+dated transactions and historical ECB daily reference rates. It first reconciles
+every transaction balance and the product's annual totals. Missing or inconsistent
+transactions remain incomplete; annual totals alone are insufficient for conversion.
+Other unsupported foreign-currency layouts remain incomplete too.
+
+When rates are needed, import or recalculation downloads the USD series for that
+completed tax year, including preceding dates needed for the opening balance.
+The rates are cached locally; accounts already expressed in EUR do not trigger a
+download. For weekends and holidays the app uses the latest preceding published
+rate, at most seven days old. It never uses a future observation. ECB rates are
+USD per EUR, so dollar amounts are divided by the rate.
+
+Opening and closing balances are valued on 1 January and 31 December. Each cash
+movement and interest credit is valued on its date. Credited interest is excluded
+from external deposits, so it is counted once in effective return:
+
+`effective EUR return = closing EUR balance - opening EUR balance - EUR deposits + EUR withdrawals`
+
+`currency gain/loss = effective EUR return - EUR interest`
+
+Same-date transfers between Current Account and Deposit cancel in their combined
+return. Calculations use decimal arithmetic, with totals rounded to cents after
+conversion. This does not reconstruct missing earlier fund statements or certify
+that all assets are present. The EUR comparison remains incomplete if a needed
+rate cannot be obtained. Rescan or recalculate to retry after a network failure.
+
+The audit ZIP includes `fx_conversions.csv` with transaction and rate dates,
+original USD amounts, rates, unrounded EUR values, source URL, retrieval time,
+and response checksum. Source facts retain USD amounts; `eur_*` columns supply
+their EUR valuations, and `return_used` is in EUR.
+
+Reference rates are valuations, not a claim about the bank's executed exchange
+price. See the [ECB reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html)
+and [historical API examples](https://data.ecb.europa.eu/help/api/data-examples).

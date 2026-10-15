@@ -56,6 +56,10 @@ service or tax advice, and is not affiliated with the Belastingdienst.
 
 Financial data stays local, without accounts or usage telemetry. The database
 and audit exports contain sensitive information and are not encrypted by the app.
+Reconciled USD cash statements can trigger a historical ECB exchange-rate download
+during import or recalculation. Only public currency/year parameters are requested;
+rates are cached locally. EUR portfolios and statements with usable EUR values
+do not need this download. See [currency conversion](docs/guide/overview.md#currency-conversion).
 
 ## Develop and contribute
 

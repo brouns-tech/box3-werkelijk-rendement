@@ -18,6 +18,7 @@ from wr.db import (
     upsert_document,
 )
 from wr.dedupe import canonicalize_facts
+from wr.fx import convert_usd_facts
 from wr.parsers import parse_document
 from wr.parsers.base import InstitutionOptions
 from wr.pdf import extract_text, extraction_profile, sha256_file
@@ -254,6 +255,7 @@ def _run_import(
         _record(report, outcome, progress, inserted=inserted)
 
     canonicalize_facts(conn, institution_options)
+    convert_usd_facts(conn)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, partner_config)
     return report
@@ -371,6 +373,7 @@ def recompute(
         init_db(conn)
         clear_canonical_flags(conn)
         canonicalize_facts(conn, institution_options)
+        convert_usd_facts(conn)
         rebuild_portfolio(conn)
         rebuild_recommendations(conn, partner_config)
     finally:

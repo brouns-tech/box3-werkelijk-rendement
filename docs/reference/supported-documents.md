@@ -17,7 +17,7 @@ affect classification.
 | Raisin | `Raisin Financieel Jaaroverzicht` | Supplies savings-product balances, interest, and withholding tax. |
 | Revolut | `Annual Financial Summary` | Supplies annual account data. |
 | Revolut | Annual `Flexible Cash Funds Statement` | Parses each fund overview separately, using portfolio number and fund currency for identity and retaining all underlying account numbers. Supports EUR-only and USD/GBP plus EUR columns, signed amounts, and four-decimal returns/fees. Complete, reconciled summaries supply gross return including EUR currency value changes; missing or inconsistent summaries remain incomplete. Service fees are retained separately and are not deducted. |
-| Revolut | Personal current-account statement covering 1 January through 31 December | Parses Current Account and Deposit separately; interest credits are separated from transfers. Amounts retain their source currency. Foreign-currency accounts require EUR conversion (including currency gains/losses) and remain incomplete for tax comparison. Revolut Business statements are not supported. |
+| Revolut | Personal current-account statement covering 1 January through 31 December | Parses Current Account and Deposit separately; interest credits are separated from transfers. Amounts retain their source currency. Reconciled USD cash transactions can be valued in EUR using lazily downloaded and locally cached ECB daily rates, including currency gains/losses. Missing transactions, unavailable rates and other unconverted currencies remain incomplete. Revolut Business statements are not supported. |
 
 ## General limitations
 

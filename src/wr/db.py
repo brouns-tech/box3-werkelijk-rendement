@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS partner_tax_results (
 );
 """
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
@@ -129,7 +129,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     applied = {
         row[0] for row in conn.execute("SELECT version FROM schema_migrations")
     }
-    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3)):
+    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4)):
         if version in applied:
             continue
         with conn:
@@ -153,6 +153,15 @@ def _migration_2(conn: sqlite3.Connection) -> None:
 
 def _migration_3(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "documents", "processing_profile", "TEXT")
+
+
+def _migration_4(conn: sqlite3.Connection) -> None:
+    conn.execute("""CREATE TABLE IF NOT EXISTS exchange_rate_cache (
+        currency TEXT NOT NULL,
+        tax_year INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        PRIMARY KEY (currency, tax_year)
+    )""")
 
 
 def _add_column_if_missing(

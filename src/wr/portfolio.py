@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from wr.money import add, subtract, total
 from wr.models import CoverageStatus
+from wr.fx import eur_conversion, eur_values
 
 
 @dataclass
@@ -82,30 +83,31 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     eligible_facts = [f for f in facts if not _is_excluded_box3_fact(f)]
 
     for fact in eligible_facts:
-        if (fact["currency"] or "EUR") != "EUR":
+        if eur_values(fact) is None:
             missing.append(f"{fact['issuer']} {fact['account_key']} (requires EUR conversion and currency gain/loss)")
         elif not _fact_has_actual_return(fact):
             missing.append(
                 f"{fact['issuer']} {fact['account_key']} (no actual-return fields)"
             )
 
-    used_facts = [f for f in eligible_facts if (f["currency"] or "EUR") == "EUR"]
-    start = _sum(used_facts, "start_balance")
-    end = _sum(used_facts, "end_balance")
-    deposits = _sum(used_facts, "deposits")
-    withdrawals = _sum(used_facts, "withdrawals")
+    used_facts = [f for f in eligible_facts if eur_values(f) is not None]
+    valued_facts = [eur_values(f) for f in used_facts]
+    start = _sum(valued_facts, "start_balance")
+    end = _sum(valued_facts, "end_balance")
+    deposits = _sum(valued_facts, "deposits")
+    withdrawals = _sum(valued_facts, "withdrawals")
     interest = subtract(
-        _sum(used_facts, "interest_received"), _sum(used_facts, "interest_paid")
+        _sum(valued_facts, "interest_received"), _sum(valued_facts, "interest_paid")
     )
     dividends = subtract(
-        _sum(used_facts, "dividends_gross"), _sum(used_facts, "withholding_tax")
+        _sum(valued_facts, "dividends_gross"), _sum(valued_facts, "withholding_tax")
     )
     capital = 0.0
     known_return = 0.0
     for f in used_facts:
         known_return = add(known_return, _fact_return(f) or 0.0)
-        if f["capital_gain"] is not None:
-            capital = add(capital, f["capital_gain"])
+        if eur_values(f)["capital_gain"] is not None:
+            capital = add(capital, eur_values(f)["capital_gain"])
 
     if not eligible_facts:
         coverage = CoverageStatus.UNKNOWN.value
@@ -155,7 +157,7 @@ def is_box3_fact(fact) -> bool:
 
 def _fact_has_actual_return(fact) -> bool:
     if "currency" in fact.keys() and (fact["currency"] or "EUR") != "EUR":
-        return False
+        return eur_conversion(fact) is not None
     if _native_fact_return(fact) is None:
         return False
     if fact["interest_received"] is not None:
@@ -183,7 +185,8 @@ def _fact_has_actual_return(fact) -> bool:
 def _fact_return(fact) -> float | None:
     """Return usable in EUR totals; native-currency evidence stays separate."""
     if "currency" in fact.keys() and (fact["currency"] or "EUR") != "EUR":
-        return None
+        conversion = eur_conversion(fact)
+        return conversion["effective_return"] if conversion else None
     return _native_fact_return(fact)
 
 

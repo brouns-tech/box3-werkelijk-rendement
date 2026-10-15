@@ -20,6 +20,7 @@ from wr.i18n import currency, coverage_details, status_label, translator
 from dashboard.localization import select_language
 from dashboard.ownership import PURPLE, UNKNOWN, slot_color, table_style
 from wr.portfolio import _fact_return, is_box3_fact
+from wr.fx import eur_conversion
 from wr.import_pipeline import pending_reprocessing
 
 
@@ -51,9 +52,14 @@ def _return_components(fact) -> dict[str, float | None]:
         )
     source_currency = extra.get("fund_currency") or fact["currency"] or "EUR"
     fx = 0.0 if source_currency == "EUR" else extra.get("fx_gain")
+    conversion = eur_conversion(fact)
+    earned_eur = earned
+    if conversion:
+        fx = conversion["fx_gain"]
+        earned_eur = conversion["values"]["interest_received"]
     other = (
-        float(decimal_value(effective) - decimal_value(earned) - decimal_value(fx))
-        if effective is not None and earned is not None and fx is not None else None
+        float(decimal_value(effective) - decimal_value(earned_eur) - decimal_value(fx))
+        if effective is not None and earned_eur is not None and fx is not None else None
     )
     return {"earned": earned, "currency": fx, "other": other, "effective": effective}
 
@@ -61,10 +67,15 @@ def _return_components(fact) -> dict[str, float | None]:
 def _overview_return_totals(facts) -> dict[str, float]:
     # Use the same canonical Box 3 evidence as the effective EUR total. Native
     # foreign income remains visible per account without entering EUR metrics.
-    components = [
-        _return_components(fact) for fact in facts
-        if is_box3_fact(fact) and _fact_return(fact) is not None
-    ]
+    components = []
+    for fact in facts:
+        if not is_box3_fact(fact) or _fact_return(fact) is None:
+            continue
+        component = _return_components(fact)
+        conversion = eur_conversion(fact)
+        if conversion:
+            component["earned"] = conversion["values"]["interest_received"]
+        components.append(component)
     return {
         key: total(component[key] or 0 for component in components)
         for key in ("earned", "currency", "other", "effective")
@@ -262,7 +273,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
 
     facts = conn.execute(
         """
-        SELECT issuer, account_key, account_label, holder_names, ownership, currency,
+        SELECT tax_year, issuer, account_key, account_label, holder_names, ownership, currency,
                start_balance, end_balance, deposits, withdrawals,
                interest_received, interest_paid, dividends_gross, withholding_tax,
                capital_gain, gain_method, extra
@@ -348,6 +359,8 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
             }
         )
     st.caption(t("Account amounts use the source currency. Unconverted foreign-currency accounts are excluded from EUR totals and keep the tax comparison incomplete."))
+    if any(eur_conversion(fact) for fact in facts):
+        st.caption(t("USD accounts with reconciled dated transactions use cached ECB daily reference rates for EUR totals, including currency gains/losses. On non-publication days the latest preceding rate is used. Conversion evidence is included in the audit export."))
     st.caption(t("Earned return is income before service fees. Currency gain/loss and effective return are shown in EUR; a dash means the EUR result is not yet known. EUR holdings have no currency gain/loss."))
     st.dataframe(
         _styled_table(

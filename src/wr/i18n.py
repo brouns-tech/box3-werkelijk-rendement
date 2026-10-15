@@ -7,6 +7,7 @@ LANGUAGES = {"nl": "Nederlands", "en": "English"}
 
 # English messages are the keys, so no external locale files need bundling.
 DUTCH = {
+    "USD accounts with reconciled dated transactions use cached ECB daily reference rates for EUR totals, including currency gains/losses. On non-publication days the latest preceding rate is used. Conversion evidence is included in the audit export.": "USD-rekeningen met aansluitende gedateerde transacties gebruiken lokaal opgeslagen dagelijkse ECB-referentiekoersen voor EUR-totalen, inclusief valutawinst/-verlies. Op dagen zonder publicatie wordt de laatst voorafgaande koers gebruikt. Omrekengegevens staan in de auditexport.",
     "Select a folder with annual statements and, optionally, tax returns. Source files stay unchanged. Importing does not prove that your entire financial situation is covered.": "Selecteer een map met jaaroverzichten en eventueel aangiften. De bronbestanden blijven ongewijzigd. Importeren bewijst niet dat uw totale financiële situatie volledig is gedekt.",
     "Pre-filing": "Voor aangifte",
     "Review taxpayer and child suggestions from imported documents. Tax returns provide fiscal partnership and allocation when available; otherwise the partnership setting below applies.": "Controleer de voorgestelde belastingplichtigen en kinderen uit de geïmporteerde documenten. Beschikbare aangiften bepalen het fiscale partnerschap en de verdeling; anders geldt de instelling hieronder.",

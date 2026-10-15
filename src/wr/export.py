@@ -12,6 +12,7 @@ from typing import Any, Iterable
 from wr.db import connect, init_db
 from wr.portfolio import _native_fact_return, _fact_has_actual_return, _fact_return, _is_excluded_box3_fact
 from wr.import_pipeline import pending_reprocessing
+from wr.fx import eur_conversion, eur_values, VALUE_FIELDS
 
 
 def create_audit_export(
@@ -23,11 +24,23 @@ def create_audit_export(
     asset_rows: list[dict[str, Any]] = []
     fact_rows: list[dict[str, Any]] = []
     tax_rows: list[dict[str, Any]] = []
+    conversion_rows: list[dict[str, Any]] = []
 
     for year in selected_years:
         assets, facts = _asset_and_fact_rows(conn, year)
         asset_rows.extend(assets)
         fact_rows.extend(facts)
+        for fact in facts:
+            extra = json.loads(fact["extra"] or "{}")
+            conversion = extra.get("eur_conversion") if fact["calculated_actual_return"] is not None else None
+            if not conversion:
+                continue
+            for entry in conversion["audit"]:
+                conversion_rows.append({
+                    "tax_year": year, "fact_id": fact["fact_id"],
+                    "account_key": fact["account_key"], "currency": fact["currency"],
+                    **entry, **conversion["source"],
+                })
         tax_rows.extend(
             dict(row)
             for row in conn.execute(
@@ -72,6 +85,7 @@ def create_audit_export(
                 "Canonical parsed account facts with source PDF identity and asset attribution."
             ),
             "partner_tax_results.csv": "Per-partner tax estimates and recommendation.",
+            "fx_conversions.csv": "Dated native amounts, ECB rates and EUR values used for currency conversion.",
         },
         "calculation_notes": [
             "actual_return follows the same gain-method rules as the portfolio calculation.",
@@ -82,6 +96,9 @@ def create_audit_export(
             "A source fact matched to multiple declared assets is included once, under the first asset id.",
             "Missing or partial assets contribute 0.00 to return_used and remain visibly warned.",
             "Declared balances and parsed source balances are exported separately; they may differ.",
+            "Source amounts retain their currency; eur_* fields and return_used are in EUR.",
+            "ECB conversion divides USD by USD-per-EUR rates; non-publication days use the latest preceding observation (at most 7 days old).",
+            "Credited interest is excluded from external deposits and counted once. EUR interest plus currency gain/loss equals effective return.",
         ],
     }
 
@@ -92,6 +109,7 @@ def create_audit_export(
         _write_csv(bundle, "assets.csv", asset_rows)
         _write_csv(bundle, "source_facts.csv", fact_rows)
         _write_csv(bundle, "partner_tax_results.csv", tax_rows)
+        _write_csv(bundle, "fx_conversions.csv", conversion_rows)
     return output.getvalue()
 
 
@@ -315,7 +333,10 @@ def _asset_and_fact_rows(
                     "return_used": actual_return or 0.0,
                     "currency": fact["currency"],
                     "native_actual_return": _native_fact_return(fact),
-                    "return_basis": "canonical statement fact" if (fact["currency"] or "EUR") == "EUR" else "requires EUR conversion; native amounts retained",
+                    **_eur_export_fields(fact),
+                    "return_basis": ("ECB daily conversion of reconciled cash transactions" if eur_conversion(fact)
+                                     else "canonical statement fact" if (fact["currency"] or "EUR") == "EUR"
+                                     else "requires EUR conversion; native amounts retained"),
                     "matched_fact_ids": fact_id,
                     "included_fact_ids": fact_id,
                     "source_document_sha256s": fact["document_sha256"],
@@ -327,7 +348,7 @@ def _asset_and_fact_rows(
     for fact in facts:
         fact_id = int(fact["id"])
         excluded = _is_excluded_box3_fact(fact)
-        included = fact_id in included_fact_ids and (fact["currency"] or "EUR") == "EUR"
+        included = fact_id in included_fact_ids and eur_values(fact) is not None
         fact_rows.append(
             {
                 "tax_year": year,
@@ -350,6 +371,7 @@ def _asset_and_fact_rows(
                 "gain_method": fact["gain_method"],
                 "calculated_actual_return": _fact_return(fact),
                 "native_actual_return": _native_fact_return(fact),
+                **_eur_export_fields(fact),
                 "has_usable_actual_return": _fact_has_actual_return(fact),
                 "matched_asset_ids": _join_ids(links.get(fact_id, [])),
                 "primary_asset_id": primary_asset.get(fact_id),
@@ -368,6 +390,11 @@ def _asset_and_fact_rows(
             }
         )
     return asset_rows, fact_rows
+
+
+def _eur_export_fields(fact) -> dict:
+    values = eur_values(fact)
+    return {f"eur_{key}": values[key] if values else None for key in VALUE_FIELDS}
 
 
 def _write_csv(
