@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from wr.money import add, subtract, total
 from wr.models import CoverageStatus
+from wr.records import FactRecord, MoneyField
+
+FactInput = FactRecord | sqlite3.Row | Mapping[str, object]
 
 
 @dataclass
@@ -78,18 +82,19 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
         (year,),
     ).fetchall()
 
+    facts = [FactRecord.from_row(fact) for fact in facts]
     missing: list[str] = []
     eligible_facts = [f for f in facts if not _is_excluded_box3_fact(f)]
 
     for fact in eligible_facts:
-        if (fact["currency"] or "EUR") != "EUR":
-            missing.append(f"{fact['issuer']} {fact['account_key']} (requires EUR conversion and currency gain/loss)")
+        if (fact.currency or "EUR") != "EUR":
+            missing.append(f"{fact.issuer} {fact.account_key} (requires EUR conversion and currency gain/loss)")
         elif not _fact_has_actual_return(fact):
             missing.append(
-                f"{fact['issuer']} {fact['account_key']} (no actual-return fields)"
+                f"{fact.issuer} {fact.account_key} (no actual-return fields)"
             )
 
-    used_facts = [f for f in eligible_facts if (f["currency"] or "EUR") == "EUR"]
+    used_facts = [f for f in eligible_facts if (f.currency or "EUR") == "EUR"]
     start = _sum(used_facts, "start_balance")
     end = _sum(used_facts, "end_balance")
     deposits = _sum(used_facts, "deposits")
@@ -104,8 +109,8 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     known_return = 0.0
     for f in used_facts:
         known_return = add(known_return, _fact_return(f) or 0.0)
-        if f["capital_gain"] is not None:
-            capital = add(capital, f["capital_gain"])
+        if f.capital_gain is not None:
+            capital = add(capital, f.capital_gain)
 
     if not eligible_facts:
         coverage = CoverageStatus.UNKNOWN.value
@@ -131,38 +136,30 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     )
 
 
-def _is_excluded_box3_fact(fact) -> bool:
-    key = (fact["account_key"] or "").lower()
-    label = (fact["account_label"] or "").lower()
+def _is_excluded_box3_fact(fact: FactInput) -> bool:
+    fact = FactRecord.from_row(fact)
+    key = (fact.account_key or "").lower()
+    label = (fact.account_label or "").lower()
     if key.endswith("-pensioen") or "pensioen" in label:
         return True
-    extra = fact["extra"]
-    if extra:
-        try:
-            import json
-
-            data = json.loads(extra) if isinstance(extra, str) else extra
-            if isinstance(data, dict) and data.get("box3") is False:
-                return True
-        except Exception:  # noqa: BLE001
-            pass
-    return False
+    return fact.extra.box3 is False
 
 
-def is_box3_fact(fact) -> bool:
+def is_box3_fact(fact: FactInput) -> bool:
     return not _is_excluded_box3_fact(fact)
 
 
-def _fact_has_actual_return(fact) -> bool:
-    if "currency" in fact.keys() and (fact["currency"] or "EUR") != "EUR":
+def _fact_has_actual_return(fact: FactInput) -> bool:
+    fact = FactRecord.from_row(fact)
+    if fact.currency != "EUR":
         return False
     if _native_fact_return(fact) is None:
         return False
-    if fact["interest_received"] is not None:
+    if fact.interest_received is not None:
         return True
-    if fact["dividends_gross"] is not None:
+    if fact.dividends_gross is not None:
         return True
-    if fact["capital_gain"] is not None and fact["gain_method"] in {
+    if fact.capital_gain is not None and fact.gain_method in {
         "balance_flow",
         "earned_return",
         "interest_only",
@@ -171,64 +168,66 @@ def _fact_has_actual_return(fact) -> bool:
         return True
     # Start/end alone without flows is not enough for investments
     if (
-        fact["start_balance"] is not None
-        and fact["end_balance"] is not None
-        and fact["deposits"] is not None
-        and fact["withdrawals"] is not None
+        fact.start_balance is not None
+        and fact.end_balance is not None
+        and fact.deposits is not None
+        and fact.withdrawals is not None
     ):
         return True
     return False
 
 
-def _fact_return(fact) -> float | None:
+def _fact_return(fact: FactInput) -> float | None:
     """Return usable in EUR totals; native-currency evidence stays separate."""
-    if "currency" in fact.keys() and (fact["currency"] or "EUR") != "EUR":
+    fact = FactRecord.from_row(fact)
+    if fact.currency != "EUR":
         return None
     return _native_fact_return(fact)
 
 
-def _native_fact_return(fact) -> float | None:
-    method = fact["gain_method"] or ""
-    if method == "earned_return" and fact["capital_gain"] is not None:
-        return fact["capital_gain"]
+def _native_fact_return(fact: FactInput) -> float | None:
+    fact = FactRecord.from_row(fact)
+    method = fact.gain_method or ""
+    if method == "earned_return" and fact.capital_gain is not None:
+        return fact.capital_gain
     if method == "balance_flow":
         required = ("start_balance", "end_balance", "deposits", "withdrawals")
-        if all(fact[field] is not None for field in required):
+        if all(getattr(fact, field) is not None for field in required):
             balance_return = add(
                 subtract(
-                    fact["end_balance"], fact["start_balance"], fact["deposits"]
+                    fact.end_balance, fact.start_balance, fact.deposits
                 ),
-                fact["withdrawals"],
+                fact.withdrawals,
             )
             return add(
                 balance_return,
-                fact["dividends_gross"] or 0,
-                fact["interest_received"] or 0,
-                -(fact["interest_paid"] or 0),
+                fact.dividends_gross or 0,
+                fact.interest_received or 0,
+                -(fact.interest_paid or 0),
             )
-        return fact["capital_gain"]
+        return fact.capital_gain
     if method == "interest_only":
-        return subtract(fact["interest_received"] or 0, fact["interest_paid"] or 0)
+        return subtract(fact.interest_received or 0, fact.interest_paid or 0)
     total = 0.0
     has = False
-    if fact["interest_received"] is not None or fact["interest_paid"] is not None:
+    if fact.interest_received is not None or fact.interest_paid is not None:
         total = add(
             total,
-            subtract(fact["interest_received"] or 0, fact["interest_paid"] or 0),
+            subtract(fact.interest_received or 0, fact.interest_paid or 0),
         )
         has = True
-    if fact["dividends_gross"] is not None:
+    if fact.dividends_gross is not None:
         total = add(
             total,
-            subtract(fact["dividends_gross"], fact["withholding_tax"] or 0),
+            subtract(fact.dividends_gross, fact.withholding_tax or 0),
         )
         has = True
-    if fact["capital_gain"] is not None and method not in {"interest_only", "balance_delta_incomplete"}:
+    if fact.capital_gain is not None and method not in {"interest_only", "balance_delta_incomplete"}:
         if not has:
-            total = add(total, fact["capital_gain"])
+            total = add(total, fact.capital_gain)
             has = True
     return total if has else None
 
 
-def _sum(rows, col: str) -> float:
-    return total((r[col] or 0) for r in rows)
+def _sum(rows: list[FactRecord], col: MoneyField) -> float:
+    return total((getattr(row, col) or 0) for row in rows)

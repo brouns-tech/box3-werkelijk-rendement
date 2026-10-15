@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Mapping
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
-from wr.money import Currency
-
+from wr.models import AccountYearFact
+from wr.records import DocumentInput, DocumentUpdate, FactRecord, FactWriteRecord
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
     content_sha256 TEXT PRIMARY KEY,
@@ -165,11 +167,12 @@ def _add_column_if_missing(
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
-def upsert_document(conn: sqlite3.Connection, **kwargs: Any) -> bool:
+def upsert_document(conn: sqlite3.Connection, **kwargs: str | int | None) -> bool:
     """Insert document if new. Returns True if inserted, False if already present."""
+    document = DocumentInput.model_validate(kwargs)
     cur = conn.execute(
         "SELECT 1 FROM documents WHERE content_sha256 = ?",
-        (kwargs["content_sha256"],),
+        (document.content_sha256,),
     )
     if cur.fetchone():
         return False
@@ -183,26 +186,38 @@ def upsert_document(conn: sqlite3.Connection, **kwargs: Any) -> bool:
             :issuer, :doc_type, :tax_year, :raw_text_excerpt, :parse_status
         )
         """,
-        kwargs,
+        document.model_dump(),
     )
     return True
 
 
-def update_document(conn: sqlite3.Connection, sha: str, **kwargs: Any) -> None:
-    cols = ", ".join(f"{k} = :{k}" for k in kwargs)
-    params = dict(kwargs)
+def update_document(conn: sqlite3.Connection, sha: str, **kwargs: str | int | None) -> None:
+    update = DocumentUpdate.model_validate(kwargs)
+    params = update.model_dump(exclude_unset=True)
+    if not params:
+        return
+    cols = ", ".join(f"{column} = :{column}" for column in params)
     params["content_sha256"] = sha
     conn.execute(f"UPDATE documents SET {cols} WHERE content_sha256 = :content_sha256", params)
 
 
-def insert_facts(conn: sqlite3.Connection, document_sha: str, facts: Iterable[dict[str, Any]]) -> None:
+def insert_facts(
+    conn: sqlite3.Connection,
+    document_sha: str,
+    facts: Iterable[AccountYearFact | FactRecord | Mapping[str, object]],
+) -> None:
     for fact in facts:
-        payload = dict(fact)
+        if isinstance(fact, AccountYearFact):
+            source = asdict(fact)
+        elif isinstance(fact, FactRecord):
+            source = fact.model_dump()
+        else:
+            source = dict(fact)
+        record = FactWriteRecord.model_validate(source)
+        payload = record.model_dump(mode="json")
         payload["document_sha256"] = document_sha
-        if isinstance(payload.get("holder_names"), list):
-            payload["holder_names"] = json.dumps(payload["holder_names"])
-        if isinstance(payload.get("extra"), dict):
-            payload["extra"] = json.dumps(payload["extra"])
+        payload["holder_names"] = json.dumps(record.holder_names)
+        payload["extra"] = record.extra.model_dump_json(exclude_unset=True)
         conn.execute(
             """
             INSERT INTO account_year_facts (
@@ -235,29 +250,7 @@ def insert_facts(conn: sqlite3.Connection, document_sha: str, facts: Iterable[di
                 logical_group=excluded.logical_group,
                 extra=excluded.extra
             """,
-            {
-                "document_sha256": payload["document_sha256"],
-                "tax_year": payload["tax_year"],
-                "issuer": payload["issuer"],
-                "account_key": payload["account_key"],
-                "account_label": payload.get("account_label"),
-                "holder_names": payload.get("holder_names"),
-                "ownership": payload.get("ownership", "unknown"),
-                "currency": Currency(payload.get("currency", Currency.EUR)).value,
-                "start_balance": payload.get("start_balance"),
-                "end_balance": payload.get("end_balance"),
-                "deposits": payload.get("deposits"),
-                "withdrawals": payload.get("withdrawals"),
-                "interest_received": payload.get("interest_received"),
-                "interest_paid": payload.get("interest_paid"),
-                "dividends_gross": payload.get("dividends_gross"),
-                "withholding_tax": payload.get("withholding_tax"),
-                "capital_gain": payload.get("capital_gain"),
-                "gain_method": payload.get("gain_method", "unknown"),
-                "logical_group": payload.get("logical_group"),
-                "is_canonical": payload.get("is_canonical", 0),
-                "extra": payload.get("extra"),
-            },
+            payload,
         )
 
 

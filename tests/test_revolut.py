@@ -80,11 +80,11 @@ def test_foreign_currency_never_enters_eur_rollup():
     assert any('requires EUR conversion' in message for message in result.missing)
     from wr.export import _asset_and_fact_rows
     assets, sources = _asset_and_fact_rows(conn, 2025)
-    usd = next(row for row in sources if row['currency'] == 'USD')
-    assert usd['native_actual_return'] == 20
-    assert usd['calculated_actual_return'] is None
-    assert not usd['included_in_year_total']
-    assert usd['exclusion_reason'] == 'requires EUR conversion'
+    usd = next(row for row in sources if row.currency == 'USD')
+    assert usd.native_actual_return == 20
+    assert usd.calculated_actual_return is None
+    assert not usd.included_in_year_total
+    assert usd.exclusion_reason == 'requires EUR conversion'
 
 
 def test_database_rejects_unsupported_currency():
@@ -94,7 +94,7 @@ def test_database_rejects_unsupported_currency():
     init_db(conn)
     fact = AccountYearFact(2025, "bank", "account", "Account").__dict__
     fact["currency"] = "XYZ"
-    with pytest.raises(ValueError, match="not a valid Currency"):
+    with pytest.raises(ValueError, match="currency"):
         insert_facts(conn, "test", [fact])
 
 

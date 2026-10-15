@@ -47,6 +47,23 @@ The Settings tab renders these fields and persists their values under the
 institution namespace. The main application passes the values through without
 knowing their meaning.
 
+Plugins can declare `options_model` and `metadata_model` on `InstitutionPlugin`.
+Use Pydantic models extending `InstitutionSettings` and `FactMetadata`, respectively,
+and keep institution-specific fields in the institution module. Parsers receive a
+validated options object; parsed facts expose metadata through attributes, such as
+`fact.extra.box3`. Nested evidence and security positions should also be models.
+Institution options preserve unrecognized JSON extension fields for compatibility.
+Fact metadata rejects unknown fields and invalid types rather than silently
+ignoring evidence used in calculations.
+
+SQLite and JSON are validation boundaries. Use `FactRecord`, `PortfolioRecord`,
+and `TaxReturnRecord` for calculation inputs and typed export records for audit
+output. Convert to dictionaries only when binding SQL parameters or writing
+CSV/JSON. `insert_facts` accepts parsed `AccountYearFact` objects directly.
+Document updates validate their column names and distinguish omitted fields from
+explicit null values. Keep ordinary lookup tables and translated display columns
+as dictionaries; they do not represent fixed record schemas.
+
 Do not commit real statements, extracted text, names, addresses, account numbers, tax identifiers, balances,
 `.wr-settings.json`, retired configuration files, SQLite databases, or audit exports. Synthetic fixtures should use unmistakably fictional names and
 reserved example account identifiers.

@@ -8,6 +8,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
+from wr.records import FactRecord
 from wr.config import PartnerSettings, load_settings, resolve_db_path
 from wr.db import connect, init_db
 from wr.identities import identity_slot, observed_names, name_key
@@ -263,32 +264,33 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
     ).fetchall()
     st.subheader(t(Messages.ACCOUNT_OVERVIEW))
     fact_rows = []
-    for fact in facts:
-        account_money = partial(_currency, language=language, currency_code=fact["currency"] or "EUR")
+    for fact_row in facts:
+        fact = FactRecord.from_row(fact_row)
+        account_money = partial(_currency, language=language, currency_code=fact.currency or "EUR")
         child_account = any(
             (identity_slot(holder, partner_cfg) or "").startswith("child_")
-            for holder in json.loads(fact["holder_names"] or "[]")
+            for holder in fact.holder_names
         )
         fact_rows.append(
             {
-                t(Messages.ACCOUNT_HOLDER): _holder_label(fact["holder_names"], canonical_names, language),
-                t(Messages.ALLOCATION): t(Messages.JOINT) if child_account or fact["ownership"] == "joint" else t(Messages.INDIVIDUAL),
+                t(Messages.ACCOUNT_HOLDER): _holder_label(json.dumps(fact.holder_names), canonical_names, language),
+                t(Messages.ALLOCATION): t(Messages.JOINT) if child_account or fact.ownership == "joint" else t(Messages.INDIVIDUAL),
                 t(Messages.BOX_3): t(Messages.YES) if is_box3_fact(fact) else t(Messages.NO),
-                t(Messages.SOURCE): fact["issuer"].upper(),
-                t(Messages.ACCOUNT_LABEL): fact["account_label"],
-                t(Messages.ACCOUNT_KEY): fact["account_key"],
-                t(Messages.VALUE_1_JANUARY): account_money(fact["start_balance"]),
-                t(Messages.VALUE_31_DECEMBER): account_money(fact["end_balance"]),
-                t(Messages.PURCHASES_DEPOSITS): account_money(fact["deposits"]),
-                t(Messages.SALES_WITHDRAWALS): account_money(fact["withdrawals"]),
-                t(Messages.RECEIVED_INTEREST): account_money(fact["interest_received"]),
-                t(Messages.PAID_INTEREST): account_money(fact["interest_paid"]),
-                t(Messages.GROSS_DIVIDENDS): account_money(fact["dividends_gross"]),
-                t(Messages.WITHHOLDING_TAX): account_money(fact["withholding_tax"]),
+                t(Messages.SOURCE): fact.issuer.upper(),
+                t(Messages.ACCOUNT_LABEL): fact.account_label,
+                t(Messages.ACCOUNT_KEY): fact.account_key,
+                t(Messages.VALUE_1_JANUARY): account_money(fact.start_balance),
+                t(Messages.VALUE_31_DECEMBER): account_money(fact.end_balance),
+                t(Messages.PURCHASES_DEPOSITS): account_money(fact.deposits),
+                t(Messages.SALES_WITHDRAWALS): account_money(fact.withdrawals),
+                t(Messages.RECEIVED_INTEREST): account_money(fact.interest_received),
+                t(Messages.PAID_INTEREST): account_money(fact.interest_paid),
+                t(Messages.GROSS_DIVIDENDS): account_money(fact.dividends_gross),
+                t(Messages.WITHHOLDING_TAX): account_money(fact.withholding_tax),
                 t(Messages.CALCULATED_ACTUAL_RETURN): account_money(_native_fact_return(fact)),
-                t(Messages.MARKET_VALUE_COMPONENT_INTERNAL): account_money(fact["capital_gain"]),
-                t(Messages.CURRENCY): fact["currency"] or "EUR",
-                t(Messages.CALCULATION_METHOD): status_label(fact["gain_method"], language),
+                t(Messages.MARKET_VALUE_COMPONENT_INTERNAL): account_money(fact.capital_gain),
+                t(Messages.CURRENCY): fact.currency or "EUR",
+                t(Messages.CALCULATION_METHOD): status_label(fact.gain_method, language),
             }
         )
     st.caption(t(Messages.ACCOUNT_CURRENCY_HELP))

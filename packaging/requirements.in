@@ -1,6 +1,7 @@
 # Runtime and build dependencies isolated from ordinary Python development.
 # Compile with uv pip compile --universal --generate-hashes.
 # Keep runtime requirements in sync with pyproject.toml; target Python 3.13.
+pydantic>=2.10,<3
 pandas>=2.0
 pypdf>=4.0
 pypdfium2==5.14.0

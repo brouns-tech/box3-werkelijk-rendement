@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from wr.desktop import desktop_request
+from wr.desktop_models import FolderResponse
 from wr.desktop_storage import app_version, remember_folder, selected_folder
 from wr.i18n import status_label, translator
 from wr.messages import Messages
@@ -53,7 +54,10 @@ def render(cfg, language: str):
     active = job is not None and not job.done.is_set()
     if st.button(t(Messages.SELECT_FOLDER), disabled=active, key="select_folder"):
         try:
-            folder = desktop_request("folder")["folder"]
+            response = desktop_request("folder")
+            if not isinstance(response, FolderResponse):
+                raise ValueError("Unexpected folder response")
+            folder = response.folder
             if folder:
                 remember_folder(directory, folder)
                 st.rerun()

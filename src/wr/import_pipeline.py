@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -288,16 +288,10 @@ def _persist_parse(conn, sha, classification: Classification, result, page_count
         parse_status="parsed",
     )
 
-    fact_rows = []
     for fact in result.facts:
         fact.compute_capital_gain()
-        d = asdict(fact)
-        d["is_canonical"] = 0
-        d.pop("extra", None)
-        d["extra"] = fact.extra
-        fact_rows.append(d)
-    if fact_rows:
-        insert_facts(conn, sha, fact_rows)
+    if result.facts:
+        insert_facts(conn, sha, result.facts)
 
     if result.tax_return is not None:
         tr = result.tax_return

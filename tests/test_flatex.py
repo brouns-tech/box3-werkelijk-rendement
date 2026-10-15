@@ -23,11 +23,11 @@ def test_parses_flatex_financial_instruments_inventory():
     fact = result.facts[0]
     assert result.tax_year == 2021
     assert fact.end_balance == 3100.0
-    assert fact.extra["cash_balance"] == 100.0
-    assert fact.extra["securities_market_value"] == 3000.0
-    assert fact.extra["asset_class"] == "securities_portfolio"
+    assert fact.extra.cash_balance == 100.0
+    assert fact.extra.securities_market_value == 3000.0
+    assert fact.extra.asset_class == "securities_portfolio"
     assert "securities portfolio" in fact.account_label
-    assert fact.extra["position_count"] == 2
+    assert fact.extra.position_count == 2
 
 
 def test_keeps_degiro_and_flatex_as_separate_canonical_sources():
@@ -82,7 +82,7 @@ def test_parses_linked_ing_transfers_from_flatex_account_statement():
     assert fact.start_balance == 0.0
     assert fact.deposits == 5000.0
     assert fact.withdrawals == 50.0
-    assert fact.extra["opening_statement"] is True
+    assert fact.extra.opening_statement is True
 
 
 def test_keeps_cash_sweeps_out_of_external_flows():
@@ -102,12 +102,12 @@ def test_keeps_cash_sweeps_out_of_external_flows():
     assert fact.end_balance == 90.0
     assert fact.deposits == 0.0
     assert fact.withdrawals == 0.0
-    assert fact.extra["cash_sweep_deposits"] == 100.0
-    assert fact.extra["cash_sweep_withdrawals"] == 20.0
+    assert fact.extra.cash_sweep_deposits == 100.0
+    assert fact.extra.cash_sweep_withdrawals == 20.0
     assert fact.capital_gain == 0.0
     assert fact.gain_method == "explicit"
-    assert fact.extra["return_assumption"] == "zero_by_product"
-    assert fact.extra["statement_number"] == 4
+    assert fact.extra.return_assumption == "zero_by_product"
+    assert fact.extra.statement_number == 4
 
 
 def test_derives_return_from_adjacent_inventories_and_linked_flows():

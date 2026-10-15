@@ -5,6 +5,7 @@ import urllib.request
 
 import pytest
 
+from wr.desktop_models import FolderResponse, StatusResponse
 from wr.desktop import InstanceLock, child_command, control_request, make_control_server
 from wr.desktop_smoke import smoke_test, synthetic_pdf
 from wr.desktop_storage import prepare_workspace, remember_folder, selected_folder
@@ -69,20 +70,20 @@ def test_desktop_folder_selection_preserves_upstream_profiles_and_storage(tmp_pa
     remember_folder(tmp_path, str(documents))
     cfg = load_settings(tmp_path)
     assert cfg.partners == partners
-    assert cfg.institution_options == options
+    assert cfg.institution_options["flatex"].model_dump(exclude_unset=True) == options["flatex"]
     assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
     assert cfg.import_root == documents
 
 
 def test_control_api_requires_token_and_rejects_browser_origin():
     actions = []
-    server = make_control_server("synthetic-secret", lambda action: actions.append(action) or {"ok": True})
+    server = make_control_server("synthetic-secret", lambda action: actions.append(action) or {"ready": True, "url": "http://localhost", "pid": 1})
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     endpoint = f"http://127.0.0.1:{server.server_port}"
     try:
         assert server.server_address[0] == "127.0.0.1"
-        assert control_request(endpoint, "synthetic-secret", "status") == {"ok": True}
+        assert control_request(endpoint, "synthetic-secret", "status") == StatusResponse(ready=True, url="http://localhost", pid=1)
         for token, origin in [("wrong", None), ("synthetic-secret", "https://example.com")]:
             headers = {"X-WR-Token": token}
             if origin:
@@ -102,6 +103,22 @@ def test_child_command_uses_frozen_executable(monkeypatch, tmp_path):
     import sys
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     assert child_command(tmp_path, 1234) == [sys.executable, "--serve", str(tmp_path), "1234"]
+
+
+def test_control_api_validates_response_shape():
+    from pydantic import ValidationError
+
+    server = make_control_server("synthetic-secret", lambda action: {"ready": True})
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        with pytest.raises(ValidationError, match="url"):
+            control_request(endpoint, "synthetic-secret", "status")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def test_native_pdf_import_and_audit_smoke_without_poppler(tmp_path, monkeypatch):
@@ -188,7 +205,7 @@ def test_dashboard_onboarding_import_needs_no_cli(tmp_path, monkeypatch, finish_
     documents = tmp_path / "statements"
     documents.mkdir()
     synthetic_pdf(documents / "statement.pdf")
-    monkeypatch.setattr("dashboard.desktop_import.desktop_request", lambda _: {"folder": str(documents)})
+    monkeypatch.setattr("dashboard.desktop_import.desktop_request", lambda _: FolderResponse(folder=str(documents)))
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(config)])
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()

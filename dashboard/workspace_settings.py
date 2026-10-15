@@ -26,7 +26,7 @@ def _storage_settings_ui(cfg) -> None:
             t(Messages.DATABASE_FILE), value=str(cfg.db_path), key="database_file",
             help=t(Messages.DATABASE_FILE_HELP),
         )
-        options = {name: dict(values) for name, values in cfg.institution_options.items()}
+        options = {name: values.model_dump(exclude_unset=True) for name, values in cfg.institution_options.items()}
         with st.expander(t(Messages.ADDITIONAL_OPTIONS), expanded=False):
             for plugin in PLUGINS:
                 if not plugin.settings_fields:

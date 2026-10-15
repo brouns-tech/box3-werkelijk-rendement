@@ -4,9 +4,9 @@ import importlib
 import pkgutil
 import sqlite3
 from pathlib import Path
-from typing import Mapping
 
 from wr.models import ParseResult
+from wr.records import parse_institution_settings
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionOptions,
@@ -67,7 +67,7 @@ def parse_document(
             tax_year=tax_year,
             notes=["no parser registered"],
         )
-    options: Mapping[str, object] = (institution_options or {}).get(issuer, {})
+    options = parse_institution_settings(issuer, (institution_options or {}).get(issuer, {}))
     return registration.parser(text, tax_year, ParserContext(issuer, doc_type, options))
 
 
@@ -83,4 +83,4 @@ def postprocess_facts(
     options = institution_options or {}
     for plugin in PLUGINS:
         if plugin.postprocess:
-            plugin.postprocess(conn, options.get(plugin.issuer, {}))
+            plugin.postprocess(conn, parse_institution_settings(plugin.issuer, options.get(plugin.issuer, {})))

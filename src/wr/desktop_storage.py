@@ -1,12 +1,13 @@
 """Writable desktop state, deliberately independent of CLI workspace defaults."""
 from __future__ import annotations
 
-import json
 import os
 import sys
 import tempfile
 from importlib.metadata import version
 from pathlib import Path
+
+from wr.desktop_models import LanguagePreference, LegacyPreferences
 
 
 def app_data_dir() -> Path:
@@ -32,8 +33,8 @@ def prepare_workspace(directory: Path | None = None) -> Path:
     if not existing:
         # Retired beta preferences migrate once; reset must not resurrect them.
         try:
-            raw = json.loads((directory / "preferences.json").read_text(encoding="utf-8"))
-            folder = raw.get("selected_folder") if isinstance(raw, dict) else None
+            preferences = LegacyPreferences.model_validate_json((directory / "preferences.json").read_text(encoding="utf-8"))
+            folder = preferences.selected_folder
         except (OSError, ValueError):
             folder = None
         save_settings(settings, import_root=folder if isinstance(folder, str) else None)
@@ -60,9 +61,7 @@ def app_version() -> str:
 
 def remembered_language(directory: Path, default: str = "nl") -> str:
     try:
-        value = json.loads((directory / "language.json").read_text(encoding="utf-8"))
-        language = value.get("language") if isinstance(value, dict) else None
-        return language if isinstance(language, str) and language in {"nl", "en"} else default
+        return LanguagePreference.model_validate_json((directory / "language.json").read_text(encoding="utf-8")).language
     except (OSError, ValueError):
         return default
 
@@ -76,7 +75,7 @@ def remember_language(directory: Path, language: str) -> None:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory,
                                          prefix="language-", suffix=".tmp", delete=False) as file:
             temporary = Path(file.name)
-            json.dump({"language": language}, file)
+            file.write(LanguagePreference(language=language).model_dump_json())
         temporary.replace(directory / "language.json")
     finally:
         if temporary:
