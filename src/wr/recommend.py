@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 
 from wr.compare.base import BOX3_RATE_BY_YEAR, compare_partner
@@ -8,6 +7,7 @@ from wr.config import PartnerSettings
 from wr.identities import effective_partners, identity_slot, similarity
 from wr.money import add, multiply, subtract
 from wr.models import CoverageStatus, PartnerTaxResult, Recommendation
+from wr.records import FactRecord, PortfolioRecord, TaxReturnRecord
 from wr.portfolio import _fact_return, is_box3_fact
 
 
@@ -70,9 +70,11 @@ def _results_for_year(
         (year,),
     ).fetchall()
 
-    coverage = portfolio["coverage_status"] if portfolio else CoverageStatus.UNKNOWN.value
-    known_actual = portfolio["known_combined_actual_return"] if portfolio else None
-    missing = portfolio["missing_asset_summary"] if portfolio else "no portfolio"
+    portfolio = PortfolioRecord.model_validate(dict(portfolio)) if portfolio is not None else None
+    returns = [TaxReturnRecord.model_validate(dict(row)) for row in returns]
+    coverage = portfolio.coverage_status if portfolio else CoverageStatus.UNKNOWN.value
+    known_actual = portfolio.known_combined_actual_return if portfolio else None
+    missing = portfolio.missing_asset_summary if portfolio else "no portfolio"
 
     if not returns:
         if any(name for _, name in partner_cfg.configured()):
@@ -97,40 +99,40 @@ def _results_for_year(
     primary = max(
         returns,
         key=lambda r: (
-            _submission_rank(r["raw_text_excerpt"]),
-            r["full_year_fiscal_partners"] or 0,
-            1 if r["grondslag"] else 0,
-            1 if r["allocation_a"] is not None else 0,
-            1 if r["filer_name"] and "unknown" not in (r["filer_name"] or "").lower() else 0,
-            1 if r["filer_name"] and "datum" not in (r["filer_name"] or "").lower() else 0,
-            1 if identity_slot(r["filer_name"], partner_cfg) == "a" else 0,
-            abs(r["grondslag"] or 0),
+            _submission_rank(r.raw_text_excerpt),
+            r.full_year_fiscal_partners or 0,
+            1 if r.grondslag else 0,
+            1 if r.allocation_a is not None else 0,
+            1 if r.filer_name and "unknown" not in (r.filer_name or "").lower() else 0,
+            1 if r.filer_name and "datum" not in (r.filer_name or "").lower() else 0,
+            1 if identity_slot(r.filer_name, partner_cfg) == "a" else 0,
+            abs(r.grondslag or 0),
         ),
     )
 
-    full_year = bool(primary["full_year_fiscal_partners"])
+    full_year = bool(primary.full_year_fiscal_partners)
     if not full_year:
         return _individual_results(conn, year, returns, partner_cfg)
 
     # Absence of a parsed base is not evidence of a zero base. Keep both
     # partners visible even when allocation or comparison cannot be established.
-    zero_base = primary["grondslag"] == 0
-    name_a = primary["partner_a_name"]
-    name_b = primary["partner_b_name"]
-    alloc_a = primary["allocation_a"]
-    alloc_b = primary["allocation_b"]
-    g = primary["grondslag"] or 0
+    zero_base = primary.grondslag == 0
+    name_a = primary.partner_a_name
+    name_b = primary.partner_b_name
+    alloc_a = primary.allocation_a
+    alloc_b = primary.allocation_b
+    g = primary.grondslag or 0
     if (
         alloc_a is None
         and g
-        and primary["grondslag_a"] is not None
-        and primary["grondslag_b"] is not None
+        and primary.grondslag_a is not None
+        and primary.grondslag_b is not None
     ):
-        alloc_a = abs(primary["grondslag_a"]) / abs(g)
-        alloc_b = abs(primary["grondslag_b"]) / abs(g)
+        alloc_a = abs(primary.grondslag_a) / abs(g)
+        alloc_b = abs(primary.grondslag_b) / abs(g)
 
-    fict_a, fict_b = primary["voordeel_a"], primary["voordeel_b"]
-    tax_a, tax_b = primary["box3_tax_a"], primary["box3_tax_b"]
+    fict_a, fict_b = primary.voordeel_a, primary.voordeel_b
+    tax_a, tax_b = primary.box3_tax_a, primary.box3_tax_b
     if identity_slot(name_b, partner_cfg) == "a" and identity_slot(name_a, partner_cfg) != "a":
         name_a, name_b = name_b, name_a
         alloc_a, alloc_b = alloc_b, alloc_a
@@ -156,7 +158,7 @@ def _results_for_year(
             rec = Recommendation.INDETERMINATE_MISSING_DATA.value
             notes = f"Partial coverage. Missing: {missing or 'unknown'}"
             tax_actual = None
-        elif primary["grondslag"] is None or ratio is None:
+        elif primary.grondslag is None or ratio is None:
             rec = Recommendation.NEEDS_MANUAL_RSAMW.value
             notes = "Missing combined taxable base or fiscal-partner allocation; review tax-return evidence"
             tax_actual = None
@@ -210,21 +212,21 @@ def _same_person(a: str | None, b: str | None) -> bool:
 
 
 def _individual_results(
-    conn, year: int, returns, partner_cfg: PartnerSettings
+    conn: sqlite3.Connection, year: int, returns: list[TaxReturnRecord], partner_cfg: PartnerSettings
 ) -> list[PartnerTaxResult]:
     configured = [
         (slot, name) for slot, name in partner_cfg.configured() if name is not None
     ]
     if not configured:
-        configured = [(chr(ord("a") + index), row["filer_name"]) for index, row in enumerate(returns)]
+        configured = [(chr(ord("a") + index), row.filer_name) for index, row in enumerate(returns)]
     results = []
     for slot, name in configured:
         matching = [row for row in returns if (
-            identity_slot(row["filer_name"], partner_cfg) == slot
+            identity_slot(row.filer_name, partner_cfg) == slot
             if any(n for _, n in partner_cfg.configured())
-            else _same_person(row["filer_name"], name)
+            else _same_person(row.filer_name, name)
         )]
-        tax_return = max(matching, key=lambda row: _submission_rank(row["raw_text_excerpt"])) if matching else None
+        tax_return = max(matching, key=lambda row: _submission_rank(row.raw_text_excerpt)) if matching else None
         known_actual, coverage, missing = _individual_portfolio(conn, year, name, partner_cfg)
         if tax_return is None:
             results.append(PartnerTaxResult(
@@ -235,7 +237,7 @@ def _individual_results(
                 coverage_status=coverage, notes="No tax return parsed for this filer",
             ))
             continue
-        fictitious, filed_tax = tax_return["voordeel_a"], tax_return["box3_tax_a"]
+        fictitious, filed_tax = tax_return.voordeel_a, tax_return.box3_tax_a
         if coverage != CoverageStatus.COMPLETE.value:
             recommendation, estimated_actual_tax = Recommendation.INDETERMINATE_MISSING_DATA.value, None
             notes = f"Partial coverage. Missing: {missing or 'unknown'}"
@@ -248,7 +250,7 @@ def _individual_results(
             else None
         )
         results.append(PartnerTaxResult(
-            tax_year=year, partner=slot, partner_name=name or tax_return["filer_name"] or slot,
+            tax_year=year, partner=slot, partner_name=name or tax_return.filer_name or slot,
             allocation_ratio=1.0, allocated_actual_return=known_actual, fictitious_return=fictitious,
             estimated_box3_tax_actual=estimated_actual_tax, estimated_box3_tax_fictitious=tax_fictitious,
             estimated_tax_savings=(subtract(tax_fictitious, estimated_actual_tax) if tax_fictitious is not None and estimated_actual_tax is not None else None),
@@ -268,37 +270,38 @@ def _individual_portfolio(
     facts = conn.execute(
         "SELECT * FROM account_year_facts WHERE tax_year = ? AND is_canonical = 1", (year,)
     ).fetchall()
+    facts = [FactRecord.from_row(fact) for fact in facts]
     total = 0.0
     used = 0
     missing: list[str] = []
     for fact in facts:
         if not is_box3_fact(fact):
             continue
-        holders = json.loads(fact["holder_names"] or "[]")
+        holders = fact.holder_names
         holder_slots = [identity_slot(holder, partner_cfg) for holder in holders]
         matches = [identity_slot(holder, partner_cfg) == filer_slot if filer_slot else _matches_alias(holder, aliases) for holder in holders]
         has_child = any(slot and slot.startswith("child_") for slot in holder_slots)
         child_pool = has_child and all(holder_slots) and (
-            all(slot.startswith("child_") for slot in holder_slots) or fact["ownership"] == "joint"
+            all(slot.startswith("child_") for slot in holder_slots) or fact.ownership == "joint"
         )
         if child_pool:
             # Child assets belong to the parents' joint pool, never a child tax result.
             portion = 1.0 / len([name for _, name in partner_cfg.configured() if name])
         elif len(holders) == 1 and matches[0]:
             portion = 1.0
-        elif fact["ownership"] == "joint" and len(holders) >= 2 and any(matches):
+        elif fact.ownership == "joint" and len(holders) >= 2 and any(matches):
             portion = 0.5
         elif not holders:
-            missing.append(f"{fact['issuer']} {fact['account_key']} (holder unknown)")
+            missing.append(f"{fact.issuer} {fact.account_key} (holder unknown)")
             continue
         else:
             if any(identity_slot(holder, partner_cfg) is None for holder in holders):
-                missing.append(f"{fact['issuer']} {fact['account_key']} (holder needs review)")
+                missing.append(f"{fact.issuer} {fact.account_key} (holder needs review)")
             continue
         value = _fact_return(fact)
         if value is None:
-            reason = "requires EUR conversion and currency gain/loss" if (fact["currency"] or "EUR") != "EUR" else "no actual-return fields"
-            missing.append(f"{fact['issuer']} {fact['account_key']} ({reason})")
+            reason = "requires EUR conversion and currency gain/loss" if (fact.currency or "EUR") != "EUR" else "no actual-return fields"
+            missing.append(f"{fact.issuer} {fact.account_key} ({reason})")
             continue
         total = add(total, multiply(value, portion))
         used += 1

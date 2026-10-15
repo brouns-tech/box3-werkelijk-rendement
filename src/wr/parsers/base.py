@@ -6,8 +6,10 @@ from typing import Callable, Mapping, Protocol
 
 from wr.models import ParseResult
 from wr.messages import Message
+from wr.records import FactMetadata, InstitutionSettings
+from pydantic import JsonValue
 
-InstitutionOptions = Mapping[str, Mapping[str, object]]
+InstitutionOptions = Mapping[str, InstitutionSettings | Mapping[str, JsonValue]]
 
 
 @dataclass(frozen=True)
@@ -22,11 +24,7 @@ class ClassificationRule:
 class ParserContext:
     issuer: str
     doc_type: str
-    options: Mapping[str, object] = field(default_factory=dict)
-
-    def string_option(self, name: str) -> str | None:
-        value = self.options.get(name)
-        return value.strip() if isinstance(value, str) and value.strip() else None
+    options: InstitutionSettings = field(default_factory=InstitutionSettings)
 
 
 class Parser(Protocol):
@@ -37,7 +35,7 @@ class Parser(Protocol):
 
 class PostProcessor(Protocol):
     def __call__(
-            self, conn: sqlite3.Connection, options: Mapping[str, object]
+            self, conn: sqlite3.Connection, options: InstitutionSettings
     ) -> None: ...
 
 
@@ -62,6 +60,8 @@ class InstitutionPlugin:
     postprocess: PostProcessor | None = None
     classification_priority: int = 0
     settings_fields: tuple[InstitutionSetting, ...] = ()
+    metadata_model: type[FactMetadata] = FactMetadata
+    options_model: type[InstitutionSettings] = InstitutionSettings
 
 
 def simple_parser(

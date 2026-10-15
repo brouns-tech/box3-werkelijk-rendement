@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from wr.records import FactMetadata, parse_metadata
 
 from wr.money import Currency, add, subtract
 
@@ -49,10 +49,11 @@ class AccountYearFact:
     capital_gain: float | None = None
     gain_method: str = "unknown"
     logical_group: str | None = None
-    extra: dict[str, Any] = field(default_factory=dict)
+    extra: FactMetadata = field(default_factory=FactMetadata)
 
     def __post_init__(self) -> None:
         self.currency = Currency(self.currency)
+        self.extra = parse_metadata(self.issuer, self.extra)
 
     def compute_capital_gain(self) -> None:
         if self.capital_gain is not None:

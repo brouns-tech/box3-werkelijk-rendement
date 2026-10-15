@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from wr.records import FactMetadata
+
 from wr.models import AccountYearFact, ParseResult
 from wr.money import Currency
 from wr.parsers.base import (
@@ -12,6 +14,10 @@ from wr.parsers.base import (
 )
 from wr.parsers.common import first_holder, resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
+
+
+class RaisinMetadata(FactMetadata):
+    rente_bruto: float | None = None
 
 
 def _is_supported_document(text: str) -> bool:
@@ -61,7 +67,7 @@ def parse_raisin(text: str, tax_year: int | None = None) -> ParseResult:
             start_balance=parse_nl_amount(am.group(2)),
             end_balance=parse_nl_amount(am.group(3)),
             interest_received=parse_nl_amount(am.group(5)),  # netto
-            extra={"rente_bruto": parse_nl_amount(am.group(4))},
+            extra=RaisinMetadata(rente_bruto=parse_nl_amount(am.group(4))),
         )
         fact.compute_capital_gain()
         facts.append(fact)
@@ -75,6 +81,7 @@ def _holders(text: str) -> list[str]:
 
 PLUGIN = InstitutionPlugin(
     issuer="raisin",
+    metadata_model=RaisinMetadata,
     classification_rules=(
         ClassificationRule("raisin", "jaaroverzicht", _is_supported_document),
     ),

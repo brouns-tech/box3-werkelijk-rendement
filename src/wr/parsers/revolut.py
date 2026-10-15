@@ -4,6 +4,7 @@ import re
 
 from wr.models import AccountYearFact, ParseResult
 from wr.money import Currency, add, subtract, total
+from wr.records import FactMetadata
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
@@ -14,6 +15,15 @@ from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_account_id, normalize_iban, parse_en_amount, parse_nl_amount
 
 _CURRENCY_PATTERN = "|".join(currency.value for currency in Currency)
+
+
+class RevolutMetadata(FactMetadata):
+    fees: float | None = None
+    earned_return: float | None = None
+    product: str | None = None
+    money_in_includes_interest: float | None = None
+    interest_credit_count: int | None = None
+    fx_status: str | None = None
 
 
 def _is_annual_summary(text: str) -> bool:
@@ -155,7 +165,7 @@ def _parse_savings(text: str, year: int) -> ParseResult:
         withdrawals=sold,
         capital_gain=add(earned or 0.0, fees or 0.0) if earned is not None else None,
         gain_method="earned_return" if earned is not None else "unknown",
-        extra={"fees": fees, "earned_return": earned},
+        extra=RevolutMetadata(fees=fees, earned_return=earned),
     )
     if fact.capital_gain is None:
         fact.compute_capital_gain()
@@ -208,10 +218,13 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
             interest_received=interest,
             gain_method="interest_only" if interest is not None else "unknown",
             capital_gain=interest,
-            extra={"product": product, "money_in_includes_interest": incoming,
-                   "interest_source": "net_interest_transactions" if credits else "no_interest_transactions",
-                   "interest_credit_count": len(credits),
-                   "fx_status": "requires_eur_conversion" if currency != Currency.EUR else "not_required"},
+            extra=RevolutMetadata(
+                product=product,
+                money_in_includes_interest=incoming,
+                interest_source="net_interest_transactions" if credits else "no_interest_transactions",
+                interest_credit_count=len(credits),
+                fx_status="requires_eur_conversion" if currency != Currency.EUR else "not_required",
+            ),
         )
         # Missing deposit transactions do not prove zero savings interest.
         if product == "current" and interest is None:
@@ -257,6 +270,7 @@ def _holders(text: str) -> list[str]:
 
 PLUGIN = InstitutionPlugin(
     issuer="revolut",
+    metadata_model=RevolutMetadata,
     classification_rules=(
         ClassificationRule("revolut", "jaaroverzicht", _is_annual_summary),
         ClassificationRule("revolut", "savings_statement", _is_savings_statement),

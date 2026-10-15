@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import Mapping
+
+from wr.records import FactMetadata, InstitutionSettings
 
 from wr.models import AccountYearFact, ParseResult
 from wr.parsers.base import (
@@ -83,10 +84,10 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
             end_balance=end,
             interest_received=received,
             interest_paid=paid,
-            extra={
-                "account_type": _account_type(label),
-                "interest_source": "reported",
-            },
+            extra=FactMetadata(
+                account_type=_account_type(label),
+                interest_source="reported",
+            ),
         )
         fact.compute_capital_gain()
         facts.append(fact)
@@ -114,10 +115,10 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
                 end_balance=parse_nl_amount(m.group(3)),
                 interest_paid=parse_nl_amount(m.group(4)),
                 interest_received=parse_nl_amount(m.group(5)),
-                extra={
-                    "account_type": "savings",
-                    "interest_source": "reported",
-                },
+                extra=FactMetadata(
+                    account_type="savings",
+                    interest_source="reported",
+                ),
             )
             fact.compute_capital_gain()
             facts.append(fact)
@@ -154,14 +155,14 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
             start_balance=parse_nl_amount(m.group("start")),
             end_balance=parse_nl_amount(m.group("end")),
             interest_received=interest,
-            extra={
-                "account_type": account_type,
-                "interest_source": (
+            extra=FactMetadata(
+                account_type=account_type,
+                interest_source=(
                     "not_available_on_total_overview"
                     if account_type == "savings"
                     else "inferred_zero_non_savings_account"
                 ),
-            },
+            ),
         )
         fact.compute_capital_gain()
         facts.append(fact)
@@ -202,7 +203,7 @@ def _holders(text: str) -> list[str]:
     return []
 
 
-def _postprocess(conn: sqlite3.Connection, _options: Mapping[str, object]) -> None:
+def _postprocess(conn: sqlite3.Connection, _options: InstitutionSettings) -> None:
     rows = conn.execute(
         "SELECT id, account_key, account_label FROM account_year_facts WHERE issuer = ?",
         ("sns",),

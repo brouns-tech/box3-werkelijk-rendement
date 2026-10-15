@@ -32,5 +32,5 @@ def test_marks_pension_account_outside_box3():
 
     fact = result.facts[0]
     assert fact.account_key == "masked-mpl-pensioen"
-    assert fact.extra == {"box3": False}
+    assert fact.extra.box3 is False
     assert fact.logical_group is None

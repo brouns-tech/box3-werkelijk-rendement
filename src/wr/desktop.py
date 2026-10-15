@@ -14,6 +14,10 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Literal, overload
+
+from wr.desktop_models import ControlResponse, DataResponse, FolderResponse, InstanceMetadata, StatusResponse, StopResponse
+from wr.records import Record
 
 from wr.desktop_storage import (app_data_dir, prepare_workspace, selected_folder,
                                 remembered_language)
@@ -54,17 +58,34 @@ class InstanceLock:
             self.file = None
 
 
-def control_request(endpoint: str, token: str, action: str, timeout: float = 120):
+@overload
+def control_request(endpoint: str, token: str, action: Literal["status"], timeout: float = 120) -> StatusResponse: ...
+
+
+@overload
+def control_request(endpoint: str, token: str, action: Literal["folder"], timeout: float = 120) -> FolderResponse: ...
+
+
+@overload
+def control_request(endpoint: str, token: str, action: Literal["data"], timeout: float = 120) -> DataResponse: ...
+
+
+@overload
+def control_request(endpoint: str, token: str, action: Literal["stop"], timeout: float = 120) -> StopResponse: ...
+
+
+def control_request(endpoint: str, token: str, action: str, timeout: float = 120) -> ControlResponse:
     request = urllib.request.Request(
         endpoint + "/" + action, data=b"", method="POST",
         headers={"X-WR-Token": token},
     )
     # Bypass environment proxies: local financial operations never go through one.
     with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=timeout) as response:
-        return json.load(response)
+        model = {"status": StatusResponse, "folder": FolderResponse, "data": DataResponse, "stop": StopResponse}[action]
+        return model.model_validate_json(response.read())
 
 
-def desktop_request(action: str):
+def desktop_request(action: str) -> ControlResponse:
     return control_request(os.environ["WR_CONTROL_URL"], os.environ["WR_CONTROL_TOKEN"], action)
 
 
@@ -80,7 +101,7 @@ def make_control_server(token: str, dispatch):
                 return
             try:
                 result = dispatch(action)
-                data = json.dumps(result).encode()
+                data = result.model_dump_json().encode() if isinstance(result, Record) else json.dumps(result).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
@@ -237,10 +258,10 @@ def main() -> int:
             deadline = time.monotonic() + 40
             while time.monotonic() < deadline:
                 try:
-                    instance = json.loads(metadata.read_text())
-                    status = control_request(instance["endpoint"], instance["token"], "status", 1)
-                    if status["ready"]:
-                        launch_external(status["url"])
+                    instance = InstanceMetadata.model_validate_json(metadata.read_text())
+                    status = control_request(instance.endpoint, instance.token, "status", 1)
+                    if status.ready:
+                        launch_external(status.url)
                         window.destroy()
                         return 0
                 except (OSError, ValueError, KeyError):
@@ -254,7 +275,7 @@ def main() -> int:
 
         def dispatch(action):
             if action == "status":
-                return {"ready": ready, "url": url, "pid": os.getpid()}
+                return StatusResponse(ready=ready, url=url, pid=os.getpid())
             response = queue.Queue(maxsize=1)
             events.put((action, response))
             return response.get(timeout=120)
@@ -262,7 +283,7 @@ def main() -> int:
         server = make_control_server(token, dispatch)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         endpoint = f"http://127.0.0.1:{server.server_port}"
-        metadata.write_text(json.dumps({"endpoint": endpoint, "token": token}), encoding="utf-8")
+        metadata.write_text(InstanceMetadata(endpoint=endpoint, token=token).model_dump_json(), encoding="utf-8")
         environment = {**os.environ, "WR_CONTROL_URL": endpoint, "WR_CONTROL_TOKEN": token,
                        "WR_PARENT_PID": str(os.getpid())}
         environment["WR_DASHBOARD_PATH"] = dashboard_path
@@ -314,12 +335,12 @@ def main() -> int:
                     action, response = events.get_nowait()
                     if action == "folder":
                         folder = filedialog.askdirectory(parent=window, title=t(Messages.SELECT_FOLDER), initialdir=selected_folder(directory) or str(Path.home()), mustexist=True)
-                        response.put({"folder": folder or None})
+                        response.put(FolderResponse(folder=folder or None))
                     elif action == "data":
                         open_target(directory)
-                        response.put({"opened": True})
+                        response.put(DataResponse(opened=True))
                     else:
-                        response.put({"stopping": True})
+                        response.put(StopResponse(stopping=True))
                         window.after(100, shutdown)
                 window.after(200, tick)
             except Exception as exc:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from wr.records import FactMetadata
+
 from wr.models import AccountYearFact, ParseResult
 from wr.parsers.base import (
     ClassificationRule,
@@ -88,7 +90,7 @@ def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
         dividends_gross=dividends_gross,
         withholding_tax=withholding,
         logical_group=None,
-        extra={"box3": False} if is_pensioen else {},
+        extra=FactMetadata(box3=False) if is_pensioen else FactMetadata(),
     )
     fact.compute_capital_gain()
     facts.append(fact)

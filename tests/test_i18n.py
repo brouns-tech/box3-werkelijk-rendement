@@ -280,9 +280,9 @@ def test_hidden_supervisor_opens_browser_and_handles_native_actions(tmp_path, mo
             def request_actions():
                 try:
                     request = lambda action: desktop.control_request(instance["endpoint"], instance["token"], action, 5)
-                    assert request("folder") == {"folder": str(tmp_path)}
-                    assert request("data") == {"opened": True}
-                    assert request("stop") == {"stopping": True}
+                    assert request("folder").folder == str(tmp_path)
+                    assert request("data").opened is True
+                    assert request("stop").stopping is True
                 except Exception as exc:
                     failures.append(exc)
 

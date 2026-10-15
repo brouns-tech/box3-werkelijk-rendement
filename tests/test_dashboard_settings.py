@@ -490,7 +490,7 @@ def test_storage_and_institution_options_persist_across_tabs_and_sessions(tmp_pa
     assert not app.exception
     loaded = load_settings()
     assert loaded.db_path == Path("data/new.sqlite")
-    assert loaded.institution_options == {"flatex": {"linked_account": "NL00 TEST 0000 0000 00"}}
+    assert loaded.institution_options["flatex"].linked_account == "NL00 TEST 0000 0000 00"
     assert loaded.partners == cfg.partners
     assert loaded.resolved_db_path.is_file()
     with connect(cfg.resolved_db_path) as conn:

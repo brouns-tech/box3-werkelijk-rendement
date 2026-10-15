@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from wr.desktop import control_request, free_port
+from wr.desktop_models import InstanceMetadata
 
 
 def await_status(directory, process):
@@ -22,9 +23,9 @@ def await_status(directory, process):
         if process.poll() is not None:
             raise RuntimeError(f"Launcher exited early: {process.returncode}")
         try:
-            instance = json.loads((directory / "instance.json").read_text())
-            status = control_request(instance["endpoint"], instance["token"], "status", 1)
-            if status["ready"]:
+            instance = InstanceMetadata.model_validate_json((directory / "instance.json").read_text())
+            status = control_request(instance.endpoint, instance.token, "status", 1)
+            if status.ready:
                 return instance, status
         except (OSError, ValueError):
             pass
@@ -142,7 +143,7 @@ def main():
                         second.kill()
                         second.wait(timeout=10)
                 print("Verifying clean shutdown", flush=True)
-                control_request(instance["endpoint"], instance["token"], "stop", 5)
+                control_request(instance.endpoint, instance.token, "stop", 5)
                 assert launcher.wait(timeout=15) == 0
                 assert (workspace / ".wr-settings.json").exists()
                 # Abnormal supervisor termination must also stop the server.
@@ -153,9 +154,9 @@ def main():
                     launcher.kill()
                 else:
                     # AppImage extraction can introduce a runtime wrapper process.
-                    os.kill(status["pid"], 9)
+                    os.kill(status.pid, 9)
                 launcher.wait(timeout=10)
-                port = urlparse(status["url"]).port
+                port = urlparse(status.url).port
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
                     with socket.socket() as sock:

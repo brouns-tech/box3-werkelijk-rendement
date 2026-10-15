@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from collections import defaultdict
-from typing import Mapping
+
+from pydantic import Field, field_validator
 
 from wr.models import AccountYearFact, ParseResult
+from wr.records import FactMetadata, InstitutionSettings, Record
 from wr.money import add, subtract, total
 from wr.parsers.base import (
     ClassificationRule,
@@ -17,6 +18,48 @@ from wr.parsers.base import (
 )
 from wr.parsers.common import resolve_tax_year
 from wr.pdf import normalize_iban, parse_nl_amount
+
+
+class FlatexSettings(InstitutionSettings):
+    linked_account: str | None = None
+
+    @field_validator("linked_account")
+    @classmethod
+    def normalize_account(cls, value: str | None) -> str | None:
+        return (value.strip() or None) if value is not None else None
+
+
+class SecurityPosition(Record):
+    isin: str
+    market_value: float
+
+
+class ReturnEvidence(Record):
+    opening_balance: str
+    external_flow_documents: int
+    linked_account: str | None = None
+
+
+class FlatexMetadata(FactMetadata):
+    inventory_date: str | None = None
+    cash_balance: float | None = None
+    securities_account: str | None = None
+    securities_market_value: float | None = None
+    asset_class: str | None = None
+    position_count: int | None = None
+    positions: list[SecurityPosition] = Field(default_factory=list)
+    linked_account: str | None = None
+    statement_number: int = 0
+    linked_transfer_count: int | None = None
+    cash_sweep_count: int | None = None
+    cash_sweep_deposits: float | None = None
+    cash_sweep_withdrawals: float | None = None
+    opening_statement: bool = False
+    portfolio_return_basis: str | None = None
+    securities_market_value_start: float | None = None
+    securities_market_value_end: float | None = None
+    securities_market_value_change: float | None = None
+    return_derived_from: ReturnEvidence | None = None
 
 
 def _is_tax_certificate(text: str) -> bool:
@@ -55,7 +98,7 @@ def _parse_with_context(
         text,
         tax_year,
         context.doc_type,
-        context.string_option("linked_account"),
+        FlatexSettings.model_validate(context.options.model_dump()).linked_account,
     )
 
 
@@ -127,7 +170,7 @@ def _parse_financial_instruments_statement(text: str) -> ParseResult:
     depot = re.search(r"Effectenrekeningnummer\s*:\s*(\d+)", text, re.I)
     cash = _amount_after(text, r"Rekeningstand\s*:\s*")
     positions = _positions(text)
-    securities_value = round(sum(position["market_value"] for position in positions), 2)
+    securities_value = round(sum(position.market_value for position in positions), 2)
 
     if account is None or cash is None or not positions:
         return ParseResult(
@@ -145,15 +188,15 @@ def _parse_financial_instruments_statement(text: str) -> ParseResult:
         account_label=f"flatex securities portfolio (cash and custody) {account_key}",
         holder_names=_holder_names(text),
         end_balance=round(cash + securities_value, 2),
-        extra={
-            "inventory_date": snapshot.group(1),
-            "cash_balance": cash,
-            "securities_account": depot.group(1) if depot else None,
-            "securities_market_value": securities_value,
-            "asset_class": "securities_portfolio",
-            "position_count": len(positions),
-            "positions": positions,
-        },
+        extra=FlatexMetadata(
+            inventory_date=snapshot.group(1),
+            cash_balance=cash,
+            securities_account=depot.group(1) if depot else None,
+            securities_market_value=securities_value,
+            asset_class="securities_portfolio",
+            position_count=len(positions),
+            positions=positions,
+        ),
     )
     return ParseResult(
         "flatex",
@@ -168,7 +211,7 @@ def _amount_after(text: str, label_pattern: str) -> float | None:
     return parse_nl_amount(m.group(1)) if m else None
 
 
-def _positions(text: str) -> list[dict[str, float | str]]:
+def _positions(text: str) -> list[SecurityPosition]:
     positions = []
     for match in re.finditer(
         r"^\s*([A-Z]{2}[A-Z0-9]{10})\*{0,4}\s+([\d.]+,\d{2})\s*EUR\s*$",
@@ -177,7 +220,7 @@ def _positions(text: str) -> list[dict[str, float | str]]:
     ):
         market_value = parse_nl_amount(match.group(2))
         if market_value is not None:
-            positions.append({"isin": match.group(1), "market_value": market_value})
+            positions.append(SecurityPosition(isin=match.group(1), market_value=market_value))
     return positions
 
 
@@ -226,16 +269,16 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
         withdrawals=linked_withdrawals,
         capital_gain=0.0,
         gain_method="explicit",
-        extra={
-            "linked_account": linked_account,
-            "statement_number": statement_number,
-            "linked_transfer_count": linked_count,
-            "cash_sweep_count": sweep_count,
-            "cash_sweep_deposits": sweep_deposits,
-            "cash_sweep_withdrawals": sweep_withdrawals,
-            "opening_statement": opening_statement,
-            "return_assumption": "zero_by_product",
-        },
+        extra=FlatexMetadata(
+            linked_account=linked_account,
+            statement_number=statement_number,
+            linked_transfer_count=linked_count,
+            cash_sweep_count=sweep_count,
+            cash_sweep_deposits=sweep_deposits,
+            cash_sweep_withdrawals=sweep_withdrawals,
+            opening_statement=opening_statement,
+            return_assumption="zero_by_product",
+        ),
     )
     return ParseResult("flatex", "account_statement", year, facts=[fact])
 
@@ -318,8 +361,8 @@ def _closing_balance(text: str) -> float | None:
     return balance
 
 
-def _postprocess(conn: sqlite3.Connection, options: Mapping[str, object]) -> None:
-    linked_account = options.get("linked_account")
+def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None:
+    linked_account = FlatexSettings.model_validate(options.model_dump()).linked_account
     normalized_account = (
         normalize_iban(linked_account)
         if isinstance(linked_account, str) and linked_account.strip()
@@ -381,26 +424,26 @@ def _postprocess(conn: sqlite3.Connection, options: Mapping[str, object]) -> Non
 
         end_balance = inventory["end_balance"]
         capital_gain = add(subtract(end_balance, start_balance, deposits), withdrawals)
-        extra = json.loads(inventory["extra"] or "{}")
-        previous_extra = json.loads(previous["extra"] or "{}") if previous else {}
-        start_securities_value = previous_extra.get("securities_market_value")
-        end_securities_value = extra.get("securities_market_value")
-        extra["portfolio_return_basis"] = (
+        extra = FlatexMetadata.model_validate_json(inventory["extra"] or "{}")
+        previous_extra = FlatexMetadata.model_validate_json(previous["extra"] or "{}") if previous else FlatexMetadata()
+        start_securities_value = previous_extra.securities_market_value
+        end_securities_value = extra.securities_market_value
+        extra.portfolio_return_basis = (
             "year-end securities-and-cash valuation adjusted only for external transfers"
         )
-        extra["securities_market_value_start"] = start_securities_value
-        extra["securities_market_value_end"] = end_securities_value
+        extra.securities_market_value_start = start_securities_value
+        extra.securities_market_value_end = end_securities_value
         if start_securities_value is not None and end_securities_value is not None:
-            extra["securities_market_value_change"] = subtract(
+            extra.securities_market_value_change = subtract(
                 end_securities_value, start_securities_value
             )
-        extra["return_derived_from"] = {
-            "opening_balance": (
+        extra.return_derived_from = ReturnEvidence(
+            opening_balance=(
                 "prior_31_december_inventory" if previous else "opening_account_statement"
             ),
-            "external_flow_documents": len(flows),
-            "linked_account": normalized_account,
-        }
+            external_flow_documents=len(flows),
+            linked_account=normalized_account,
+        )
         conn.execute(
             """
             UPDATE account_year_facts
@@ -413,7 +456,7 @@ def _postprocess(conn: sqlite3.Connection, options: Mapping[str, object]) -> Non
                 deposits,
                 withdrawals,
                 capital_gain,
-                json.dumps(extra),
+                extra.model_dump_json(exclude_unset=True),
                 inventory["id"],
             ),
         )
@@ -461,21 +504,23 @@ def _select_statement_canonicals(conn: sqlite3.Connection) -> None:
 
 
 def _statement_number(row) -> int:
-    extra = json.loads(row["extra"] or "{}")
-    return int(extra.get("statement_number", 0))
+    extra = FlatexMetadata.model_validate_json(row["extra"] or "{}")
+    return extra.statement_number
 
 
 def _opening_balance(flows) -> float | None:
     opening_balances = []
     for flow in flows:
-        extra = json.loads(flow["extra"] or "{}")
-        if extra.get("opening_statement") and flow["start_balance"] is not None:
+        extra = FlatexMetadata.model_validate_json(flow["extra"] or "{}")
+        if extra.opening_statement and flow["start_balance"] is not None:
             opening_balances.append(flow["start_balance"])
     return opening_balances[0] if len(opening_balances) == 1 else None
 
 
 PLUGIN = InstitutionPlugin(
     issuer="flatex",
+    metadata_model=FlatexMetadata,
+    options_model=FlatexSettings,
     classification_rules=(
         ClassificationRule("flatex", "belastingcertificaat", _is_tax_certificate),
         ClassificationRule(

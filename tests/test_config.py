@@ -45,7 +45,7 @@ def test_legacy_settings_are_migrated_once_and_then_ignored(tmp_path):
     assert settings.import_root == Path("statements")
     assert settings.resolved_db_path == tmp_path / "state" / "results.sqlite"
     assert settings.partners.partner_a == "Alex Example"
-    assert settings.institution_options == {"broker": {"linked_account": "NL00 TEST 0000 0000 00"}}
+    assert settings.institution_options["broker"].model_dump() == {"linked_account": "NL00 TEST 0000 0000 00"}
     assert settings.settings_path.is_file()
     legacy.write_text("invalid and retired TOML")
     assert load_settings(tmp_path) == settings
@@ -58,7 +58,7 @@ def test_migration_preserves_existing_ui_overrides(tmp_path):
     assert settings.partners == PartnerSettings()
     assert settings.import_root is None
     assert settings.db_path == Path("custom.sqlite")
-    assert settings.institution_options == {"flatex": {"linked_account": "NL00TEST0000000000"}}
+    assert settings.institution_options["flatex"].linked_account == "NL00TEST0000000000"
     assert json.loads(settings.settings_path.read_text())["version"] == 2
 
 

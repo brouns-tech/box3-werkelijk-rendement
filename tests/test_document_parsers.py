@@ -83,13 +83,13 @@ Totaaloverzicht Rekeningen 2025
     assert result.facts[0].ownership == "joint"
     assert result.facts[0].interest_received == 0.0
     assert result.facts[0].actual_return_component == 0.0
-    assert result.facts[0].extra["account_type"] == "payment"
-    assert result.facts[0].extra["interest_source"] == "inferred_zero_non_savings_account"
+    assert result.facts[0].extra.account_type == "payment"
+    assert result.facts[0].extra.interest_source == "inferred_zero_non_savings_account"
     assert result.facts[1].account_key == "NL00SNSB0000000001"
     assert result.facts[1].account_label == "Shared savings (Sparen)"
     assert result.facts[1].interest_received is None
     assert result.facts[1].actual_return_component is None
-    assert result.facts[1].extra["account_type"] == "savings"
+    assert result.facts[1].extra.account_type == "savings"
 
 
 def test_sns_product_label_enriches_same_account_nickname_across_years():
@@ -201,6 +201,6 @@ Rente, ontvangen in 2022                                           0,00
     assert payment.interest_received == 0.0
     assert payment.actual_return_component == 0.0
     assert payment.gain_method == "explicit"
-    assert payment.extra["return_assumption"] == "zero_by_product"
+    assert payment.extra.return_assumption == "zero_by_product"
     assert savings.interest_received == 0.0
-    assert savings.extra["interest_source"] == "reported_received"
+    assert savings.extra.interest_source == "reported_received"

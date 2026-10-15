@@ -20,4 +20,4 @@ def test_payment_and_credit_card_accounts_have_explicit_zero_return():
         ("NL00INGB0000000000", 0.0, "explicit"),
         ("210000000000", 0.0, "explicit"),
     ]
-    assert all(fact.extra == {"return_assumption": "zero_by_product"} for fact in result.facts)
+    assert all(fact.extra.return_assumption == "zero_by_product" for fact in result.facts)

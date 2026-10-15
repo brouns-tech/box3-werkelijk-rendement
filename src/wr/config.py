@@ -5,7 +5,13 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Annotated
+
+from pydantic import BeforeValidator, ConfigDict, Field, JsonValue, SerializeAsAny, StringConstraints, TypeAdapter, field_validator
+from wr.records import InstitutionSettings, Record, parse_institution_settings
+
+NonEmptyString = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)]
+StringTuple = Annotated[tuple[NonEmptyString, ...], BeforeValidator(lambda value: () if value is None else value)]
 
 SETTINGS_VERSION = 2
 
@@ -52,7 +58,13 @@ class Settings:
     import_root: Path | None = None
     db_path: Path = Path("data/wr.sqlite")
     partners: PartnerSettings = field(default_factory=PartnerSettings)
-    institution_options: dict[str, dict[str, object]] = field(default_factory=dict)
+    institution_options: dict[str, InstitutionSettings] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "institution_options", {
+            name: parse_institution_settings(name, options)
+            for name, options in self.institution_options.items()
+        })
 
     @property
     def resolved_db_path(self) -> Path:
@@ -69,7 +81,7 @@ def load_settings(workspace: str | Path | None = None) -> Settings:
     if root.exists() and not root.is_dir():
         raise ValueError(f"Workspace must be a directory: {root}")
     path = root / ".wr-settings.json"
-    raw = _mapping(json.loads(path.read_text(encoding="utf-8")), "settings") if path.exists() else {}
+    raw = TypeAdapter(dict[str, JsonValue]).validate_json(path.read_text(encoding="utf-8")) if path.exists() else {}
     version = raw.get("version", 1)
     if not isinstance(version, int) or not 1 <= version <= SETTINGS_VERSION:
         raise ValueError(f"Unsupported workspace settings version: {version}")
@@ -93,7 +105,7 @@ def save_settings(
     import_root: str | None = None,
     *,
     db_path: str | Path | None = None,
-    institution_options: dict[str, dict[str, object]] | None = None,
+    institution_options: dict[str, InstitutionSettings | dict[str, JsonValue]] | None = None,
 ) -> None:
     """Atomically save UI settings while preserving fields edited in other tabs."""
     from wr.identities import validate_partners
@@ -111,7 +123,7 @@ def save_settings(
         "db_path": str(updated.db_path),
         "import_root": str(updated.import_root) if updated.import_root else None,
         "partners": asdict(updated.partners),
-        "institutions": updated.institution_options,
+        "institutions": {name: options.model_dump(exclude_unset=True) for name, options in updated.institution_options.items()},
     }
     _settings_from_mapping(payload, settings.project_root)
     serialized = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
@@ -126,65 +138,65 @@ def save_settings(
         Path(temporary).unlink(missing_ok=True)
 
 
-def _settings_from_mapping(raw: dict[str, Any], root: Path) -> Settings:
-    partner_raw = _mapping(raw.get("partners"), "partners")
-    institution_raw = _mapping(raw.get("institutions"), "institutions")
+class PersistedChild(Record):
+    canonical_name: NonEmptyString
+    aliases: StringTuple = ()
+
+
+class PersistedPartners(Record):
+    partner_a: NonEmptyString | None = None
+    partner_b: NonEmptyString | None = None
+    partner_a_aliases: StringTuple = ()
+    partner_b_aliases: StringTuple = ()
+    unassigned_names: StringTuple = ()
+    children: tuple[PersistedChild, ...] = ()
+
+
+class PersistedSettings(Record):
+    model_config = ConfigDict(extra="ignore", allow_inf_nan=False)
+    version: int = Field(default=1, strict=True, ge=1, le=SETTINGS_VERSION)
+    import_root: NonEmptyString | None = None
+    db_path: NonEmptyString | None = None
+    partners: PersistedPartners = Field(default_factory=PersistedPartners)
+    institutions: dict[str, SerializeAsAny[InstitutionSettings]] = Field(default_factory=dict)
+
+    @field_validator("partners", "institutions", mode="before")
+    @classmethod
+    def empty_object(cls, value: object) -> object:
+        return {} if value is None else value
+
+    @field_validator("institutions", mode="before")
+    @classmethod
+    def validate_institutions(cls, value: object) -> object:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            return value
+        result = {}
+        for name, options in value.items():
+            if options is not None and not isinstance(options, (dict, InstitutionSettings)):
+                raise ValueError(f"institutions.{name} must be an object")
+            result[name] = parse_institution_settings(name, options)
+        return result
+
+
+def _settings_from_mapping(raw: object, root: Path) -> Settings:
+    persisted = PersistedSettings.model_validate(raw)
+    partner = persisted.partners
     return Settings(
         project_root=root,
-        import_root=_optional_path(raw.get("import_root"), "import_root"),
-        db_path=_optional_path(raw.get("db_path"), "db_path") or Path("data/wr.sqlite"),
+        import_root=Path(persisted.import_root) if persisted.import_root else None,
+        db_path=Path(persisted.db_path) if persisted.db_path else Path("data/wr.sqlite"),
         partners=PartnerSettings(
-            partner_a=_optional_string(partner_raw.get("partner_a"), "partners.partner_a"),
-            partner_b=_optional_string(partner_raw.get("partner_b"), "partners.partner_b"),
-            partner_a_aliases=_string_tuple(partner_raw.get("partner_a_aliases"), "partners.partner_a_aliases"),
-            partner_b_aliases=_string_tuple(partner_raw.get("partner_b_aliases"), "partners.partner_b_aliases"),
-            unassigned_names=_string_tuple(partner_raw.get("unassigned_names"), "partners.unassigned_names"),
-            children=_children(partner_raw.get("children", [])),
+            partner_a=partner.partner_a,
+            partner_b=partner.partner_b,
+            partner_a_aliases=partner.partner_a_aliases,
+            partner_b_aliases=partner.partner_b_aliases,
+            unassigned_names=partner.unassigned_names,
+            children=tuple(ChildSettings(child.canonical_name, child.aliases) for child in partner.children),
         ),
-        institution_options={name: _mapping(options, f"institutions.{name}") for name, options in institution_raw.items()},
+        institution_options=persisted.institutions,
     )
-
-
-def _mapping(value: Any, name: str) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
-
-
-def _children(value: Any) -> tuple[ChildSettings, ...]:
-    if not isinstance(value, (list, tuple)):
-        raise ValueError("partners.children must be an array")
-    children = []
-    for item in value:
-        raw = _mapping(item, "child")
-        name = _optional_string(raw.get("canonical_name"), "child.canonical_name")
-        if name is None:
-            raise ValueError("Provide a child canonical name.")
-        children.append(ChildSettings(name, _string_tuple(raw.get("aliases"), "child.aliases")))
-    return tuple(children)
-
-
-def _optional_string(value: Any, name: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{name} must be a non-empty string")
-    return value.strip()
-
-
-def _optional_path(value: Any, name: str) -> Path | None:
-    parsed = _optional_string(value, name)
-    return Path(parsed) if parsed else None
-
-
-def _string_tuple(value: Any, name: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, (list, tuple)) or any(not isinstance(item, str) or not item.strip() for item in value):
-        raise ValueError(f"{name} must be an array of non-empty strings")
-    return tuple(item.strip() for item in value)
 
 
 def resolve_db_path(settings: Settings) -> Path:
