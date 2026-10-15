@@ -32,18 +32,33 @@ def _decision_label(recommendation: str, language: str = "en") -> str:
     return status_label(recommendation, language)
 
 
+def _coverage_badge(label: str, *, color: str, icon: str) -> None:
+    with st.container(key="coverage_status_badge"):
+        st.html("""<style>
+        .st-key-coverage_status_badge [data-testid="stMarkdownContainer"] {
+            font-size: 1.75rem;
+        }
+        .st-key-coverage_status_badge [data-testid="stMarkdownContainer"] p,
+        .st-key-coverage_status_badge [data-testid="stMarkdownContainer"] span {
+            font-size: inherit !important;
+            line-height: 1.4;
+        }
+        </style>""")
+        st.badge(label, color=color, icon=icon)
+
+
 def _coverage_indicator(status: str, language: str) -> None:
     t = translator(language)
     st.markdown(t("Coverage"))
     if status == "COMPLETE":
-        st.badge(t("Ready to review"), color="green", icon=":material/check_circle:")
+        _coverage_badge(t("Ready to review"), color="green", icon=":material/check_circle:")
         st.caption(t("All imported Box 3 accounts have usable return data in EUR."))
     elif status in {"PARTIAL", "MISSING"}:
-        st.badge(t("Needs attention"), color="yellow", icon=":material/warning:")
+        _coverage_badge(t("Needs attention"), color="yellow", icon=":material/warning:")
         st.caption(t("Some imported accounts need more return data or currency conversion.")
                    if status == "PARTIAL" else t("Return data is missing. Import the relevant Box 3 statements."))
     else:
-        st.badge(t("No data yet"), color="gray", icon=":material/info:")
+        _coverage_badge(t("No data yet"), color="gray", icon=":material/info:")
         st.caption(t("Import supported Box 3 statements to calculate returns for this year."))
     st.caption(t("Based on imported accounts only. Check that all your accounts and assets are included."))
 
