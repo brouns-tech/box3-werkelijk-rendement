@@ -297,7 +297,8 @@ def _individual_portfolio(
             continue
         value = _fact_return(fact)
         if value is None:
-            missing.append(f"{fact['issuer']} {fact['account_key']} (no actual-return fields)")
+            reason = "requires EUR conversion and currency gain/loss" if (fact["currency"] or "EUR") != "EUR" else "no actual-return fields"
+            missing.append(f"{fact['issuer']} {fact['account_key']} ({reason})")
             continue
         total = add(total, multiply(value, portion))
         used += 1

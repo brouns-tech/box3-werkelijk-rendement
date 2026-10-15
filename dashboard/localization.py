@@ -4,11 +4,12 @@ from pathlib import Path
 import streamlit as st
 
 from wr.desktop_storage import remember_language, remembered_language
-from wr.i18n import LANGUAGES, translate
+from wr.i18n import LANGUAGES, Translator, translator
+from wr.messages import Messages
 
 
-def ui_text(message: str, **values) -> str:
-    return translate(st.session_state.get("ui_language", "en"), message, **values)
+def ui_translator() -> Translator:
+    return translator(st.session_state.get("ui_language", "en"))
 
 
 def select_language(directory: Path, default: str) -> str:
@@ -25,8 +26,8 @@ def select_language(directory: Path, default: str) -> str:
         except OSError as exc:
             st.session_state.language_error = str(exc)
 
-    language = st.selectbox("Language / Taal", list(LANGUAGES), format_func=LANGUAGES.__getitem__,
+    language = st.selectbox(ui_translator()(Messages.LANGUAGE_TAAL), list(LANGUAGES), format_func=LANGUAGES.__getitem__,
                             key="ui_language", on_change=persist)
     if error := st.session_state.pop("language_error", None):
-        st.error(translate(language, "Could not save language preference: {error}", error=error))
+        st.error(translator(language).could_not_save_language_preference(error=error))
     return language

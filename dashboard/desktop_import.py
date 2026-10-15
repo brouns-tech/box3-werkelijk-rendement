@@ -10,6 +10,7 @@ import streamlit as st
 from wr.desktop import desktop_request
 from wr.desktop_storage import app_version, remember_folder, selected_folder
 from wr.i18n import status_label, translator
+from wr.messages import Messages
 from wr.import_pipeline import run_import
 from dashboard.ui_state import refresh_taxpayer_editor
 
@@ -46,24 +47,24 @@ class ImportJob:
 def render(cfg, language: str):
     t = translator(language)
     directory = cfg.project_root
-    st.caption(t("Version {version} · Local processing · Data: {directory}", version=app_version(), directory=directory))
-    st.info(t("Select a folder with annual statements and tax returns. Source files stay unchanged. Importing does not prove that your entire financial situation is covered."))
+    st.caption(t.version_details(version=app_version(), directory=directory))
+    st.info(t(Messages.DESKTOP_IMPORT_HELP))
     job = st.session_state.get("import_job")
     active = job is not None and not job.done.is_set()
-    if st.button(t("Select folder"), disabled=active, key="select_folder"):
+    if st.button(t(Messages.SELECT_FOLDER), disabled=active, key="select_folder"):
         try:
             folder = desktop_request("folder")["folder"]
             if folder:
                 remember_folder(directory, folder)
                 st.rerun()
         except Exception as exc:
-            st.error(t("Folder selection failed: {error}", error=exc))
+            st.error(t.folder_selection_failed(error=exc))
     folder = selected_folder(directory)
     if folder:
-        st.caption(t("Selected folder: {folder}", folder=folder))
-    if st.button(t("Scan documents and calculate"), disabled=active or not folder, key="scan_documents"):
+        st.caption(t.selected_folder(folder=folder))
+    if st.button(t(Messages.SCAN_DOCUMENTS_AND_CALCULATE), disabled=active or not folder, key="scan_documents"):
         if not Path(folder).is_dir():
-            st.error(t("The selected folder is no longer available. Select another folder."))
+            st.error(t(Messages.SELECTED_FOLDER_UNAVAILABLE))
         else:
             job = ImportJob()
             st.session_state.import_job = job
@@ -83,15 +84,15 @@ def _render_job(job, language: str):
         last = outcomes[-1]
         st.progress(last.index / last.total, text=f"{last.index}/{last.total}: {last.path.name}")
     elif not job.done.is_set():
-        st.info(t("Searching for documents…"))
+        st.info(t(Messages.SEARCHING_FOR_DOCUMENTS))
     if not job.done.is_set():
-        if st.button(t("Stop import after current document"), key="cancel_import"):
+        if st.button(t(Messages.STOP_IMPORT_AFTER_CURRENT_DOCUMENT), key="cancel_import"):
             job.stop.set()
-        st.caption(t("Imported documents are retained; calculations will be updated."))
+        st.caption(t(Messages.IMPORT_STOP_HELP))
     elif job.busy:
-        st.error(t("Another dashboard window is already importing documents."))
+        st.error(t(Messages.IMPORT_BUSY))
     elif job.error:
-        st.error(t("Import failed: {error}", error=job.error))
+        st.error(t.import_failed(error=job.error))
     else:
         if not job.editor_refreshed:
             # A fragment rerun cannot render the overview or restore widgets
@@ -101,12 +102,12 @@ def _render_job(job, language: str):
             job.editor_refreshed = True
             st.rerun(scope="app")
         report = job.report
-        st.success(t("{status}: {parsed} processed, {duplicate} duplicate, {skipped} unrecognized, {failed} failed.",
-                     status=t("Stopped") if report.cancelled else t("Done"), parsed=report.parsed,
+        st.success(t.import_result(
+                     status=t(Messages.STOPPED) if report.cancelled else t(Messages.DONE), parsed=report.parsed,
                      duplicate=report.duplicate, skipped=report.skipped, failed=report.failed))
     if outcomes:
-        st.caption(t("Technical details from the source or parser are shown as recorded."))
-        st.dataframe([{t("File"): str(o.path), t("Status"): status_label(o.status.value, language),
-                       t("Institution"): o.issuer, t("Document"): status_label(o.doc_type, language),
-                       t("Year"): o.tax_year, t("Details"): o.error}
+        st.caption(t(Messages.IMPORT_DIAGNOSTICS_HELP))
+        st.dataframe([{t(Messages.FILE): str(o.path), t(Messages.STATUS): status_label(o.status.value, language),
+                       t(Messages.INSTITUTION): o.issuer, t(Messages.DOCUMENT): status_label(o.doc_type, language),
+                       t(Messages.YEAR): o.tax_year, t(Messages.DETAILS): o.error}
                       for o in outcomes], hide_index=True)

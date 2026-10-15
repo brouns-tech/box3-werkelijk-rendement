@@ -1,7 +1,19 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
+from enum import Enum
 from typing import Iterable
+
+
+class Currency(str, Enum):
+    EUR = "EUR"
+    USD = "USD"
+    GBP = "GBP"
+
+    @property
+    def symbol(self) -> str:
+        return {Currency.EUR: "€", Currency.USD: "$", Currency.GBP: "£"}[self]
+
 
 CENT = Decimal("0.01")
 

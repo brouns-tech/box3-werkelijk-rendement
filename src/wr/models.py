@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from wr.money import add, subtract
+from wr.money import Currency, add, subtract
 
 
 class CoverageStatus(str, Enum):
@@ -37,7 +37,7 @@ class AccountYearFact:
     account_label: str
     holder_names: list[str] = field(default_factory=list)
     ownership: str = "unknown"
-    currency: str = "EUR"
+    currency: Currency = Currency.EUR
     start_balance: float | None = None
     end_balance: float | None = None
     deposits: float | None = None
@@ -50,6 +50,9 @@ class AccountYearFact:
     gain_method: str = "unknown"
     logical_group: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.currency = Currency(self.currency)
 
     def compute_capital_gain(self) -> None:
         if self.capital_gain is not None:

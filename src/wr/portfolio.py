@@ -82,12 +82,14 @@ def _coverage_for_year(conn: sqlite3.Connection, year: int) -> CoverageResult:
     eligible_facts = [f for f in facts if not _is_excluded_box3_fact(f)]
 
     for fact in eligible_facts:
-        if not _fact_has_actual_return(fact):
+        if (fact["currency"] or "EUR") != "EUR":
+            missing.append(f"{fact['issuer']} {fact['account_key']} (requires EUR conversion and currency gain/loss)")
+        elif not _fact_has_actual_return(fact):
             missing.append(
                 f"{fact['issuer']} {fact['account_key']} (no actual-return fields)"
             )
 
-    used_facts = eligible_facts
+    used_facts = [f for f in eligible_facts if (f["currency"] or "EUR") == "EUR"]
     start = _sum(used_facts, "start_balance")
     end = _sum(used_facts, "end_balance")
     deposits = _sum(used_facts, "deposits")
@@ -152,6 +154,10 @@ def is_box3_fact(fact) -> bool:
 
 
 def _fact_has_actual_return(fact) -> bool:
+    if "currency" in fact.keys() and (fact["currency"] or "EUR") != "EUR":
+        return False
+    if _native_fact_return(fact) is None:
+        return False
     if fact["interest_received"] is not None:
         return True
     if fact["dividends_gross"] is not None:
@@ -175,6 +181,13 @@ def _fact_has_actual_return(fact) -> bool:
 
 
 def _fact_return(fact) -> float | None:
+    """Return usable in EUR totals; native-currency evidence stays separate."""
+    if "currency" in fact.keys() and (fact["currency"] or "EUR") != "EUR":
+        return None
+    return _native_fact_return(fact)
+
+
+def _native_fact_return(fact) -> float | None:
     method = fact["gain_method"] or ""
     if method == "earned_return" and fact["capital_gain"] is not None:
         return fact["capital_gain"]

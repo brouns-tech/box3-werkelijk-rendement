@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Mapping, Protocol
 
 from wr.models import ParseResult
+from wr.messages import Message
 
 InstitutionOptions = Mapping[str, Mapping[str, object]]
 
@@ -49,8 +50,8 @@ class ParserRegistration:
 @dataclass(frozen=True)
 class InstitutionSetting:
     key: str
-    label: str
-    help: str = ""
+    label: Message | str
+    help: Message | str = ""
 
 
 @dataclass(frozen=True)
