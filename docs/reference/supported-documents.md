@@ -51,8 +51,8 @@ rounded to cents. The generic `earned_return` method stores the complete return,
 while `extra` retains gross income, fees, net income, currency value change, and
 the original summary columns for audit.
 
-The dashboard shows earned return, currency gain/loss, and effective return
-separately in the year overview and account table. EUR holdings have zero
+The account table shows earned return, currency gain/loss, and effective return
+separately. The overview header contains only coverage and source count. EUR holdings have zero
 currency impact. Other investment value changes are shown separately from
 earned income; unconverted foreign-currency results remain unknown in EUR.
 

@@ -74,7 +74,7 @@ def test_unconverted_foreign_income_is_not_mislabelled_as_eur_or_zero_fx():
     ("nl", ["Verdiend rendement", "Valutawinst / -verlies", "Effectief rendement"],
      ["€ 74,11", "€ -60,00", "€ 14,11"]),
 ])
-def test_dashboard_shows_separate_totals_and_account_components(tmp_path, monkeypatch, language, labels, amounts):
+def test_dashboard_headers_show_metadata_and_figures_stay_in_account_table(tmp_path, monkeypatch, language, labels, amounts):
     import sys
     from wr.desktop_storage import remember_language
 
@@ -92,7 +92,8 @@ def test_dashboard_shows_separate_totals_and_account_components(tmp_path, monkey
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert not app.exception
     metrics = {metric.label: metric.value for metric in app.metric}
-    assert [metrics[label] for label in labels] == amounts
+    assert metrics == ({'Coverage': 'Available evidence', 'Statement sources': '2'} if language == 'en'
+                       else {'Documentdekking': 'Beschikbare gegevens', 'Brongegevens uit overzichten': '2'})
     frame = next(frame.value for frame in app.dataframe if ("Account label" if language == "en" else "Rekeningnaam") in frame.value.columns)
     name = "Account label" if language == "en" else "Rekeningnaam"
     fx_label = "Currency gain / loss (EUR)" if language == "en" else "Valutawinst / -verlies (EUR)"

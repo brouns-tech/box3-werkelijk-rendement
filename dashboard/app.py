@@ -284,19 +284,12 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
         (year,),
     ).fetchall()
     if portfolio:
-        components = _overview_return_totals(facts)
-        income_col, fx_col, effective_col = st.columns(3)
-        income_col.metric(t("Earned return"), money(components["earned"]))
-        fx_col.metric(t("Currency gain / loss"), money(components["currency"]))
-        effective_col.metric(t("Effective return"), money(portfolio["known_combined_actual_return"]))
-        st.caption(t("Effective return = earned return + currency gain/loss + other value changes. Totals use known EUR returns from imported Box 3 accounts."))
-        coverage_col, sources_col, value_col = st.columns(3)
+        coverage_col, sources_col = st.columns(2)
         coverage_col.metric(
             t("Coverage"), status_label(portfolio["coverage_status"], language),
             help=t("Coverage concerns imported statements only; it does not establish that all assets or partner documents are present."),
         )
         sources_col.metric(t("Statement sources"), portfolio["source_fact_count"] or 0)
-        value_col.metric(t("Other value changes"), money(components["other"]))
         if portfolio["missing_asset_summary"]:
             st.warning(t("Missing / partial: {details}", details=coverage_details(portfolio["missing_asset_summary"], language)))
     else:
@@ -308,7 +301,7 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
         if pre_filing:
             st.info(t("Pre-filing overview: actual returns are calculated from your imported statements so you can prepare your tax return before filing. Tax allocation, fictitious return and potential tax savings are shown as — because no tax return is available; they are not required for the actual-return calculation. Pre-filing means the imported statement data supports that calculation. Coverage still concerns imported accounts only; check that all relevant assets are included."))
             if partner_cfg.assume_fiscal_partnership and all(name for _, name in partner_cfg.configured()):
-                st.caption(t("Full-year fiscal partnership is assumed from your taxpayer settings. The effective return above is the combined return; no tax allocation has been applied."))
+                st.caption(t("Full-year fiscal partnership is assumed from your taxpayer settings. Statement returns are shown before tax allocation."))
         statement_returns = {
             result["partner"]: _individual_portfolio(conn, year, result["partner_name"], partner_cfg)[0]
             for result in results

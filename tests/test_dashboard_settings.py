@@ -27,11 +27,11 @@ def test_pre_filing_partnership_checkbox_persists_and_updates_overview(tmp_path,
         assert decision[field].tolist() == ['—', '—']
     assert all(value != '—' for value in decision['Statement return by holder'])
     assert any('Pre-filing overview' in info.value for info in app.info)
-    effective = next(metric.value for metric in app.metric if metric.label == 'Effective return')
+    effective = next(table.value for table in app.dataframe if 'Effective return (EUR)' in table.value.columns)['Effective return (EUR)'].tolist()
     checkbox.uncheck().run()
     assert not app.exception
     assert load_settings().partners.assume_fiscal_partnership is False
-    assert next(metric.value for metric in app.metric if metric.label == 'Effective return') == effective
+    assert next(table.value for table in app.dataframe if 'Effective return (EUR)' in table.value.columns)['Effective return (EUR)'].tolist() == effective
     decision = next(table.value for table in app.dataframe if 'Taxpayer' in table.value.columns)
     assert all(value != '—' for value in decision['Allocated actual return'])
     restarted = AppTest.from_file(str(APP)).run()

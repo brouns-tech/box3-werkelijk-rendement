@@ -1,5 +1,8 @@
 # Understand the overview
 
+The header shows coverage status and the number of statement sources. Financial
+figures appear in the tables, alongside their account or taxpayer context.
+
 Select **Tax year** in **Overview**, then work through these sections:
 
 1. **Coverage** and warnings: establish which evidence is present and which
