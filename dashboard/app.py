@@ -22,6 +22,7 @@ from dashboard.ownership import PURPLE, UNKNOWN, slot_color, table_style
 from wr.portfolio import _fact_return, is_box3_fact
 from wr.fx import eur_conversion
 from wr.import_pipeline import pending_reprocessing
+from wr.notifications import NotificationType, fact_notifications
 
 
 def _currency(value: float | None, language: str = "en", currency_code: str = "EUR") -> str:
@@ -323,6 +324,18 @@ def _overview(conn, partner_cfg: PartnerSettings, language: str = "en") -> None:
             st.warning(t("Missing / partial: {details}", details=coverage_details(portfolio["missing_asset_summary"], language)))
     else:
         st.info(t("No portfolio rollup for this year."))
+
+    for fact in facts:
+        if not is_box3_fact(fact):
+            continue
+        for notification in fact_notifications(fact):
+            if notification.code == "account_opened_during_year":
+                show = st.info if notification.type == NotificationType.ASSUMPTION else st.warning
+                show(t(
+                    "Assumption for {issuer} {account}: we assume the account was opened during the year, with no activity from {start} to {end}. The earliest available report starts with a zero EUR balance and no earlier reports are known.",
+                    issuer=fact["issuer"], account=fact["account_key"],
+                    start=notification.details["period_start"], end=notification.details["period_end"],
+                ))
 
     st.subheader(t("Decision overview"))
     if results:

@@ -11,6 +11,7 @@ from wr.db import insert_facts
 from wr.models import AccountPeriodFact, AccountYearFact
 from wr.money import add, subtract, total
 from wr.parsers import canonical_priority
+from wr.notifications import FactNotification, NotificationType
 
 
 def rebuild_year_facts(conn: sqlite3.Connection) -> None:
@@ -27,9 +28,23 @@ def rebuild_year_facts(conn: sqlite3.Connection) -> None:
         JOIN documents d ON d.content_sha256 = p.document_sha256
         WHERE d.parse_status = 'parsed' ORDER BY p.id""").fetchall()
     groups = defaultdict(list)
+    earliest_reports = {}
     for row in rows:
         fact = AccountPeriodFact(**json.loads(row["payload"]))
-        groups[(fact.tax_year, fact.issuer, fact.account_key.lower().replace(" ", ""))].append((row, fact))
+        account = fact.account_key.lower().replace(" ", "")
+        groups[(fact.tax_year, fact.issuer, account)].append((row, fact))
+        key = fact.issuer, account
+        earliest_reports[key] = min(earliest_reports.get(key, fact.period_start), fact.period_start)
+
+    # Native annual evidence also establishes that the account existed earlier.
+    # Generated summaries have already been removed, so they cannot influence
+    # the assumption on subsequent recomputations.
+    for row in conn.execute("""SELECT f.issuer, f.account_key, f.tax_year
+        FROM account_year_facts f JOIN documents d ON d.content_sha256 = f.document_sha256
+        WHERE d.parse_status = 'parsed'"""):
+        key = row["issuer"], row["account_key"].lower().replace(" ", "")
+        start = f"{row['tax_year']}-01-01"
+        earliest_reports[key] = min(earliest_reports.get(key, start), start)
 
     for (year, issuer, account), items in groups.items():
         if conn.execute("""SELECT 1 FROM account_year_facts f
@@ -64,12 +79,30 @@ def rebuild_year_facts(conn: sqlite3.Connection) -> None:
                 continue
             selected.append((row, fact))
         selected.sort(key=lambda item: item[1].period_start)
+        first, last = selected[0][1], selected[-1][1]
+        assume_opened_during_year = (
+            first.period_start > f"{year}-01-01"
+            and first.currency == "EUR"
+            and first.start_balance == 0.0
+            and earliest_reports[(issuer, account)] == first.period_start
+        )
+        notifications = []
         expected = date(year, 1, 1)
         previous = None
         for _, fact in selected:
             start = date.fromisoformat(fact.period_start)
             if start != expected:
-                issues.append(f"missing period {expected}/{start - timedelta(days=1)}")
+                if previous is None and assume_opened_during_year:
+                    notifications.append(FactNotification(
+                        NotificationType.ASSUMPTION,
+                        "account_opened_during_year",
+                        {"period_start": expected.isoformat(),
+                         "period_end": (start - timedelta(days=1)).isoformat(),
+                         "first_report_start": fact.period_start,
+                         "opening_balance": 0.0, "currency": "EUR"},
+                    ))
+                else:
+                    issues.append(f"missing period {expected}/{start - timedelta(days=1)}")
             if (previous is not None and start == expected
                     and previous.end_balance is not None and fact.start_balance is not None
                     and abs(subtract(previous.end_balance, fact.start_balance)) > 0.01):
@@ -79,7 +112,6 @@ def rebuild_year_facts(conn: sqlite3.Connection) -> None:
         if expected != date(year + 1, 1, 1):
             issues.append(f"missing period {expected}/{year}-12-31")
 
-        first, last = selected[0][1], selected[-1][1]
         facts = [fact for _, fact in selected]
         returns = [_period_return(fact) for fact in facts]
         if any(value is None for value in returns):
@@ -97,6 +129,8 @@ def rebuild_year_facts(conn: sqlite3.Connection) -> None:
             extra["box3"] = False
         if all("net_cashflow" in fact.extra for fact in facts):
             extra["net_cashflow"] = total(fact.extra["net_cashflow"] for fact in facts)
+        if notifications:
+            extra["notifications"] = [asdict(notification) for notification in notifications]
         extra["period_aggregation"] = {
             "complete": not issues,
             "issues": issues,
@@ -109,7 +143,8 @@ def rebuild_year_facts(conn: sqlite3.Connection) -> None:
             account_label=first.account_label,
             holder_names=sorted({name for fact in facts for name in fact.holder_names}),
             ownership=first.ownership, currency=first.currency,
-            start_balance=first.start_balance if first.period_start == f"{year}-01-01" else None,
+            start_balance=first.start_balance
+                if first.period_start == f"{year}-01-01" or assume_opened_during_year else None,
             end_balance=last.end_balance if last.period_end == f"{year}-12-31" else None,
             deposits=summed("deposits"), withdrawals=summed("withdrawals"),
             interest_received=summed("interest_received"), interest_paid=summed("interest_paid"),

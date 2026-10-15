@@ -115,6 +115,7 @@ DUTCH = {
     "Earned return is income before service fees. Currency gain/loss and effective return are shown in EUR; a dash means the EUR result is not yet known. EUR holdings have no currency gain/loss.": "Verdiend rendement is inkomen vóór servicekosten. Valutawinst/-verlies en effectief rendement staan in EUR; een streepje betekent dat het EUR-resultaat nog niet bekend is. EUR-bezittingen hebben geen valutawinst/-verlies.",
     "Statement sources": "Brongegevens uit overzichten",
     "Missing / partial: {details}": "Ontbrekend / gedeeltelijk: {details}",
+    "Assumption for {issuer} {account}: we assume the account was opened during the year, with no activity from {start} to {end}. The earliest available report starts with a zero EUR balance and no earlier reports are known.": "Aanname voor {issuer} {account}: we nemen aan dat de rekening in de loop van het jaar is geopend, zonder activiteit van {start} tot {end}. Het vroegst beschikbare overzicht begint met een eurosaldo van nul en er zijn geen eerdere overzichten bekend.",
     "No portfolio rollup for this year.": "Voor dit jaar is geen vermogensoverzicht beschikbaar.",
     "Decision overview": "Vergelijking van rendementen",
     "No tax decision is available for this year.": "Voor dit jaar is geen belastingvergelijking beschikbaar.",

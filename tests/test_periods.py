@@ -14,6 +14,7 @@ from wr.portfolio import _coverage_for_year, rebuild_portfolio
 from wr.export import create_audit_export
 from wr.config import PartnerSettings
 from wr.recommend import _individual_portfolio
+from wr.notifications import NotificationType, fact_notifications
 
 
 @pytest.fixture
@@ -154,6 +155,98 @@ def test_removed_or_failed_sources_remove_derived_summaries(conn):
     rebuild_portfolio(conn)
     assert conn.execute("SELECT COUNT(*) FROM account_year_facts").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM yearly_portfolio").fetchone()[0] == 0
+
+
+def test_zero_opening_balance_at_first_available_period_is_an_assumption(conn):
+    store(conn, "q2", [period("2024-04-01", "2024-06-30", start_balance=0, end_balance=10,
+                              holder_names=["A. Example"], capital_gain=10, gain_method="earned_return")])
+    store(conn, "h2", [period("2024-07-01", "2024-12-31", start_balance=10, end_balance=30,
+                              holder_names=["A. Example"], capital_gain=20, gain_method="earned_return")])
+    fact = annual(conn)
+    assert fact["start_balance"] == 0
+    assert fact["end_balance"] == 30
+    assert fact["capital_gain"] == 30
+    assert _coverage_for_year(conn, 2024).coverage_status == "COMPLETE"
+    assert _coverage_for_year(conn, 2024).missing == []
+    notice, = fact_notifications(fact)
+    assert notice.type == NotificationType.ASSUMPTION
+    assert notice.code == "account_opened_during_year"
+    assert notice.details["period_start"] == "2024-01-01"
+    assert notice.details["period_end"] == "2024-03-31"
+    assert fact_notifications(annual(conn)) == [notice]
+    individual = _individual_portfolio(conn, 2024, "A. Example", PartnerSettings(partner_a="A. Example"))
+    assert individual[:2] == (30, "COMPLETE")
+
+    rebuild_portfolio(conn)
+    with zipfile.ZipFile(io.BytesIO(create_audit_export(conn))) as bundle:
+        for filename in ("assets.csv", "source_facts.csv"):
+            rows = list(csv.DictReader(io.StringIO(bundle.read(filename).decode("utf-8-sig"))))
+            notification, = json.loads(rows[0]["notifications"])
+            assert notification["type"] == "assumption"
+            assert notification["code"] == "account_opened_during_year"
+
+
+@pytest.mark.parametrize("balance,currency", [(1, "EUR"), (None, "EUR"), (0.01, "EUR"), (-0.01, "EUR"), (0, "USD")])
+def test_opening_assumption_requires_exactly_zero_eur_balance(conn, balance, currency):
+    store(conn, "later", [period("2024-04-01", "2024-12-31", start_balance=balance,
+                                 currency=currency, capital_gain=10, gain_method="earned_return")])
+    fact = annual(conn)
+    assert fact["start_balance"] is None
+    assert not fact_notifications(fact)
+    assert "2024-01-01/2024-03-31" in str(_coverage_for_year(conn, 2024).missing)
+
+
+@pytest.mark.parametrize("earlier_type", ["period", "annual"])
+def test_earlier_account_evidence_revokes_opening_assumption(conn, earlier_type):
+    store(conn, "current", [period("2024-04-01", "2024-12-31", start_balance=0,
+                                   capital_gain=10, gain_method="earned_return")])
+    assert fact_notifications(annual(conn))
+    store(conn, "earlier", [])
+    if earlier_type == "period":
+        earlier = AccountPeriodFact(
+            tax_year=2023, issuer="example", account_key="EXAMPLE -ACCOUNT", account_label="Example",
+            period_start="2023-10-01", period_end="2023-12-31", start_balance=0,
+            end_balance=0, capital_gain=0, gain_method="earned_return",
+        )
+        insert_period_facts(conn, "earlier", [earlier])
+    else:
+        earlier = AccountYearFact(2023, "example", "EXAMPLE -ACCOUNT", "Example", end_balance=0)
+        insert_facts(conn, "earlier", [asdict(earlier)])
+    canonicalize_facts(conn)
+    fact = conn.execute("SELECT * FROM account_year_facts WHERE tax_year = 2024 AND is_canonical = 1").fetchone()
+    assert not fact_notifications(fact)
+    assert fact["start_balance"] is None
+    result = _coverage_for_year(conn, 2024)
+    assert result.coverage_status == "PARTIAL"
+    assert "2024-01-01/2024-03-31" in str(result.missing)
+
+
+def test_assumption_does_not_suppress_interior_or_trailing_gaps(conn):
+    store(conn, "q2", [period("2024-04-01", "2024-06-30", start_balance=0,
+                              end_balance=10, capital_gain=10, gain_method="earned_return")])
+    fact = annual(conn)
+    assert fact_notifications(fact)
+    result = _coverage_for_year(conn, 2024)
+    assert result.coverage_status == "PARTIAL"
+    assert "2024-07-01/2024-12-31" in str(result.missing)
+    assert "2024-01-01/2024-03-31" not in str(result.missing)
+    store(conn, "q4", [period("2024-10-01", "2024-12-31", start_balance=0,
+                              end_balance=20, capital_gain=20, gain_method="earned_return")])
+    annual(conn)
+    result = _coverage_for_year(conn, 2024)
+    assert result.coverage_status == "PARTIAL"
+    assert "2024-07-01/2024-09-30" in str(result.missing)
+
+
+def test_other_account_history_does_not_block_opening_assumption(conn):
+    store(conn, "earlier", [])
+    insert_facts(conn, "earlier", [asdict(AccountYearFact(2023, "example", "other-account", "Other"))])
+    store(conn, "current", [period("2024-04-01", "2024-12-31", start_balance=0,
+                                   capital_gain=10, gain_method="earned_return")])
+    canonicalize_facts(conn)
+    fact = conn.execute("SELECT * FROM account_year_facts WHERE tax_year = 2024 AND is_canonical = 1").fetchone()
+    assert fact_notifications(fact)
+    assert _coverage_for_year(conn, 2024).coverage_status == "COMPLETE"
 
 
 @pytest.mark.parametrize("start,end", [("2023-12-31", "2024-03-31"), ("2024-10-01", "2025-01-01"), ("2024-04-01", "2024-03-31")])

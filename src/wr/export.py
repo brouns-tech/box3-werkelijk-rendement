@@ -6,6 +6,7 @@ import json
 import sqlite3
 import zipfile
 from datetime import datetime, timezone
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -13,6 +14,7 @@ from wr.db import connect, init_db
 from wr.portfolio import _native_fact_return, _fact_has_actual_return, _fact_return, _is_excluded_box3_fact
 from wr.import_pipeline import pending_reprocessing
 from wr.fx import eur_conversion, eur_values, VALUE_FIELDS
+from wr.notifications import fact_notifications
 
 
 def create_audit_export(
@@ -354,6 +356,7 @@ def _asset_and_fact_rows(
                     "matched_fact_ids": fact_id,
                     "included_fact_ids": fact_id,
                     **_source_documents(conn, fact),
+                    "notifications": json.dumps([asdict(item) for item in fact_notifications(fact)]),
                 }
             )
 
@@ -397,6 +400,7 @@ def _asset_and_fact_rows(
                 "document_sha256": fact["document_sha256"],
                 "source_path": fact["first_seen_path"],
                 **_source_documents(conn, fact),
+                "notifications": json.dumps([asdict(item) for item in fact_notifications(fact)]),
                 "processing_profile": fact["processing_profile"],
                 "document_type": fact["doc_type"],
                 "parse_status": fact["parse_status"],

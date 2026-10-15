@@ -48,6 +48,14 @@ count once. Overlapping periods are never added together and leave a warning;
 gaps, missing returns and balance discontinuities also leave coverage partial.
 Native annual evidence takes precedence for the same account and year.
 
+A leading gap is treated as an account-opening assumption when the earliest
+available report for that account starts with exactly EUR 0.00 and there is no
+earlier period or annual evidence. The annual opening balance is then assumed
+to be zero. This creates a typed `assumption` notification, displayed as an
+informational message and included in audit exports; it does not reduce coverage.
+Nonzero, unknown or foreign-currency opening balances, earlier account evidence,
+interior gaps and missing year-end periods still produce coverage warnings.
+
 Brand New Day return totals use the quarterly net return plus separately charged
 bank costs, retaining both original amounts for audit. The indicative gross
 return, which also reverses embedded fund costs, is not substituted for portfolio

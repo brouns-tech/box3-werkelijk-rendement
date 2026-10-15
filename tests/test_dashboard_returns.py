@@ -68,6 +68,39 @@ def test_unconverted_foreign_income_is_not_mislabelled_as_eur_or_zero_fx():
     }
 
 
+@pytest.mark.parametrize("language,prefix", [("en", "Assumption for"), ("nl", "Aanname voor")])
+def test_account_opening_assumption_is_information_instead_of_a_warning(tmp_path, monkeypatch, language, prefix):
+    import sys
+    from wr.db import insert_period_facts
+    from wr.dedupe import canonicalize_facts
+    from wr.desktop_storage import remember_language
+    from wr.models import AccountPeriodFact
+
+    settings = Settings(project_root=tmp_path, partners=PartnerSettings(partner_a="Alex Example"))
+    save_settings(settings)
+    remember_language(tmp_path, language)
+    with connect(settings.resolved_db_path) as conn:
+        init_db(conn)
+        conn.execute("INSERT INTO documents(content_sha256,byte_size,imported_at,parse_status,processing_profile) VALUES('synthetic',1,'now','parsed','synthetic-demo-v1')")
+        insert_period_facts(conn, "synthetic", [AccountPeriodFact(
+            tax_year=2025, issuer="example", account_key="example-account", account_label="Example",
+            holder_names=["Alex Example"], ownership="individual", period_start="2025-04-01",
+            period_end="2025-12-31", start_balance=0, end_balance=10,
+            capital_gain=10, gain_method="earned_return",
+        )])
+        canonicalize_facts(conn)
+        rebuild_portfolio(conn)
+    monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
+    monkeypatch.delenv("WR_CONTROL_URL", raising=False)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
+    assert not app.exception
+    notices = [item.value for item in app.info if item.value.startswith(prefix)]
+    assert len(notices) == 1
+    assert "2025-01-01" in notices[0] and "2025-03-31" in notices[0]
+    assert not app.warning
+    assert any(":green-badge[" in item.value for item in app.markdown)
+
+
 @pytest.mark.parametrize("language,labels,amounts", [
     ("en", ["Earned return", "Currency gain / loss", "Effective return"],
      ["€ 74.11", "€ -60.00", "€ 14.11"]),
