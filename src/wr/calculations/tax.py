@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from wr.models import Recommendation
 from wr.models.tax import CompareOutcome, TaxPolicy
 from wr.money import multiply, subtract
 
 
-TAX_POLICIES = {
-    year: TaxPolicy(year, rate, "OWR/herstel (2017-2024)")
+TAX_POLICIES: dict[int, TaxPolicy] = {
+    year: TaxPolicy(year, Decimal(rate), "OWR/herstel (2017-2024)")
     for year, rate in {
         2017: "0.30",
         2018: "0.30",
@@ -18,9 +20,9 @@ TAX_POLICIES = {
         2024: "0.36",
     }.items()
 }
-TAX_POLICIES[2025] = TaxPolicy(2025, "0.36", "aangifte-era (2025)")
-BOX3_RATE_BY_YEAR = {
-    year: float(policy.box3_rate) for year, policy in TAX_POLICIES.items()
+TAX_POLICIES[2025] = TaxPolicy(2025, Decimal("0.36"), "aangifte-era (2025)")
+BOX3_RATE_BY_YEAR: dict[int, Decimal] = {
+    year: policy.box3_rate for year, policy in TAX_POLICIES.items()
 }
 
 

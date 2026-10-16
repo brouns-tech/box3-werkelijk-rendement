@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 
 from wr.models.identities import TaxpayerPosition
@@ -75,7 +76,7 @@ class TaxpayerTaxResult:
 @dataclass(frozen=True)
 class TaxPolicy:
     year: int
-    box3_rate: str
+    box3_rate: Decimal
     era: str
 
 
