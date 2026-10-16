@@ -1,9 +1,7 @@
-"""Synthetic offline smoke test shared by source and frozen release builds."""
+"""Synthetic PDF fixtures shared by parser and integration tests."""
 from __future__ import annotations
 
 from pathlib import Path
-import json
-import sqlite3
 
 
 ING_TEXT = """ING Jaaroverzicht 2024
@@ -35,75 +33,6 @@ def synthetic_pdf(path: Path, text: str = ING_TEXT) -> None:
     writer.write(path)
 
 
-def smoke_test(directory: Path) -> None:
-    # Exercise the upstream dashboard dependency boundary in frozen builds too.
-    from dashboard.explorer_compat import DirPicker
-    from wr.workspace.settings import load_settings
-    assert callable(DirPicker)
-    from wr.desktop.storage import app_version, prepare_workspace, remember_language, remembered_language
-    from wr.i18n import currency, translator
-    from wr.messages import Messages
-    from wr.export import write_audit_export
-    from wr.calculations.service import recompute
-    from wr.importing.pipeline import run_import
-    from wr.parsers import PLUGINS
-    from wr.importing.classification import classify, guess_tax_year
-    from wr.parsers import parse_document
-    from dataclasses import asdict
-    from wr.documents.extraction import extract_text
-
-    directory.mkdir(parents=True, exist_ok=True)
-    config = prepare_workspace(directory)
-    for language in ("nl", "en"):
-        remember_language(directory, language)
-        assert remembered_language(directory) == language
-        assert translator(language)(Messages.SELECT_FOLDER) == ("Map selecteren" if language == "nl" else "Select folder")
-        assert currency(1234.56, language) == ("€ 1.234,56" if language == "nl" else "€ 1,234.56")
-    layout_directory = directory / "layout-fixtures"
-    layout_directory.mkdir(exist_ok=True)
-    for issuer, fragments, expected_holders in (
-        ("revolut", REVOLUT, [["Alex Example"]]),
-        ("sns", SNS, [["A. Example", "B. Example"], ["C. Example"]]),
-    ):
-        fixture = layout_directory / f"{issuer}.pdf"
-        synthetic_column_pdf(fixture, fragments)
-        layout_text, _ = extract_text(fixture)
-        identified = classify(layout_text)
-        assert identified and identified.issuer == issuer
-        decoded = parse_document(issuer, identified.doc_type, layout_text, 2024)
-        assert [fact.holder_names for fact in decoded.facts] == expected_holders
-    documents = directory / "synthetic-documents"
-    documents.mkdir(exist_ok=True)
-    pdf = documents / "arbitrary-name.PDF"
-    synthetic_pdf(pdf)
-    for issuer, sample in SAMPLES.items():
-        fixture = documents / ("arbitrary-name.PDF" if issuer == "ing" else f"synthetic-{issuer}.PDF")
-        synthetic_pdf(fixture, sample)
-        extracted, _ = extract_text(fixture)
-        identified = classify(extracted)
-        assert identified and identified.issuer == issuer
-        year = guess_tax_year(sample, identified.doc_type)
-        original = parse_document(issuer, identified.doc_type, sample, year)
-        decoded = parse_document(issuer, identified.doc_type, extracted, year)
-        assert original.facts or original.tax_return
-        assert asdict(decoded) == asdict(original), issuer
-    # Both CLI and frozen desktop use bundled PDFium without external tools.
-    text, pages = extract_text(pdf)
-    assert "ING Jaaroverzicht 2024" in text and pages == 1
-    assert {p.issuer for p in PLUGINS} == {"ing", "rabobank", "sns", "raisin", "revolut", "degiro", "flatex", "belastingdienst"}
-    db = load_settings(config).resolved_db_path
-    report = run_import(documents, db)
-    assert report.parsed + report.duplicate == len(SAMPLES) and not report.failed
-    recompute(db)
-    with sqlite3.connect(db) as conn:
-        row = conn.execute("SELECT interest_received FROM account_year_facts WHERE issuer='ing'").fetchone()
-        assert row and row[0] == 12.34
-        assert conn.execute("SELECT grondslag FROM tax_returns").fetchone()[0] == 160000
-        assert conn.execute("SELECT COUNT(*) FROM taxpayer_tax_results WHERE tax_year=2024").fetchone()[0] == 2
-    write_audit_export(db, directory / "audit.zip")
-    (directory / "smoke-result.json").write_text(json.dumps({"version": app_version(), "parsers": len(PLUGINS), "pdf_backend": "pdfium", "config": str(config)}))
-
-# Fictional layouts exercise the extraction boundary, not just parser strings.
 SAMPLES = {
     "ing": ING_TEXT,
     "rabobank": """Example User

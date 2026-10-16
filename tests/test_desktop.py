@@ -10,7 +10,8 @@ from wr.models.desktop import FolderResponse, StatusResponse
 from wr.desktop.lock import InstanceLock
 from wr.desktop.process import child_command
 from wr.desktop.control import control_request, make_control_server
-from wr.desktop.smoke import smoke_test, synthetic_pdf
+from tests.support.pdf import synthetic_pdf
+from wr.desktop.selfcheck import run_selfcheck
 from wr.desktop.storage import prepare_workspace, remember_folder, selected_folder
 from wr.importing.pipeline import run_import
 
@@ -127,7 +128,7 @@ def test_control_api_validates_response_shape():
 
 
 def test_native_pdf_import_and_audit_smoke_without_poppler(tmp_path, monkeypatch):
-    smoke_test(tmp_path)
+    run_selfcheck(tmp_path)
     result = json.loads((tmp_path / "smoke-result.json").read_text())
     assert result["parsers"] == 8
     assert (tmp_path / "audit.zip").is_file()
@@ -328,13 +329,13 @@ _render_job(st.session_state.job, "en")
 
 def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_path, monkeypatch):
     import sys
-    from wr.desktop import launcher as desktop, smoke as desktop_smoke
+    from wr.desktop import launcher as desktop, selfcheck as desktop_selfcheck
 
     def fail(_directory):
         raise RuntimeError("synthetic extraction failure")
 
     monkeypatch.setattr(sys, "argv", ["desktop", "--smoke-test", str(tmp_path)])
-    monkeypatch.setattr(desktop_smoke, "smoke_test", fail)
+    monkeypatch.setattr(desktop_selfcheck, "run_selfcheck", fail)
     assert desktop.main() == 1
     assert "synthetic extraction failure" in (tmp_path / "smoke-error.log").read_text()
 

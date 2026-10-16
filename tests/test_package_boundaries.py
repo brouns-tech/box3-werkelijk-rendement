@@ -40,12 +40,28 @@ assert not any(name.startswith(("wr.parsers", "wr.storage", "wr.importing", "wr.
     subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True, timeout=15)
 
 
-def test_desktop_module_entry_point_runs_synthetic_smoke_without_gui(tmp_path):
+@pytest.mark.parametrize("optimized", [False, True])
+def test_desktop_module_entry_point_runs_synthetic_smoke_without_gui(tmp_path, optimized):
     subprocess.run(
-        [sys.executable, "-m", "wr.desktop", "--smoke-test", str(tmp_path)],
+        [sys.executable, *(["-O"] if optimized else []), "-m", "wr.desktop", "--smoke-test", str(tmp_path)],
         check=True, capture_output=True, text=True, timeout=45,
     )
     result = json.loads((tmp_path / "smoke-result.json").read_text())
     assert result["parsers"] == 8
     assert result["pdf_backend"] == "pdfium"
     assert (tmp_path / "audit.zip").is_file()
+
+
+def test_selfcheck_has_no_assertions_or_test_dependencies():
+    source = ROOT / "src/wr/desktop/selfcheck.py"
+    tree = ast.parse(source.read_text())
+    assert not any(isinstance(node, ast.Assert) for node in ast.walk(tree))
+    for path in (ROOT / "src/wr").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules = [node.module]
+            else:
+                continue
+            assert not any(module.split(".")[0] in {"tests", "pytest"} for module in modules), path

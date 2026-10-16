@@ -12,7 +12,7 @@ from wr.parsers import parse_document
 from wr.documents.extraction import extract_text, extraction_profile
 
 
-from wr.desktop.smoke import synthetic_column_pdf as column_pdf, REVOLUT, SNS
+from tests.support.pdf import synthetic_column_pdf as column_pdf, REVOLUT, SNS
 
 
 @pytest.mark.parametrize('fragments,issuer,count', [(REVOLUT, 'revolut', 1), (SNS, 'sns', 2)])

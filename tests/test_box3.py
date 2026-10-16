@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from wr.calculations.coverage import coverage_for_year
-from wr.desktop.smoke import SAMPLES
+from tests.support.pdf import SAMPLES
 from wr.export import _asset_and_fact_rows
 from wr.importing.classification import classify
 from wr.models import AccountYearFact, ParseResult

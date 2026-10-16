@@ -44,7 +44,7 @@ def test_preference_survives_folder_changes_and_invalid_files(tmp_path):
 
 def test_catalog_covers_ui_and_preserves_format_fields():
     root = Path(__file__).resolve().parents[1]
-    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop/launcher.py", "dashboard/settings.py", "dashboard/workspace_settings.py", "dashboard/folder_picker.py", "dashboard/localization.py", "src/wr/desktop/smoke.py"]:
+    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop/launcher.py", "dashboard/settings.py", "dashboard/workspace_settings.py", "dashboard/folder_picker.py", "dashboard/localization.py"]:
         tree = ast.parse((root / filename).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "t":

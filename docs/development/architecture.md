@@ -12,7 +12,7 @@ calculation helpers.
 | `documents` | Native PDF extraction, positional layout reconstruction, and hashing |
 | `parsers` | Institution plugins, plugin discovery, schema selection, and text parsing utilities |
 | `importing` | Document classification, scanning, import orchestration, persistence coordination, canonicalization, and reprocessing status |
-| `desktop` | Launcher, authenticated control API, instance locking, child processes, server bootstrap, preferences, and synthetic smoke checks |
+| `desktop` | Launcher, authenticated control API, instance locking, child processes, server bootstrap, preferences, and installed-application diagnostics |
 | `workspace` | Settings file IO, legacy migration, and workspace reset |
 | `identities` | Pure name matching and database-backed taxpayer suggestions |
 
@@ -71,6 +71,15 @@ The `wr` and `wr-desktop` commands retain their entry points. The desktop also
 supports `python -m wr.desktop`, including its `--serve`, `--smoke-test`, and
 `--verify-launcher` modes. Packaging verification uses the same typed control
 client as the dashboard.
+
+`desktop.selfcheck` implements the packaged `--smoke-test` diagnostic: one
+synthetic PDF exercises native extraction, import, calculation, and audit export.
+It reports failures with exceptions rather than assertions, so checks remain
+active under optimized Python. Release verification retains the same
+`smoke-result.json`, `smoke-error.log`, and `audit.zip` artifact contract.
+Comprehensive institution samples and PDF-generation helpers live exclusively
+under `tests/support`; detailed extraction and multi-institution integration
+checks run in pytest, not in the installed application.
 
 `tests/test_package_boundaries.py` checks model import isolation, calculation
 dependency boundaries, and the desktop module entry point. The existing parser,

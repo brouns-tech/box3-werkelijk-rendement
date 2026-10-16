@@ -45,8 +45,8 @@ def main() -> int:
         directory = Path(sys.argv[2])
         directory.mkdir(parents=True, exist_ok=True)
         try:
-            from wr.desktop.smoke import smoke_test
-            smoke_test(directory)
+            from wr.desktop.selfcheck import run_selfcheck
+            run_selfcheck(directory)
         except Exception:
             import traceback
             with (directory / "smoke-error.log").open("w", encoding="utf-8") as log:
