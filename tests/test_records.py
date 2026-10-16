@@ -12,7 +12,6 @@ from wr.storage.facts import insert_facts
 from wr.storage.documents import update_document, upsert_document
 from wr.models import AccountYearFact, GainMethod, Ownership
 from wr.parsers.flatex import FlatexMetadata, ReturnEvidence, SecurityPosition
-from wr.calculations.returns import is_box3_fact
 from wr.models.storage import FactRecord
 
 
@@ -94,7 +93,7 @@ def test_nested_metadata_survives_database_round_trip():
 @pytest.mark.parametrize("metadata", ['{"box3": "false"}', '{"box_3": false}', '[]', '{invalid', [], False])
 def test_invalid_exclusion_metadata_fails_closed(metadata):
     with pytest.raises(ValidationError):
-        is_box3_fact(fact_from_row({"extra": metadata}))
+        fact_from_row({"extra": metadata})
 
 
 def test_fact_fields_are_validated_before_database_write():

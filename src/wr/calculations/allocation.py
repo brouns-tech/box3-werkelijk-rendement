@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from wr.calculations.returns import fact_return, is_box3_fact
+from wr.calculations.returns import fact_return
 from wr.identities.matching import resolve_identity, same_person
 from wr.models import CoverageStatus, Ownership
 from wr.models.identities import HouseholdSettings, IdentityRole
@@ -20,7 +20,7 @@ def individual_portfolio(
     used = 0
     missing: list[str] = []
     for fact in facts:
-        if not is_box3_fact(fact):
+        if not fact.extra.box3:
             continue
         holders = fact.holder_names
         holder_identities = [resolve_identity(holder, household) for holder in holders]

@@ -5,18 +5,6 @@ from wr.models.storage import FactRecord, MoneyField
 from wr.money import Currency, add, subtract
 
 
-def is_excluded_box3_fact(fact: FactRecord) -> bool:
-    key = (fact.account_key or "").lower()
-    label = (fact.account_label or "").lower()
-    if key.endswith("-pensioen") or "pensioen" in label:
-        return True
-    return fact.extra.box3 is False
-
-
-def is_box3_fact(fact: FactRecord) -> bool:
-    return not is_excluded_box3_fact(fact)
-
-
 def has_actual_return(fact: FactRecord) -> bool:
     if fact.currency != Currency.EUR:
         return False

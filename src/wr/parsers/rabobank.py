@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from wr.models import AccountYearFact, ParseResult
+from wr.models.metadata import FactMetadata
 from wr.parsers._text import normalize_iban
 from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
 from wr.parsers.common import amount_after_label, first_holder, resolve_tax_year
@@ -65,6 +66,7 @@ def parse_rabobank(text: str, tax_year: int | None = None) -> ParseResult:
                 body, f"Door u ontvangen rente in {year}"
             ),
             interest_paid=amount_after_label(body, f"Door u betaalde rente in {year}"),
+            extra=FactMetadata(box3=True),
         )
         fact.compute_capital_gain()
         facts.append(fact)

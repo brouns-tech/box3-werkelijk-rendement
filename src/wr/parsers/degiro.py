@@ -84,7 +84,7 @@ def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
         dividends_gross=dividends_gross,
         withholding_tax=withholding,
         logical_group=None,
-        extra=FactMetadata(box3=False) if is_pensioen else FactMetadata(),
+        extra=FactMetadata(box3=not is_pensioen),
     )
     fact.compute_capital_gain()
     facts.append(fact)

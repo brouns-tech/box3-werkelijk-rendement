@@ -1,4 +1,5 @@
 import sqlite3
+import json
 
 import pytest
 
@@ -84,3 +85,59 @@ def test_failed_taxpayer_migration_rolls_back_schema_and_results():
     assert conn.execute("SELECT partner FROM partner_tax_results").fetchall() == [("unexpected",)]
     assert conn.execute("SELECT name FROM sqlite_master WHERE name='taxpayer_tax_results'").fetchone() is None
     assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 3
+
+
+def version_four_database():
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    conn.execute("DELETE FROM schema_migrations WHERE version > 4")
+    conn.execute(
+        """INSERT INTO documents (content_sha256, byte_size, imported_at, parse_status)
+           VALUES ('synthetic', 1, 'now', 'parsed')"""
+    )
+    conn.commit()
+    return conn
+
+
+def test_box3_migration_backfills_legacy_evidence_and_preserves_explicit_flags():
+    conn = version_four_database()
+    rows = [
+        ("ordinary", "Account", None, True),
+        ("suffix-PENSIOEN", "Account", '{"synthetic": true}', False),
+        ("label", "DEGIRO Pensioen", '{"positions": [{"market_value": 125}]}', False),
+        ("null", "Account", '{"box3": null}', True),
+        ("explicit-pensioen", "Pensioen", '{"box3": true}', True),
+        ("explicit-excluded", "Account", '{"box3": false}', False),
+    ]
+    conn.executemany(
+        """INSERT INTO account_year_facts
+           (document_sha256, tax_year, issuer, account_key, account_label, extra)
+           VALUES ('synthetic', 2024, 'bank', ?, ?, ?)""",
+        [(key, label, metadata) for key, label, metadata, expected in rows],
+    )
+    conn.commit()
+    init_db(conn)
+    migrated = {key: json.loads(metadata) for key, metadata in conn.execute("SELECT account_key, extra FROM account_year_facts")}
+    assert {key: metadata["box3"] for key, metadata in migrated.items()} == {
+        key: expected for key, label, metadata, expected in rows
+    }
+    assert migrated["suffix-PENSIOEN"]["synthetic"] is True
+    assert migrated["label"]["positions"] == [{"market_value": 125}]
+    saved = conn.execute("SELECT extra FROM account_year_facts ORDER BY id").fetchall()
+    init_db(conn)
+    assert conn.execute("SELECT extra FROM account_year_facts ORDER BY id").fetchall() == saved
+
+
+@pytest.mark.parametrize("invalid", ['{"box3": "false"}', '[]', '{invalid'])
+def test_box3_migration_rolls_back_on_invalid_metadata(invalid):
+    conn = version_four_database()
+    conn.executemany(
+        """INSERT INTO account_year_facts (document_sha256, tax_year, issuer, account_key, extra)
+           VALUES ('synthetic', 2024, 'bank', ?, ?)""",
+        [("valid", '{}'), ("invalid", invalid)],
+    )
+    conn.commit()
+    with pytest.raises(ValueError):
+        init_db(conn)
+    assert conn.execute("SELECT extra FROM account_year_facts ORDER BY id").fetchall() == [('{}',), (invalid,)]
+    assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 4

@@ -15,6 +15,11 @@ class ParseResult:
     tax_return: TaxReturnData | None = None
     notes: list[str] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        for fact in self.facts:
+            if "box3" not in fact.extra.model_fields_set:
+                raise ValueError(f"Parser {self.issuer} must explicitly classify Box 3 treatment for {fact.account_key}")
+
 
 @dataclass(frozen=True)
 class Classification:

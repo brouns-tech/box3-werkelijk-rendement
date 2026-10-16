@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from wr.calculations.returns import fact_return, has_actual_return, is_excluded_box3_fact
+from wr.calculations.returns import fact_return, has_actual_return
 from wr.models import CoverageStatus
 from wr.models.calculations import CoverageResult
 from wr.models.storage import FactRecord, MoneyField
@@ -9,7 +9,7 @@ from wr.money import Currency, add, subtract, total
 
 def coverage_for_year(year: int, facts: list[FactRecord]) -> CoverageResult:
     missing: list[str] = []
-    eligible_facts = [f for f in facts if not is_excluded_box3_fact(f)]
+    eligible_facts = [f for f in facts if f.extra.box3]
 
     for fact in eligible_facts:
         if (fact.currency or Currency.EUR) != Currency.EUR:

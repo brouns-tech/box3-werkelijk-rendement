@@ -93,6 +93,7 @@ def _parse_annual(text: str, year: int) -> ParseResult:
             issuer="revolut",
             account_key=normalize_iban(m.group(1)),
             account_label="Revolut Current Account",
+            extra=RevolutMetadata(box3=True),
             holder_names=_holders(text),
             start_balance=parse_en_amount(m.group(2)),
             end_balance=parse_en_amount(m.group(3)),
@@ -111,6 +112,7 @@ def _parse_annual(text: str, year: int) -> ParseResult:
                 issuer="revolut",
                 account_key=normalize_iban(iban_m.group(1)),
                 account_label="Revolut Current Account",
+                extra=RevolutMetadata(box3=True),
                 holder_names=_holders(text),
                 start_balance=parse_en_amount(amts[0]),
                 end_balance=parse_en_amount(amts[1]),
@@ -161,7 +163,7 @@ def _parse_savings(text: str, year: int) -> ParseResult:
         withdrawals=sold,
         capital_gain=add(earned or 0.0, fees or 0.0) if earned is not None else None,
         gain_method=GainMethod.EARNED_RETURN if earned is not None else GainMethod.UNKNOWN,
-        extra=RevolutMetadata(fees=fees, earned_return=earned),
+        extra=RevolutMetadata(box3=True, fees=fees, earned_return=earned),
     )
     if fact.capital_gain is None:
         fact.compute_capital_gain()
@@ -215,6 +217,7 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
             gain_method=GainMethod.INTEREST_ONLY if interest is not None else GainMethod.UNKNOWN,
             capital_gain=interest,
             extra=RevolutMetadata(
+                box3=True,
                 product=product,
                 money_in_includes_interest=incoming,
                 interest_source="net_interest_transactions" if credits else "no_interest_transactions",
@@ -243,6 +246,7 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
         issuer="revolut",
         account_key=account_key,
         account_label="Revolut account statement",
+        extra=RevolutMetadata(box3=True),
         currency=currency,
         start_balance=start,
         end_balance=end,

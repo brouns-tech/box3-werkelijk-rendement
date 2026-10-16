@@ -9,7 +9,7 @@ import json
 import sqlite3
 import zipfile
 
-from wr.calculations.returns import native_fact_return, has_actual_return, fact_return, is_excluded_box3_fact
+from wr.calculations.returns import native_fact_return, has_actual_return, fact_return
 from wr.importing.reprocessing import pending_reprocessing
 from wr.models.audit import (
     AssetExportRow,
@@ -182,7 +182,7 @@ def _asset_and_fact_rows(
         conn: sqlite3.Connection, year: int
 ) -> tuple[list[AssetExportRow], list[SourceFactExportRow]]:
     facts = canonical_facts_with_documents(conn, year)
-    included_fact_ids = {fact.id for fact in facts if not is_excluded_box3_fact(fact)}
+    included_fact_ids = {fact.id for fact in facts if fact.extra.box3}
     asset_rows: list[AssetExportRow] = []
 
     # Canonical statement facts are the authoritative Box 3 inventory.
@@ -232,7 +232,7 @@ def _asset_and_fact_rows(
     fact_rows = []
     for fact in facts:
         fact_id = int(fact.id)
-        excluded = is_excluded_box3_fact(fact)
+        excluded = not fact.extra.box3
         included = fact_id in included_fact_ids and (fact.currency or Currency.EUR) == Currency.EUR
         fact_rows.append(
             SourceFactExportRow(

@@ -141,6 +141,7 @@ def parse_flatex(
         issuer="flatex",
         account_key=account_key,
         account_label="flatex (legacy)",
+        extra=FlatexMetadata(box3=True),
         holder_names=_holder_names(text),
         interest_received=interest,
         gain_method=GainMethod.INTEREST_ONLY if interest is not None else GainMethod.UNKNOWN,
@@ -191,6 +192,7 @@ def _parse_financial_instruments_statement(text: str) -> ParseResult:
         holder_names=_holder_names(text),
         end_balance=round(cash + securities_value, 2),
         extra=FlatexMetadata(
+            box3=True,
             inventory_date=snapshot.group(1),
             cash_balance=cash,
             securities_account=depot.group(1) if depot else None,
@@ -272,6 +274,7 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
         capital_gain=0.0,
         gain_method=GainMethod.EXPLICIT,
         extra=FlatexMetadata(
+            box3=True,
             linked_account=linked_account,
             statement_number=statement_number,
             linked_transfer_count=linked_count,

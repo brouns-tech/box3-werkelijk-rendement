@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 
 
 SCHEMA = """
@@ -103,7 +104,7 @@ CREATE TABLE IF NOT EXISTS partner_tax_results (
 );
 """
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def init_db(conn: sqlite3.Connection) -> None:
@@ -118,7 +119,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     applied = {
         row[0] for row in conn.execute("SELECT version FROM schema_migrations")
     }
-    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4)):
+    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4), (5, _migration_5)):
         if version in applied:
             continue
         with conn:
@@ -180,6 +181,24 @@ def _migration_4(conn: sqlite3.Connection) -> None:
         f"SELECT {', '.join(expressions)} FROM partner_tax_results"
     )
     conn.execute("DROP TABLE partner_tax_results")
+
+
+def _migration_5(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT id, account_key, account_label, extra FROM account_year_facts").fetchall()
+    for identifier, key, label, raw in rows:
+        metadata = json.loads(raw) if raw else {}
+        if not isinstance(metadata, dict):
+            raise ValueError(f"Fact {identifier} metadata must be an object")
+        if metadata.get("box3") is None:
+            metadata["box3"] = not (
+                (key or "").lower().endswith("-pensioen") or "pensioen" in (label or "").lower()
+            )
+            conn.execute(
+                "UPDATE account_year_facts SET extra = ? WHERE id = ?",
+                (json.dumps(metadata, ensure_ascii=False), identifier),
+            )
+        elif not isinstance(metadata["box3"], bool):
+            raise ValueError(f"Fact {identifier} box3 treatment must be a boolean")
 
 
 def _add_column_if_missing(

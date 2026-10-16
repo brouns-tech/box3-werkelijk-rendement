@@ -61,7 +61,7 @@ def parse_raisin(text: str, tax_year: int | None = None) -> ParseResult:
             start_balance=parse_nl_amount(am.group(2)),
             end_balance=parse_nl_amount(am.group(3)),
             interest_received=parse_nl_amount(am.group(5)),  # netto
-            extra=RaisinMetadata(rente_bruto=parse_nl_amount(am.group(4))),
+            extra=RaisinMetadata(box3=True, rente_bruto=parse_nl_amount(am.group(4))),
         )
         fact.compute_capital_gain()
         facts.append(fact)

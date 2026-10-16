@@ -167,7 +167,7 @@ def _insert_demo_data(conn) -> None:
                 fact.get("withholding_tax"),
                 fact.get("capital_gain"),
                 fact["gain_method"].value,
-                json.dumps({"synthetic": True}),
+                json.dumps({"synthetic": True, "box3": True}),
             ),
         )
 

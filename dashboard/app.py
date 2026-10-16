@@ -30,7 +30,7 @@ from wr.i18n import currency, coverage_details, status_label, translator
 from wr.messages import Messages
 from dashboard.localization import select_language
 from dashboard.ownership import PURPLE, UNKNOWN, identity_color, table_style
-from wr.calculations.returns import native_fact_return, is_box3_fact
+from wr.calculations.returns import native_fact_return
 from wr.importing.reprocessing import pending_reprocessing
 
 
@@ -283,7 +283,7 @@ def _overview(conn, household: HouseholdSettings, language: str = "en") -> None:
             {
                 t(Messages.ACCOUNT_HOLDER): _holder_label(json.dumps(fact.holder_names), canonical_names, language),
                 t(Messages.ALLOCATION): t(Messages.JOINT) if child_account or fact.ownership == Ownership.JOINT else t(Messages.INDIVIDUAL),
-                t(Messages.BOX_3): t(Messages.YES) if is_box3_fact(fact) else t(Messages.NO),
+                t(Messages.BOX_3): t(Messages.YES) if fact.extra.box3 else t(Messages.NO),
                 t(Messages.SOURCE): fact.issuer.upper(),
                 t(Messages.ACCOUNT_LABEL): fact.account_label,
                 t(Messages.ACCOUNT_KEY): fact.account_key,
@@ -305,7 +305,7 @@ def _overview(conn, household: HouseholdSettings, language: str = "en") -> None:
     st.dataframe(
         _styled_table(
             fact_rows, t(Messages.ACCOUNT_HOLDER), owner_colors,
-            muted_rows=[not is_box3_fact(fact) for fact in facts],
+            muted_rows=[not fact.extra.box3 for fact in facts],
             joint_rows=[row[t(Messages.ALLOCATION)] == t(Messages.JOINT) for row in fact_rows],
         ),
         width="stretch",

@@ -76,7 +76,7 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
             interest_paid=paid,
             deposits=None,
             withdrawals=None,
-            extra=FactMetadata(interest_source=interest_source) if interest_source else FactMetadata(),
+            extra=FactMetadata(box3=True, interest_source=interest_source),
         )
         if any(
             product in label.casefold()
@@ -84,7 +84,7 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
         ):
             fact.capital_gain = 0.0
             fact.gain_method = GainMethod.EXPLICIT
-            fact.extra = FactMetadata(return_assumption="zero_by_product")
+            fact.extra = FactMetadata(box3=True, return_assumption="zero_by_product")
         fact.compute_capital_gain()
         facts.append(fact)
 

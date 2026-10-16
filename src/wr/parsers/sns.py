@@ -80,6 +80,7 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
             interest_received=received,
             interest_paid=paid,
             extra=FactMetadata(
+                box3=True,
                 account_type=_account_type(label),
                 interest_source="reported",
             ),
@@ -111,6 +112,7 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
                 interest_paid=parse_nl_amount(m.group(4)),
                 interest_received=parse_nl_amount(m.group(5)),
                 extra=FactMetadata(
+                    box3=True,
                     account_type="savings",
                     interest_source="reported",
                 ),
@@ -151,6 +153,7 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
             end_balance=parse_nl_amount(m.group("end")),
             interest_received=interest,
             extra=FactMetadata(
+                box3=True,
                 account_type=account_type,
                 interest_source=(
                     "not_available_on_total_overview"
@@ -173,6 +176,7 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
                 issuer="sns",
                 account_key=normalize_iban(m.group(1)),
                 account_label="SNS rekening",
+                extra=FactMetadata(box3=True),
                 start_balance=parse_nl_amount(m.group(2)),
                 end_balance=parse_nl_amount(m.group(3)),
             )
