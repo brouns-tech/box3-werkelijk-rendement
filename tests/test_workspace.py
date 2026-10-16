@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 
@@ -36,7 +38,6 @@ def test_reset_clears_data_and_profiles_without_removing_source_files(tmp_path):
     assert load_settings(workspace).db_path == cfg.db_path
     assert source.read_bytes() == b"original statement"
     assert export.read_bytes() == b"saved audit export"
-    assert not (workspace / "config.toml").exists()
     reset_workspace(load_settings(workspace))
     assert load_settings(workspace).household == HouseholdSettings()
 
@@ -59,8 +60,8 @@ def test_reset_rolls_back_database_if_settings_cannot_be_saved(tmp_path, monkeyp
     assert load_settings(workspace).household == cfg.household
 
 
-def test_reset_does_not_restore_retired_toml_profiles(tmp_path):
-    (tmp_path / "config.toml").write_text('[partners]\npartner_a = "Retired Person"\n')
+def test_reset_does_not_restore_earlier_json_profiles(tmp_path):
+    (tmp_path / ".wr-settings.json").write_text(json.dumps({"partners": {"partner_a": "Retired Person"}}))
     settings = load_settings(tmp_path)
     assert settings.household.primary.name == "Retired Person"
     reset_workspace(settings)

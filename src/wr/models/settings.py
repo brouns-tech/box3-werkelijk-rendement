@@ -13,6 +13,7 @@ from pydantic import (
     field_validator,
 )
 
+from wr.config import DEFAULT_WORKSPACE_DATABASE, SETTINGS_FILENAME
 from wr.models.base import Record
 from wr.models.identities import HouseholdSettings
 
@@ -32,7 +33,7 @@ class InstitutionSettings(Record):
 class Settings:
     project_root: Path
     import_root: Path | None = None
-    db_path: Path = Path("data/wr.sqlite")
+    db_path: Path = DEFAULT_WORKSPACE_DATABASE
     household: HouseholdSettings = field(default_factory=HouseholdSettings)
     institution_options: dict[str, InstitutionSettings] = field(default_factory=dict)
 
@@ -49,7 +50,7 @@ class Settings:
 
     @property
     def settings_path(self) -> Path:
-        return self.project_root / ".wr-settings.json"
+        return self.project_root / SETTINGS_FILENAME
 
 
 class PersistedSettings(Record):

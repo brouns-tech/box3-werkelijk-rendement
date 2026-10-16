@@ -13,6 +13,14 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 
+from wr.config import (
+    APP_DATA_DIRECTORY,
+    INSTANCE_FILENAME,
+    LAUNCHER_LOG_FILENAME,
+    SELFCHECK_ERROR_FILENAME,
+    SERVER_LOG_FILENAME,
+    SETTINGS_FILENAME,
+)
 from wr.desktop.control import control_request, free_port
 from wr.models.desktop import InstanceMetadata
 
@@ -23,7 +31,7 @@ def await_status(directory, process):
         if process.poll() is not None:
             raise RuntimeError(f"Launcher exited early: {process.returncode}")
         try:
-            instance = InstanceMetadata.model_validate_json((directory / "instance.json").read_text())
+            instance = InstanceMetadata.model_validate_json((directory / INSTANCE_FILENAME).read_text())
             status = control_request(instance.endpoint, instance.token, "status", 1)
             if status.ready:
                 return instance, status
@@ -39,7 +47,7 @@ def capture_verification_failure(directory: Path, diagnostics: Path) -> None:
     details = [failure]
     (diagnostics / "verification.log").write_text(failure, encoding="utf-8")
     for log in directory.rglob("*.log"):
-        if log.name not in {"server.log", "launcher.log", "smoke-error.log"}:
+        if log.name not in {SERVER_LOG_FILENAME, LAUNCHER_LOG_FILENAME, SELFCHECK_ERROR_FILENAME}:
             continue
         destination = diagnostics / log.relative_to(directory)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -128,7 +136,7 @@ def main():
         else:
             from urllib.parse import urlparse
             import socket
-            workspace = directory / "WerkelijkRendement"
+            workspace = directory / APP_DATA_DIRECTORY
             print("Verifying native launcher startup", flush=True)
             launcher_command = [str(executable), "--verify-launcher"]
             launcher = subprocess.Popen(launcher_command, cwd=directory, env=env)
@@ -145,7 +153,7 @@ def main():
                 print("Verifying clean shutdown", flush=True)
                 control_request(instance.endpoint, instance.token, "stop", 5)
                 assert launcher.wait(timeout=15) == 0
-                assert (workspace / ".wr-settings.json").exists()
+                assert (workspace / SETTINGS_FILENAME).exists()
                 # Abnormal supervisor termination must also stop the server.
                 launcher = subprocess.Popen(launcher_command, cwd=directory, env=env)
                 print("Verifying server cleanup after supervisor termination", flush=True)

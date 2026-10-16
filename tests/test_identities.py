@@ -163,9 +163,9 @@ def test_configured_nickname_aliases_override_inference():
     assert resolve_identity("S. de Vries", configured) is None
 
 
-def test_ui_settings_override_toml_and_survive_database_removal(tmp_path, monkeypatch):
+def test_ui_settings_replace_earlier_json_profiles_and_survive_database_removal(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "config.toml").write_text('[partners]\npartner_a = "Legacy Person"\n')
+    (tmp_path / ".wr-settings.json").write_text(json.dumps({"partners": {"partner_a": "Legacy Person"}}))
     cfg = load_settings()
     partners = HouseholdSettings(identities=(TaxpayerIdentity(name="Sophie de Vries", position=TaxpayerPosition.PRIMARY, aliases=("Fie",)),), unassigned_names=("S. de Vries",))
     save_settings(cfg, partners, "documents")

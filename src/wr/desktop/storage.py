@@ -7,6 +7,14 @@ import os
 import sys
 import tempfile
 
+from wr.config import (
+    APP_DATA_DIRECTORY,
+    DEFAULT_DESKTOP_DATABASE,
+    DISTRIBUTION_NAME,
+    LANGUAGE_FILENAME,
+    LEGACY_PREFERENCES_FILENAME,
+    SETTINGS_FILENAME,
+)
 from wr.models.desktop import LanguagePreference, LegacyPreferences
 
 
@@ -15,7 +23,7 @@ def app_data_dir() -> Path:
         base = Path(os.environ["LOCALAPPDATA"])
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    return base / "WerkelijkRendement"
+    return base / APP_DATA_DIRECTORY
 
 
 def prepare_workspace(directory: Path | None = None) -> Path:
@@ -24,16 +32,14 @@ def prepare_workspace(directory: Path | None = None) -> Path:
 
     directory = (directory or app_data_dir()).resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    settings_path = directory / ".wr-settings.json"
+    settings_path = directory / SETTINGS_FILENAME
     existing = settings_path.exists()
-    fresh = not existing and not (directory / "config.toml").exists()
     settings = load_settings(directory)
-    if fresh:
-        settings = replace(settings, db_path=Path("wr.sqlite"))
     if not existing:
+        settings = replace(settings, db_path=DEFAULT_DESKTOP_DATABASE)
         # Retired beta preferences migrate once; reset must not resurrect them.
         try:
-            preferences = LegacyPreferences.model_validate_json((directory / "preferences.json").read_text(encoding="utf-8"))
+            preferences = LegacyPreferences.model_validate_json((directory / LEGACY_PREFERENCES_FILENAME).read_text(encoding="utf-8"))
             folder = preferences.selected_folder
         except (OSError, ValueError):
             folder = None
@@ -56,12 +62,12 @@ def remember_folder(directory: Path, folder: str) -> None:
 
 
 def app_version() -> str:
-    return version("box3-werkelijk-rendement")
+    return version(DISTRIBUTION_NAME)
 
 
 def remembered_language(directory: Path, default: str = "nl") -> str:
     try:
-        return LanguagePreference.model_validate_json((directory / "language.json").read_text(encoding="utf-8")).language
+        return LanguagePreference.model_validate_json((directory / LANGUAGE_FILENAME).read_text(encoding="utf-8")).language
     except (OSError, ValueError):
         return default
 
@@ -73,10 +79,10 @@ def remember_language(directory: Path, language: str) -> None:
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory,
-                                         prefix="language-", suffix=".tmp", delete=False) as file:
+                                         prefix=f"{Path(LANGUAGE_FILENAME).stem}-", suffix=".tmp", delete=False) as file:
             temporary = Path(file.name)
             file.write(LanguagePreference(language=language).model_dump_json())
-        temporary.replace(directory / "language.json")
+        temporary.replace(directory / LANGUAGE_FILENAME)
     finally:
         if temporary:
             temporary.unlink(missing_ok=True)

@@ -8,6 +8,7 @@ import tempfile
 
 from pydantic import JsonValue, TypeAdapter
 
+from wr.config import DEFAULT_WORKSPACE_DATABASE, SETTINGS_FILENAME
 from wr.models.settings import (
     InstitutionSettings,
     HouseholdSettings,
@@ -22,19 +23,12 @@ def load_settings(workspace: str | Path | None = None) -> Settings:
     root = Path(workspace or Path.cwd()).expanduser().resolve()
     if root.exists() and not root.is_dir():
         raise ValueError(f"Workspace must be a directory: {root}")
-    path = root / ".wr-settings.json"
+    path = root / SETTINGS_FILENAME
     raw = TypeAdapter(dict[str, JsonValue]).validate_json(path.read_text(encoding="utf-8")) if path.exists() else {}
     version = raw.get("version", 1)
     if not isinstance(version, int) or not 1 <= version <= SETTINGS_VERSION:
         raise ValueError(f"Unsupported workspace settings version: {version}")
-    # Upgrade the original UI preferences, preserving their overrides over TOML.
-    # Version 2 is self-contained: legacy files are never read again afterward.
     upgrade = bool(raw) and version < SETTINGS_VERSION
-    if version < 2 and (root / "config.toml").is_file():
-        from wr.workspace.legacy import read_legacy_settings
-
-        raw = {**read_legacy_settings(root / "config.toml"), **raw}
-        upgrade = True
     if version < 3:
         from wr.workspace.legacy import migrate_household
 
@@ -76,7 +70,7 @@ def save_settings(
     serialized = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
     path = settings.settings_path
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".wr-settings-", suffix=".tmp")
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f"{path.stem}-", suffix=".tmp")
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             output.write(serialized)
@@ -95,7 +89,7 @@ def _settings_from_mapping(raw: object, root: Path) -> Settings:
     return Settings(
         project_root=root,
         import_root=Path(persisted.import_root) if persisted.import_root else None,
-        db_path=Path(persisted.db_path) if persisted.db_path else Path("data/wr.sqlite"),
+        db_path=Path(persisted.db_path) if persisted.db_path else DEFAULT_WORKSPACE_DATABASE,
         household=persisted.household,
         institution_options=persisted.institutions,
     )

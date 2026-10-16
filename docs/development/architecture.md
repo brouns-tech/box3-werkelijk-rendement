@@ -13,11 +13,29 @@ calculation helpers.
 | `parsers` | Institution plugins, plugin discovery, schema selection, and text parsing utilities |
 | `importing` | Document classification, scanning, import orchestration, persistence coordination, canonicalization, and reprocessing status |
 | `desktop` | Launcher, authenticated control API, instance locking, child processes, server bootstrap, preferences, and installed-application diagnostics |
-| `workspace` | Settings file IO, legacy migration, and workspace reset |
+| `workspace` | JSON settings IO, schema upgrades, and workspace reset |
 | `identities` | Pure name matching and database-backed taxpayer suggestions |
 
 `money`, `messages`, and `i18n` remain focused top-level modules. Audit
 assembly lives in `export`; its output schemas live in `models.audit`.
+
+## Application configuration
+
+`wr.config` is the single source for application defaults: the settings filename,
+desktop data-directory name, database filenames, CLI dashboard port, export path,
+and desktop state/log filenames. It uses only the standard library, so models
+can share these defaults without importing application services. Platform data
+roots are resolved by `desktop.storage` at runtime, honoring `LOCALAPPDATA` or
+`XDG_DATA_HOME`.
+
+Per-workspace overrides (database path, import folder, household, and institution
+options) remain in `.wr-settings.json`, validated by `models.settings` and saved
+atomically by `workspace.settings`. CLI workspaces default to `data/wr.sqlite`;
+desktop workspaces default to `wr.sqlite` in the application data directory.
+Earlier JSON versions upgrade automatically. Retired TOML application settings
+are not loaded or migrated; use the dashboard to configure a workspace.
+Static release artifact names and package metadata remain build-time contracts,
+not user settings.
 
 ## Household identities
 

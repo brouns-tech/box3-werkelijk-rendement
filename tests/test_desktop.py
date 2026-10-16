@@ -47,20 +47,39 @@ def test_legacy_desktop_storage_migrates_once_and_reset_stays_reset(tmp_path):
 
     documents = tmp_path / "statements"
     documents.mkdir()
-    legacy = 'db_path = "custom.sqlite"\n[partners]\npartner_a="EXAMPLE"\n'
-    (tmp_path / "config.toml").write_text(legacy)
-    (tmp_path / "preferences.json").write_text(json.dumps({"selected_folder": str(documents)}))
+    (tmp_path / ".wr-settings.json").write_text(json.dumps({
+        "version": 1, "db_path": "custom.sqlite", "import_root": str(documents),
+        "partners": {"partner_a": "EXAMPLE"},
+    }))
     assert prepare_workspace(tmp_path) == tmp_path
     cfg = load_settings(tmp_path)
     assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
     assert cfg.household.primary.name == "EXAMPLE"
     assert selected_folder(tmp_path) == str(documents)
-    assert (tmp_path / "config.toml").read_text() == legacy
     reset_workspace(cfg)
     prepare_workspace(tmp_path)
     assert selected_folder(tmp_path) is None
     assert load_settings(tmp_path).household.primary is None
     assert documents.is_dir()
+
+
+def test_beta_folder_preferences_migrate_only_without_json_settings(tmp_path):
+    from wr.workspace.settings import load_settings
+    from wr.workspace.reset import reset_workspace
+
+    documents = tmp_path / "statements"
+    documents.mkdir()
+    preferences = tmp_path / "preferences.json"
+    content = json.dumps({"selected_folder": str(documents)})
+    preferences.write_text(content)
+    prepare_workspace(tmp_path)
+    settings = load_settings(tmp_path)
+    assert settings.resolved_db_path == tmp_path / "wr.sqlite"
+    assert selected_folder(tmp_path) == str(documents)
+    reset_workspace(settings)
+    prepare_workspace(tmp_path)
+    assert selected_folder(tmp_path) is None
+    assert preferences.read_text() == content
 
 
 def test_desktop_folder_selection_preserves_upstream_profiles_and_storage(tmp_path):

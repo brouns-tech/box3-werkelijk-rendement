@@ -79,7 +79,6 @@ def test_version_two_settings_migrate_to_typed_household_once(tmp_path):
         },
         "institutions": {"future-bank": {"custom": [1, 2]}},
     }))
-    (tmp_path / "config.toml").write_text("invalid retired configuration")
     settings = load_settings(tmp_path)
     assert settings.db_path.name == "existing.sqlite"
     assert settings.import_root.name == "statements"

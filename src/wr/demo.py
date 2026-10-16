@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+from wr.config import DEMO_DATABASE_FILENAME
 from wr.calculations.service import rebuild_portfolio
 from wr.calculations.service import rebuild_recommendations
 from wr.models.facts import GainMethod, Ownership
@@ -106,7 +107,7 @@ _FACTS = (
 def create_demo_workspace(directory: str | Path) -> Path:
     workspace = Path(directory)
     workspace.mkdir(parents=True, exist_ok=True)
-    db_path = workspace / "wr-demo.sqlite"
+    db_path = workspace / DEMO_DATABASE_FILENAME
     db_path.unlink(missing_ok=True)
 
     conn = connect(db_path)
@@ -116,7 +117,7 @@ def create_demo_workspace(directory: str | Path) -> Path:
     rebuild_recommendations(conn, HOUSEHOLD)
     conn.close()
 
-    save_settings(Settings(project_root=workspace.resolve(), db_path=Path("wr-demo.sqlite"), household=HOUSEHOLD))
+    save_settings(Settings(project_root=workspace.resolve(), db_path=Path(DEMO_DATABASE_FILENAME), household=HOUSEHOLD))
     return workspace.resolve()
 
 

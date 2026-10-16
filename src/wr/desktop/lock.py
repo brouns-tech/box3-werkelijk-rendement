@@ -4,10 +4,12 @@ from pathlib import Path
 import os
 import sys
 
+from wr.config import INSTANCE_LOCK_FILENAME
+
 
 class InstanceLock:
     def __init__(self, directory: Path):
-        self.path = directory / "instance.lock"
+        self.path = directory / INSTANCE_LOCK_FILENAME
         self.file = None
 
     def acquire(self) -> bool:

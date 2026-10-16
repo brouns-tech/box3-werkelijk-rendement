@@ -10,6 +10,13 @@ import threading
 import time
 import urllib.request
 
+from wr.config import (
+    APP_NAME,
+    INSTANCE_FILENAME,
+    LAUNCHER_LOG_FILENAME,
+    SELFCHECK_ERROR_FILENAME,
+    SERVER_LOG_FILENAME,
+)
 from wr.desktop.control import control_request, free_port, make_control_server
 from wr.desktop.lock import InstanceLock
 from wr.desktop.platform import open_external
@@ -26,7 +33,7 @@ def main() -> int:
         if os.environ.get("WR_PARENT_PID"):
             threading.Thread(target=watch_parent, daemon=True).start()
         # PyInstaller windowed executables have no standard streams.
-        log_path = Path(sys.argv[2]) / "server.log"
+        log_path = Path(sys.argv[2]) / SERVER_LOG_FILENAME
         if log_path.exists() and log_path.stat().st_size > 2 * 1024 * 1024:
             log_path.replace(log_path.with_suffix(".previous.log"))
         original_stdout, original_stderr = sys.stdout, sys.stderr
@@ -49,7 +56,7 @@ def main() -> int:
             run_selfcheck(directory)
         except Exception:
             import traceback
-            with (directory / "smoke-error.log").open("w", encoding="utf-8") as log:
+            with (directory / SELFCHECK_ERROR_FILENAME).open("w", encoding="utf-8") as log:
                 traceback.print_exc(file=log)
             return 1
         return 0
@@ -63,14 +70,14 @@ def main() -> int:
     window = tk.Tk()
     # Keep Tk alive for on-demand native dialogs without mapping a launcher window.
     window.withdraw()
-    window.title("Werkelijk Rendement")
+    window.title(APP_NAME)
     directory = app_data_dir()
     language = remembered_language(directory)
     t = translator(language)
     child = None
     server = None
     lock = None
-    metadata = directory / "instance.json"
+    metadata = directory / INSTANCE_FILENAME
     events = queue.Queue()
     ready = False
     stopping = False
@@ -112,7 +119,7 @@ def main() -> int:
                 except (OSError, ValueError, KeyError):
                     pass
                 time.sleep(0.2)
-            raise RuntimeError(t.instance_starting_log(log=directory / "server.log"))
+            raise RuntimeError(t.instance_starting_log(log=directory / SERVER_LOG_FILENAME))
 
         url = ""
         token = secrets.token_urlsafe(32)
@@ -137,7 +144,7 @@ def main() -> int:
             try:
                 launch_external(str(target))
             except OSError as exc:
-                messagebox.showerror("Werkelijk Rendement", t.could_not_open(target=target, error=exc), parent=window)
+                messagebox.showerror(APP_NAME, t.could_not_open(target=target, error=exc), parent=window)
 
         window.protocol("WM_DELETE_WINDOW", shutdown)
         attempts = 0
@@ -163,7 +170,7 @@ def main() -> int:
                     if not ready and attempts < 3:
                         start_child()
                     else:
-                        raise RuntimeError(t.dashboard_stopped(log=directory / "server.log"))
+                        raise RuntimeError(t.dashboard_stopped(log=directory / SERVER_LOG_FILENAME))
                 if not ready:
                     try:
                         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -175,7 +182,7 @@ def main() -> int:
                     except OSError:
                         pass
                     if not ready and time.monotonic() > deadline:
-                        raise RuntimeError(t.startup_timeout(log=directory / "server.log"))
+                        raise RuntimeError(t.startup_timeout(log=directory / SERVER_LOG_FILENAME))
                 while not events.empty():
                     action, response = events.get_nowait()
                     if action == "folder":
@@ -190,7 +197,7 @@ def main() -> int:
                 window.after(200, tick)
             except Exception as exc:
                 record_launcher_error(directory)
-                messagebox.showerror("Werkelijk Rendement", str(exc), parent=window)
+                messagebox.showerror(APP_NAME, str(exc), parent=window)
                 shutdown()
 
         start_child()
@@ -199,7 +206,7 @@ def main() -> int:
         return 0
     except Exception as exc:
         record_launcher_error(directory)
-        messagebox.showerror("Werkelijk Rendement", str(exc), parent=window)
+        messagebox.showerror(APP_NAME, str(exc), parent=window)
         # A failed second instance must never delete the first instance's metadata.
         if lock and lock.file:
             shutdown()
@@ -214,7 +221,7 @@ def main() -> int:
 def record_launcher_error(directory: Path) -> None:
     import traceback
     try:
-        with (directory / "launcher.log").open("a", encoding="utf-8") as log:
+        with (directory / LAUNCHER_LOG_FILENAME).open("a", encoding="utf-8") as log:
             traceback.print_exc(file=log)
     except OSError:
         pass

@@ -20,6 +20,35 @@ def test_settings_default_to_current_workspace(monkeypatch, tmp_path):
     assert settings.household == HouseholdSettings()
 
 
+@pytest.mark.parametrize("platform,variable", [("win32", "LOCALAPPDATA"), ("linux", "XDG_DATA_HOME")])
+def test_desktop_data_directory_honors_platform_root(monkeypatch, tmp_path, platform, variable):
+    from wr.config import APP_DATA_DIRECTORY
+    from wr.desktop.storage import app_data_dir
+
+    monkeypatch.setattr("wr.desktop.storage.sys.platform", platform)
+    monkeypatch.setenv(variable, str(tmp_path))
+    assert app_data_dir() == tmp_path / APP_DATA_DIRECTORY
+    assert APP_DATA_DIRECTORY == "WerkelijkRendement"
+
+
+def test_desktop_data_directory_defaults_to_user_home(monkeypatch, tmp_path):
+    from wr.desktop.storage import app_data_dir
+
+    monkeypatch.setattr("wr.desktop.storage.sys.platform", "linux")
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    assert app_data_dir() == tmp_path / ".local/share/WerkelijkRendement"
+
+
+@pytest.mark.parametrize("command", ["dashboard", "demo"])
+def test_dashboard_commands_share_configured_default_port(tmp_path, monkeypatch, command):
+    calls = []
+    monkeypatch.setattr("wr.cli.DEFAULT_DASHBOARD_PORT", 9876)
+    monkeypatch.setattr("wr.cli._launch_dashboard", lambda workspace, port: calls.append(port) or 0)
+    assert main(["--workspace", str(tmp_path), command]) == 0
+    assert calls == [9876]
+
+
 def test_settings_persist_all_options_across_updates(tmp_path):
     settings = Settings(project_root=tmp_path, db_path=Path("state/results.sqlite"),
                         institution_options={"broker": {"linked_account": "NL00 TEST 0000 0000 00"}})
@@ -35,34 +64,51 @@ def test_settings_persist_all_options_across_updates(tmp_path):
     assert reloaded.db_path == settings.db_path
 
 
-def test_legacy_settings_are_migrated_once_and_then_ignored(tmp_path):
-    legacy = tmp_path / "config.toml"
-    legacy.write_text(
-        'import_root = "statements"\n'
-        'db_path = "state/results.sqlite"\n'
-        '[partners]\npartner_a = "Alex Example"\n'
-        'partner_a_aliases = ["A. Example"]\n'
-        '[institutions.broker]\nlinked_account = "NL00 TEST 0000 0000 00"\n'
-    )
+def test_version_one_json_settings_are_migrated_once(tmp_path):
+    path = tmp_path / ".wr-settings.json"
+    path.write_text(json.dumps({
+        "version": 1,
+        "import_root": "statements",
+        "db_path": "state/results.sqlite",
+        "partners": {"partner_a": "Alex Example", "partner_a_aliases": ["A. Example"]},
+        "institutions": {"broker": {"linked_account": "NL00 TEST 0000 0000 00"}},
+    }))
     settings = load_settings(tmp_path)
     assert settings.import_root == Path("statements")
     assert settings.resolved_db_path == tmp_path / "state" / "results.sqlite"
     assert settings.household.primary.name == "Alex Example"
+    assert settings.household.primary.aliases == ("A. Example",)
     assert settings.institution_options["broker"].model_dump() == {"linked_account": "NL00 TEST 0000 0000 00"}
-    assert settings.settings_path.is_file()
-    legacy.write_text("invalid and retired TOML")
+    saved = path.read_bytes()
+    assert json.loads(saved)["version"] == 3
     assert load_settings(tmp_path) == settings
+    assert path.read_bytes() == saved
 
 
-def test_migration_preserves_existing_ui_overrides(tmp_path):
-    (tmp_path / "config.toml").write_text('db_path = "custom.sqlite"\n[partners]\npartner_a = "Legacy Person"\n[institutions.flatex]\nlinked_account = "NL00TEST0000000000"\n')
-    (tmp_path / ".wr-settings.json").write_text(json.dumps({"partners": {}, "import_root": None}))
+@pytest.mark.parametrize("desktop", [False, True])
+@pytest.mark.parametrize("existing_json", [False, True])
+def test_retired_toml_is_ignored_and_left_untouched(tmp_path, desktop, existing_json):
+    from wr.desktop.storage import prepare_workspace
+
+    retired = tmp_path / "config.toml"
+    content = 'db_path = "retired.sqlite"\n[partners]\npartner_a = "Retired Person"\n'
+    retired.write_text(content)
+    if existing_json:
+        (tmp_path / ".wr-settings.json").write_text(json.dumps({
+            "db_path": "custom.sqlite", "partners": {}, "import_root": None,
+            "institutions": {"flatex": {"linked_account": "NL00TEST0000000000"}},
+        }))
+    if desktop:
+        prepare_workspace(tmp_path)
     settings = load_settings(tmp_path)
     assert settings.household == HouseholdSettings()
     assert settings.import_root is None
-    assert settings.db_path == Path("custom.sqlite")
-    assert settings.institution_options["flatex"].linked_account == "NL00TEST0000000000"
-    assert json.loads(settings.settings_path.read_text())["version"] == 3
+    expected_db = "custom.sqlite" if existing_json else ("wr.sqlite" if desktop else "data/wr.sqlite")
+    assert settings.db_path == Path(expected_db)
+    if existing_json:
+        assert settings.institution_options["flatex"].linked_account == "NL00TEST0000000000"
+        assert json.loads(settings.settings_path.read_text())["version"] == 3
+    assert retired.read_text() == content
 
 
 def test_workspace_must_be_a_directory(tmp_path):
@@ -138,7 +184,6 @@ def test_dashboard_and_demo_launch_with_workspace_settings(tmp_path, monkeypatch
     def launch(workspace, port):
         settings = load_settings(workspace)
         calls.append((workspace, port, settings))
-        assert not (workspace / "config.toml").exists()
         return 0
 
     monkeypatch.setattr("wr.cli._launch_dashboard", launch)
