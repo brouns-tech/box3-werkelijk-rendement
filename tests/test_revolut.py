@@ -1,7 +1,8 @@
+from wr.reconciliation.service import reconcile_facts
 
 from wr.storage.adapters import fact_from_row
 
-from wr.storage.facts import canonical_facts
+from wr.storage.reconciliation import reconciled_facts
 import sqlite3
 
 import pytest
@@ -79,8 +80,8 @@ def test_foreign_currency_never_enters_eur_rollup():
         AccountYearFact(2025, 'bank', 'eur', 'EUR', interest_received=10, gain_method='interest_only'),
         AccountYearFact(2025, 'bank', 'usd', 'USD', currency='USD', end_balance=1000, interest_received=20, gain_method='interest_only'),
     ]])
-    conn.execute("UPDATE account_year_facts SET is_canonical=1")
-    result = coverage_for_year(2025, canonical_facts(conn, 2025))
+    reconcile_facts(conn)
+    result = coverage_for_year(2025, reconciled_facts(conn, 2025))
     assert result.known_combined_actual_return == result.interest_received == 10
     assert result.end_balance == 0
     assert result.coverage_status == 'PARTIAL'

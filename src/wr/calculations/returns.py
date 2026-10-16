@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from wr.models.facts import GainMethod
-from wr.models.storage import FactRecord, MoneyField
+from wr.models.storage import FactValues, MoneyField
 from wr.money import Currency, add, subtract
 
 
-def has_actual_return(fact: FactRecord) -> bool:
+def has_actual_return(fact: FactValues) -> bool:
     if fact.currency != Currency.EUR:
         return False
     if native_fact_return(fact) is None:
@@ -32,14 +32,16 @@ def has_actual_return(fact: FactRecord) -> bool:
     return False
 
 
-def fact_return(fact: FactRecord) -> float | None:
+def fact_return(fact: FactValues) -> float | None:
     """Return usable in EUR totals; native-currency evidence stays separate."""
     if fact.currency != Currency.EUR:
         return None
     return native_fact_return(fact)
 
 
-def native_fact_return(fact: FactRecord) -> float | None:
+def native_fact_return(fact: FactValues) -> float | None:
+    if fact.has_conflicts:
+        return None
     method = fact.gain_method or GainMethod.UNKNOWN
     if method == GainMethod.EARNED_RETURN and fact.capital_gain is not None:
         return fact.capital_gain
@@ -81,7 +83,7 @@ def native_fact_return(fact: FactRecord) -> float | None:
         )
         has = True
     if fact.capital_gain is not None and method not in {GainMethod.INTEREST_ONLY, GainMethod.BALANCE_DELTA_INCOMPLETE}:
-        if not has:
+        if not has or method == GainMethod.EXPLICIT:
             total = add(total, fact.capital_gain)
             has = True
     return total if has else None

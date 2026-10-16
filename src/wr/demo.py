@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 
 from wr.config import DEMO_DATABASE_FILENAME
+from wr.reconciliation.service import reconcile_facts
 from wr.calculations.service import rebuild_portfolio
 from wr.calculations.service import rebuild_recommendations
 from wr.models.facts import GainMethod, Ownership
@@ -113,6 +114,7 @@ def create_demo_workspace(directory: str | Path) -> Path:
     conn = connect(db_path)
     init_db(conn)
     _insert_demo_data(conn)
+    reconcile_facts(conn)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, HOUSEHOLD)
     conn.close()
@@ -147,8 +149,8 @@ def _insert_demo_data(conn) -> None:
                 holder_names, ownership, currency, start_balance, end_balance,
                 deposits, withdrawals, interest_received, interest_paid,
                 dividends_gross, withholding_tax, capital_gain, gain_method,
-                is_canonical, extra
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                extra
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,

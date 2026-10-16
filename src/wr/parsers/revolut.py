@@ -280,8 +280,8 @@ PLUGIN = InstitutionPlugin(
         ClassificationRule("revolut", "account_statement", _is_account_statement),
     ),
     parsers={
-        "jaaroverzicht": ParserRegistration(doc_type_parser(parse_revolut), 90),
-        "savings_statement": ParserRegistration(doc_type_parser(parse_revolut), 85),
-        "account_statement": ParserRegistration(doc_type_parser(parse_revolut), 20),
+        "jaaroverzicht": ParserRegistration(doc_type_parser(parse_revolut)),
+        "savings_statement": ParserRegistration(doc_type_parser(parse_revolut)),
+        "account_statement": ParserRegistration(doc_type_parser(parse_revolut)),
     },
 )

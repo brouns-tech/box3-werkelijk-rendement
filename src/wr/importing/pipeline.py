@@ -9,7 +9,7 @@ from wr.calculations.service import rebuild_portfolio
 from wr.calculations.service import rebuild_recommendations
 from wr.documents.extraction import extract_text, extraction_profile
 from wr.documents.hashing import sha256_file
-from wr.importing.canonicalization import canonicalize_facts
+from wr.reconciliation.service import reconcile_facts
 from wr.importing.classification import classify, guess_tax_year
 from wr.importing.persistence import persist_parse
 from wr.importing.scanner import scan_pdfs
@@ -196,7 +196,7 @@ def _run_import(
         conn.commit()
         _record(report, outcome, progress, inserted=inserted)
 
-    canonicalize_facts(conn, institution_options)
+    reconcile_facts(conn, institution_options)
     rebuild_portfolio(conn)
     rebuild_recommendations(conn, household_config)
     return report

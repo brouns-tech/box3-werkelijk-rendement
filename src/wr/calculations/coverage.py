@@ -3,16 +3,18 @@ from __future__ import annotations
 from wr.calculations.returns import fact_return, has_actual_return
 from wr.models import CoverageStatus
 from wr.models.calculations import CoverageResult
-from wr.models.storage import FactRecord, MoneyField
+from wr.models.storage import FactValues, MoneyField
 from wr.money import Currency, add, subtract, total
 
 
-def coverage_for_year(year: int, facts: list[FactRecord]) -> CoverageResult:
+def coverage_for_year(year: int, facts: list[FactValues]) -> CoverageResult:
     missing: list[str] = []
     eligible_facts = [f for f in facts if f.extra.box3]
 
     for fact in eligible_facts:
-        if (fact.currency or Currency.EUR) != Currency.EUR:
+        if fact.has_conflicts:
+            missing.append(f"{fact.issuer} {fact.account_key} (conflicting source evidence)")
+        elif (fact.currency or Currency.EUR) != Currency.EUR:
             missing.append(f"{fact.issuer} {fact.account_key} (requires EUR conversion and currency gain/loss)")
         elif not has_actual_return(fact):
             missing.append(
@@ -39,7 +41,7 @@ def coverage_for_year(year: int, facts: list[FactRecord]) -> CoverageResult:
 
     if not eligible_facts:
         coverage = CoverageStatus.UNKNOWN.value
-        missing.append("no canonical Box 3 statements for this year")
+        missing.append("no reconciled Box 3 statements for this year")
     elif missing:
         coverage = CoverageStatus.PARTIAL.value
     else:
@@ -61,5 +63,5 @@ def coverage_for_year(year: int, facts: list[FactRecord]) -> CoverageResult:
     )
 
 
-def _sum(rows: list[FactRecord], col: MoneyField) -> float:
+def _sum(rows: list[FactValues], col: MoneyField) -> float:
     return total((getattr(row, col.value) or 0) for row in rows)

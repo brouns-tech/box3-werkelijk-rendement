@@ -197,6 +197,8 @@ def test_children_dynamic_editor_assignments_and_purple_overview(tmp_path, monke
     save_settings(cfg, HouseholdSettings(identities=(TaxpayerIdentity(name=cfg.household.primary.name, position=TaxpayerPosition.PRIMARY), TaxpayerIdentity(name=cfg.household.secondary.name, position=TaxpayerPosition.SECONDARY),) + children))
     with connect(cfg.resolved_db_path) as conn:
         conn.execute("UPDATE account_year_facts SET holder_names = '[\"Nickname Gamma\"]' WHERE account_key = 'NL22RABO0002345678'")
+    from wr.calculations.service import recompute
+    recompute(cfg.resolved_db_path)
     app = AppTest.from_file(str(APP)).run()
     assert not app.exception
     assert taxpayer_input(app, "canonical_child_2").value == "Child Gamma Example"
@@ -588,6 +590,8 @@ def test_alias_assignments_save_and_recompute_immediately(tmp_path, monkeypatch)
         conn.execute("DELETE FROM account_year_facts WHERE account_key != 'NL22RABO0002345678'")
         conn.execute("UPDATE account_year_facts SET holder_names = '[\"Fie\"]'")
         conn.execute("UPDATE tax_returns SET full_year_fiscal_partners = 0")
+    from wr.calculations.service import recompute
+    recompute(cfg.resolved_db_path)
     app = AppTest.from_file(str(APP)).run()
     assert not app.exception
 

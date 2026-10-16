@@ -4,6 +4,7 @@ import json
 import sqlite3
 import zipfile
 
+from wr.reconciliation.service import reconcile_facts
 from wr.storage.migrations import init_db
 from wr.export import create_audit_export
 
@@ -29,9 +30,9 @@ def test_audit_export_traces_asset_return_to_source_document():
         """
         INSERT INTO account_year_facts (document_sha256, tax_year, issuer, account_key, account_label,
                                         currency, start_balance, end_balance, deposits, withdrawals,
-                                        interest_received, interest_paid, gain_method, is_canonical)
+                                        interest_received, interest_paid, gain_method)
         VALUES ('source-sha', 2023, 'bank', 'NL01BANK', 'Savings',
-                'EUR', 1000, 1200, 150, 0, 50, 0, 'interest_only', 1)
+                'EUR', 1000, 1200, 150, 0, 50, 0, 'interest_only')
         """
     )
     conn.execute(
@@ -44,11 +45,13 @@ def test_audit_export_traces_asset_return_to_source_document():
         """
     )
 
+    reconcile_facts(conn)
     payload = create_audit_export(conn, [2023])
 
     with zipfile.ZipFile(io.BytesIO(payload)) as bundle:
         assert set(bundle.namelist()) == {
             "manifest.json",
+            "reconciled_facts.json",
             "yearly_summary.csv",
             "assets.csv",
             "source_facts.csv",
@@ -63,7 +66,7 @@ def test_audit_export_traces_asset_return_to_source_document():
     assert asset["return_used"] == "50.0"
     assert asset["source_document_sha256s"] == "source-sha"
     assert fact["source_path"] == "/statements/account.pdf"
-    assert fact["included_in_year_total"] == "True"
+    assert fact["included_in_year_total"] == "False"
     assert summary["actual_return_used"] == "50.0"
 
 
@@ -87,7 +90,7 @@ def test_audit_export_uses_typed_taxpayer_schema(tmp_path):
         payload = create_audit_export(conn)
     with zipfile.ZipFile(io.BytesIO(payload)) as bundle:
         rows = _csv_rows(bundle, "taxpayer_tax_results.csv")
-        assert json.loads(bundle.read("manifest.json"))["version"] == 2
+        assert json.loads(bundle.read("manifest.json"))["version"] == 3
         assert [row["taxpayer_position"] for row in rows] == ["primary", "secondary"]
         assert [row["taxpayer_name"] for row in rows] == ["Sophie de Vries", "Daan Jansen"]
         assert all("partner" not in row and "partner_name" not in row for row in rows)

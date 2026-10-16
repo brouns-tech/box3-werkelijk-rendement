@@ -19,10 +19,10 @@ from wr.models.audit import (
     YearSummary,
 )
 from wr.models.base import Record
-from wr.models.storage import FactRecord, MoneyField
+from wr.models.storage import FactValues, MoneyField
 from wr.money import Currency
 from wr.storage.connection import connect
-from wr.storage.facts import canonical_facts_with_documents
+from wr.storage.reconciliation import reconciled_facts, source_observations
 from wr.storage.migrations import init_db
 from wr.storage.portfolio import portfolio_for_year
 from wr.storage.tax_returns import primary_return
@@ -77,12 +77,13 @@ def create_audit_export(
         files= {
             "yearly_summary.csv": "Portfolio totals and filed Box 3 comparison by year.",
             "assets.csv": (
-                "Declared assets with source-derived balances, flows, return components, "
+                "Reconciled account-year assets with source-derived balances, flows, return components, "
                 "coverage, and the return included in the yearly result."
             ),
             "source_facts.csv": (
-                "Canonical parsed account facts with source PDF identity and asset attribution."
+                "Unmodified document observations; these are evidence, not additive portfolio rows."
             ),
+            "reconciled_facts.json": "Derived account-year facts with field-level sources, conflicts, and derivation rules.",
             "taxpayer_tax_results.csv": "Per-taxpayer tax estimates and recommendation.",
         },
         calculation_notes= [
@@ -91,18 +92,31 @@ def create_audit_export(
             "Gross dividends are part of actual return; withholding tax is exported separately.",
             "Net dividends are dividends_gross minus withholding_tax and are shown for cash reconciliation.",
             "The tax comparison does not estimate credits or refunds for withholding tax.",
-            "A source fact matched to multiple declared assets is included once, under the first asset id.",
-            "Missing or partial assets contribute 0.00 to return_used and remain visibly warned.",
+            "Assets are reconciled account-year results; source observations are never added directly to totals.",
+            "reconciled_facts.json records field-level support, disagreement, and derivation rules.",
+            "Agreement between different PDFs is not a claim that their evidence is independent.",
+            "Conflicted assets contribute no return and keep coverage incomplete.",
             "Declared balances and parsed source balances are exported separately; they may differ.",
         ],
     )
 
     output = io.BytesIO()
+    observations_by_id: dict[int, SourceFactExportRow] = {}
+    for row in fact_rows:
+        previous = observations_by_id.get(row.fact_id)
+        if previous:
+            row.matched_asset_ids = ";".join(sorted(set(
+                previous.matched_asset_ids.split(";") + row.matched_asset_ids.split(";")
+            ) - {""}))
+        observations_by_id[row.fact_id] = row
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         bundle.writestr("manifest.json", manifest.model_dump_json(indent=2))
         _write_csv(bundle, "yearly_summary.csv", yearly_rows)
         _write_csv(bundle, "assets.csv", asset_rows)
-        _write_csv(bundle, "source_facts.csv", fact_rows)
+        _write_csv(bundle, "source_facts.csv", observations_by_id.values())
+        bundle.writestr("reconciled_facts.json", json.dumps([
+            fact.model_dump(mode="json") for year in selected_years for fact in reconciled_facts(conn, year)
+        ], ensure_ascii=False, indent=2))
         _write_csv(bundle, "taxpayer_tax_results.csv", tax_rows)
     return output.getvalue()
 
@@ -181,11 +195,13 @@ def _year_summary(conn: sqlite3.Connection, year: int) -> YearSummary:
 def _asset_and_fact_rows(
         conn: sqlite3.Connection, year: int
 ) -> tuple[list[AssetExportRow], list[SourceFactExportRow]]:
-    facts = canonical_facts_with_documents(conn, year)
+    facts = reconciled_facts(conn, year)
+    observations = source_observations(conn)
+    sources_by_id = {row.id: row for row in observations}
+    contributing_ids = {identifier for fact in facts for identifier in fact.source_fact_ids}
     included_fact_ids = {fact.id for fact in facts if fact.extra.box3}
     asset_rows: list[AssetExportRow] = []
 
-    # Canonical statement facts are the authoritative Box 3 inventory.
     for fact in facts:
         fact_id = int(fact.id)
         if fact_id not in included_fact_ids:
@@ -194,8 +210,8 @@ def _asset_and_fact_rows(
         asset_rows.append(
             AssetExportRow(
                 tax_year=year,
-                asset_id=f"fact-{fact_id}",
-                category="canonical statement fact",
+                asset_id=f"reconciled-{fact_id}",
+                category="reconciled account-year fact",
                 institution=fact.issuer,
                 account_id=fact.account_key,
                 label=fact.account_label,
@@ -221,22 +237,24 @@ def _asset_and_fact_rows(
                 return_used=actual_return or 0.0,
                 currency=fact.currency,
                 native_actual_return=native_fact_return(fact),
-                return_basis="canonical statement fact" if (fact.currency or Currency.EUR) == Currency.EUR else "requires EUR conversion; native amounts retained",
-                matched_fact_ids=fact_id,
-                included_fact_ids=fact_id,
-                source_document_sha256s=fact.document_sha256,
-                source_paths=fact.first_seen_path,
+                return_basis="reconciled account-year fact" if (fact.currency or Currency.EUR) == Currency.EUR else "requires EUR conversion; native amounts retained",
+                matched_fact_ids=";".join(map(str, fact.source_fact_ids)),
+                included_fact_ids=";".join(map(str, fact.source_fact_ids)) if actual_return is not None else "",
+                source_document_sha256s=";".join(sorted({sources_by_id[identifier].document_sha256 for identifier in fact.source_fact_ids})),
+                source_paths=";".join(sorted({sources_by_id[identifier].first_seen_path for identifier in fact.source_fact_ids if sources_by_id[identifier].first_seen_path})),
             )
         )
 
     fact_rows = []
-    for fact in facts:
+    for fact in observations:
+        if fact.tax_year != year and fact.id not in contributing_ids:
+            continue
         fact_id = int(fact.id)
         excluded = not fact.extra.box3
-        included = fact_id in included_fact_ids and (fact.currency or Currency.EUR) == Currency.EUR
+        included = False
         fact_rows.append(
             SourceFactExportRow(
-                tax_year=year,
+                tax_year=fact.tax_year,
                 fact_id=fact_id,
                 issuer=fact.issuer,
                 account_key=fact.account_key,
@@ -257,11 +275,14 @@ def _asset_and_fact_rows(
                 calculated_actual_return=fact_return(fact),
                 native_actual_return=native_fact_return(fact),
                 has_usable_actual_return=has_actual_return(fact),
-                matched_asset_ids="",
+                matched_asset_ids=";".join(
+                    f"reconciled-{result.id}" for result in facts
+                    if result.extra.box3 and fact.id in result.source_fact_ids
+                ),
                 primary_asset_id=None,
                 included_in_year_total=included,
                 exclusion_reason=(
-                    "excluded from Box 3" if excluded else ("requires EUR conversion" if (fact.currency or Currency.EUR) != Currency.EUR else "unmatched to declared inventory")
+                    "excluded from Box 3" if excluded else ("requires EUR conversion" if (fact.currency or Currency.EUR) != Currency.EUR else "source observation; totals use reconciled facts")
                 )
                 if not included
                 else None,
@@ -288,13 +309,13 @@ def _write_csv(
     bundle.writestr(name, "\ufeff" + buffer.getvalue())
 
 
-def _optional_sum(rows: Iterable[FactRecord], key: MoneyField) -> float | None:
+def _optional_sum(rows: Iterable[FactValues], key: MoneyField) -> float | None:
     values = [getattr(row, key.value) for row in rows if getattr(row, key.value) is not None]
     return float(sum(values)) if values else None
 
 
 def _optional_net(
-        rows: Iterable[FactRecord], positive_key: MoneyField, negative_key: MoneyField
+        rows: Iterable[FactValues], positive_key: MoneyField, negative_key: MoneyField
 ) -> float | None:
     rows = list(rows)
     positive = _optional_sum(rows, positive_key)

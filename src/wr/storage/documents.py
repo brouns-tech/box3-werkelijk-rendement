@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from wr.models.storage import DocumentInput, DocumentUpdate
+from wr.storage.reconciliation import invalidate_reconciliation
 
 
 def upsert_document(conn: sqlite3.Connection, **kwargs: str | int | None) -> bool:
@@ -42,18 +43,19 @@ def update_document(conn: sqlite3.Connection, sha: str, **kwargs: str | int | No
 def count_outdated_documents(conn: sqlite3.Connection, profile: str) -> int:
     return conn.execute(
         "SELECT COUNT(*) FROM documents WHERE parse_status = 'parsed' "
-        "AND (processing_profile IS NULL OR processing_profile NOT IN (?, 'synthetic-demo-v1'))",
+        "AND (observations_version != 1 OR processing_profile IS NULL OR processing_profile NOT IN (?, 'synthetic-demo-v1'))",
         (profile,),
     ).fetchone()[0]
 
 
 def document_is_current(conn: sqlite3.Connection, sha: str, profile: str) -> bool:
     row = conn.execute(
-        "SELECT parse_status, processing_profile FROM documents WHERE content_sha256 = ?", (sha,)
+        "SELECT parse_status, processing_profile, observations_version FROM documents WHERE content_sha256 = ?", (sha,)
     ).fetchone()
-    return row is not None and row["parse_status"] == "parsed" and row["processing_profile"] == profile
+    return row is not None and row["parse_status"] == "parsed" and row["processing_profile"] == profile and row["observations_version"] == 1
 
 
 def clear_document_records(conn: sqlite3.Connection, sha: str) -> None:
+    invalidate_reconciliation(conn)
     conn.execute("DELETE FROM account_year_facts WHERE document_sha256 = ?", (sha,))
     conn.execute("DELETE FROM tax_returns WHERE document_sha256 = ?", (sha,))

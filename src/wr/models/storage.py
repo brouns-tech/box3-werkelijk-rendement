@@ -11,9 +11,7 @@ from wr.models.metadata import FactMetadata
 from wr.money import Currency
 
 
-class FactRecord(Record):
-    id: int = 0
-    document_sha256: str = ""
+class FactValues(Record):
     tax_year: int = 0
     issuer: str = ""
     account_key: str = ""
@@ -32,8 +30,16 @@ class FactRecord(Record):
     capital_gain: float | None = None
     gain_method: GainMethod | None = GainMethod.UNKNOWN
     logical_group: str | None = None
-    is_canonical: bool = False
     extra: SerializeAsAny[FactMetadata] = Field(default_factory=FactMetadata)
+
+    @property
+    def has_conflicts(self) -> bool:
+        return False
+
+
+class FactRecord(FactValues):
+    id: int = 0
+    document_sha256: str = ""
     first_seen_path: str | None = None
     doc_type: str | None = None
     parse_status: str | None = None
@@ -70,6 +76,7 @@ class DocumentInput(Record):
 
 
 class DocumentUpdate(Record):
+    observations_version: int | None = None
     page_count: int | None = None
     issuer: str | None = None
     doc_type: str | None = None

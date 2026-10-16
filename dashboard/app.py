@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from wr.storage.facts import canonical_facts
+from wr.storage.reconciliation import reconciled_facts
 
 from wr.storage.adapters import fact_from_row
 
@@ -246,7 +246,7 @@ def _overview(conn, household: HouseholdSettings, language: str = "en") -> None:
     st.subheader(t(Messages.DECISION_OVERVIEW))
     if results:
         statement_returns = {
-            result["taxpayer_position"]: individual_portfolio(canonical_facts(conn, year), year, result["taxpayer_name"], household)[0]
+            result["taxpayer_position"]: individual_portfolio(reconciled_facts(conn, year), year, result["taxpayer_name"], household)[0]
             for result in results
         }
         st.caption(t(Messages.STATEMENT_RETURNS_HELP))
@@ -258,19 +258,9 @@ def _overview(conn, household: HouseholdSettings, language: str = "en") -> None:
     else:
         st.info(t(Messages.NO_TAX_DECISION_IS_AVAILABLE_FOR_THIS_YEAR))
 
-    facts = conn.execute(
-        """
-        SELECT issuer, account_key, account_label, holder_names, ownership, currency,
-               start_balance, end_balance, deposits, withdrawals,
-               interest_received, interest_paid, dividends_gross, withholding_tax,
-               capital_gain, gain_method, extra
-        FROM account_year_facts
-        WHERE tax_year = ? AND is_canonical = 1
-        ORDER BY issuer, account_key
-        """,
-        (year,),
-    ).fetchall()
-    facts = [fact_from_row(row) for row in facts]
+    facts = reconciled_facts(conn, year)
+    with st.expander(t(Messages.RECONCILIATION_EVIDENCE)):
+        st.json([fact.model_dump(mode="json") for fact in facts])
     st.subheader(t(Messages.ACCOUNT_OVERVIEW))
     fact_rows = []
     for fact in facts:

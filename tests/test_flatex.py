@@ -1,6 +1,7 @@
 import sqlite3
 
-from wr.importing.canonicalization import canonicalize_facts
+from wr.reconciliation.service import reconcile_facts
+from wr.storage.reconciliation import reconciled_facts
 from wr.storage.migrations import init_db
 from wr.parsers.flatex import parse_flatex
 
@@ -30,7 +31,7 @@ def test_parses_flatex_financial_instruments_inventory():
     assert fact.extra.position_count == 2
 
 
-def test_keeps_degiro_and_flatex_as_separate_canonical_sources():
+def test_keeps_degiro_and_flatex_as_separate_reconciled_accounts():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_db(conn)
@@ -51,10 +52,10 @@ def test_keeps_degiro_and_flatex_as_separate_canonical_sources():
             (sha, issuer, issuer),
         )
 
-    canonicalize_facts(conn)
+    reconcile_facts(conn)
 
     facts = conn.execute(
-        "SELECT issuer FROM account_year_facts WHERE is_canonical = 1 ORDER BY issuer"
+        "SELECT issuer FROM reconciled_facts ORDER BY issuer"
     ).fetchall()
     assert [fact["issuer"] for fact in facts] == ["degiro", "flatex"]
 
@@ -143,16 +144,11 @@ def test_derives_return_from_adjacent_inventories_and_linked_flows():
             ),
         )
 
-    canonicalize_facts(conn)
+    reconcile_facts(conn)
 
-    fact = conn.execute(
-        """
-        SELECT start_balance, end_balance, deposits, withdrawals, capital_gain, gain_method, extra
-        FROM account_year_facts
-        WHERE document_sha256 = 'inventory-2021'
-        """
-    ).fetchone()
-    result = dict(fact)
+    fact = reconciled_facts(conn, 2021)[0]
+    result = fact.model_dump(include={"start_balance", "end_balance", "deposits", "withdrawals", "capital_gain", "gain_method"})
+
     assert {key: value for key, value in result.items() if key != "extra"} == {
         "start_balance": 100.0,
         "end_balance": 120.0,
@@ -163,7 +159,7 @@ def test_derives_return_from_adjacent_inventories_and_linked_flows():
     }
 
 
-def test_legacy_cash_only_balance_flow_is_cleared():
+def test_legacy_cash_only_balance_flow_is_not_used_as_portfolio_return():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_db(conn)
@@ -183,12 +179,9 @@ def test_legacy_cash_only_balance_flow_is_cleared():
         """
     )
 
-    canonicalize_facts(conn)
+    reconcile_facts(conn)
 
-    fact = conn.execute(
-        """
-        SELECT capital_gain, gain_method FROM account_year_facts
-        WHERE document_sha256 = 'cash-only'
-        """
-    ).fetchone()
-    assert dict(fact) == {"capital_gain": None, "gain_method": "unknown"}
+    fact = reconciled_facts(conn, 2021)[0]
+    assert fact.model_dump(include={"capital_gain", "gain_method"}) == {"capital_gain": None, "gain_method": "unknown"}
+    original = conn.execute("SELECT capital_gain, gain_method FROM account_year_facts").fetchone()
+    assert tuple(original) == (450, "balance_flow")

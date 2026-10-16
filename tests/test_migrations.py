@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from wr.storage.migrations import SCHEMA, SCHEMA_VERSION, init_db
+from wr.storage.migrations import SCHEMA, SCHEMA_VERSION, init_db, _migration_4
 
 
 def test_database_migrations_are_versioned_and_idempotent():
@@ -56,8 +56,7 @@ def test_taxpayer_migration_preserves_results_and_rejects_legacy_codes():
         [("a", "Alex Example", 100, 32), ("b", "Blair Example", 200, 64)],
     )
     conn.commit()
-    init_db(conn)
-    init_db(conn)
+    _migration_4(conn)
     assert conn.execute(
         """SELECT taxpayer_position, taxpayer_name, allocated_actual_return,
                   estimated_tax_savings, notes
@@ -141,3 +140,34 @@ def test_box3_migration_rolls_back_on_invalid_metadata(invalid):
         init_db(conn)
     assert conn.execute("SELECT extra FROM account_year_facts ORDER BY id").fetchall() == [('{}',), (invalid,)]
     assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 4
+
+
+def test_reconciliation_migration_requires_reimport_of_previously_mutated_sources():
+    from wr.reconciliation.service import reconcile_facts
+    from wr.storage.reconciliation import source_observations
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    conn.execute("DELETE FROM schema_migrations WHERE version = 6")
+    conn.execute("ALTER TABLE account_year_facts ADD COLUMN is_canonical INTEGER DEFAULT 0")
+    conn.execute(
+        """INSERT INTO documents (content_sha256, byte_size, imported_at, parse_status, processing_profile)
+           VALUES ('legacy', 1, 'now', 'parsed', 'synthetic-demo-v1')"""
+    )
+    conn.execute(
+        """INSERT INTO account_year_facts (document_sha256, tax_year, issuer, account_key, capital_gain)
+           VALUES ('legacy', 2024, 'bank', 'account', 123)"""
+    )
+    conn.execute("INSERT INTO yearly_portfolio (tax_year, coverage_status) VALUES (2024, 'COMPLETE')")
+    conn.commit()
+    init_db(conn)
+    assert conn.execute("SELECT capital_gain FROM account_year_facts").fetchone()[0] == 123
+    assert conn.execute("SELECT observations_version FROM documents").fetchone()[0] == 0
+    assert "is_canonical" not in {row[1] for row in conn.execute("PRAGMA table_info(account_year_facts)")}
+    assert conn.execute("SELECT COUNT(*) FROM yearly_portfolio").fetchone()[0] == 0
+    assert source_observations(conn) == []
+    reconcile_facts(conn)
+    assert conn.execute("SELECT COUNT(*) FROM reconciled_facts").fetchone()[0] == 0
+    init_db(conn)
+    assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 6

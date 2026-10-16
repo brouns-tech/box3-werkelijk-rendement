@@ -4,12 +4,12 @@ from wr.calculations.returns import fact_return
 from wr.identities.matching import resolve_identity, same_person
 from wr.models import CoverageStatus, Ownership
 from wr.models.identities import HouseholdSettings, IdentityRole
-from wr.models.storage import FactRecord
+from wr.models.storage import FactValues
 from wr.money import Currency, add, multiply
 
 
 def individual_portfolio(
-    facts: list[FactRecord],
+    facts: list[FactValues],
     year: int,
     filer_name: str | None,
     household: HouseholdSettings,
@@ -21,6 +21,9 @@ def individual_portfolio(
     missing: list[str] = []
     for fact in facts:
         if not fact.extra.box3:
+            continue
+        if fact.has_conflicts:
+            missing.append(f"{fact.issuer} {fact.account_key} (conflicting source evidence)")
             continue
         holders = fact.holder_names
         holder_identities = [resolve_identity(holder, household) for holder in holders]

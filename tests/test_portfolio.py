@@ -1,12 +1,13 @@
+from wr.reconciliation.service import reconcile_facts
 
-from wr.storage.facts import canonical_facts
+from wr.storage.reconciliation import reconciled_facts
 import sqlite3
 
 from wr.storage.migrations import init_db
 from wr.calculations.coverage import coverage_for_year
 
 
-def test_derives_inventory_from_canonical_statements_without_filed_assets():
+def test_derives_inventory_from_reconciled_statements_without_filed_assets():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_db(conn)
@@ -21,8 +22,8 @@ def test_derives_inventory_from_canonical_statements_without_filed_assets():
         """
         INSERT INTO account_year_facts (
             document_sha256, tax_year, issuer, account_key, account_label,
-            interest_received, capital_gain, gain_method, is_canonical
-        ) VALUES (?, 2024, ?, ?, ?, ?, ?, 'interest_only', 1)
+            interest_received, capital_gain, gain_method
+        ) VALUES (?, 2024, ?, ?, ?, ?, ?, 'interest_only')
         """,
         (
             "statement",
@@ -34,8 +35,9 @@ def test_derives_inventory_from_canonical_statements_without_filed_assets():
         ),
     )
     conn.commit()
+    reconcile_facts(conn)
 
-    result = coverage_for_year(2024, canonical_facts(conn, 2024))
+    result = coverage_for_year(2024, reconciled_facts(conn, 2024))
 
     assert result.coverage_status == "COMPLETE"
     assert result.known_combined_actual_return == 2007.58
@@ -58,15 +60,16 @@ def test_excludes_degiro_pension_fact_from_box3_rollup():
         """
         INSERT INTO account_year_facts (
             document_sha256, tax_year, issuer, account_key, account_label,
-            capital_gain, gain_method, extra, is_canonical
+            capital_gain, gain_method, extra
         ) VALUES (?, 2023, 'degiro', 'example-pensioen', 'DEGIRO Pensioen',
-                  9999.0, 'explicit', '{"box3": false}', 1)
+                  9999.0, 'explicit', '{"box3": false}')
         """,
         ("pension-statement",),
     )
     conn.commit()
+    reconcile_facts(conn)
 
-    result = coverage_for_year(2023, canonical_facts(conn, 2023))
+    result = coverage_for_year(2023, reconciled_facts(conn, 2023))
 
     assert result.coverage_status == "UNKNOWN"
     assert result.known_combined_actual_return is None

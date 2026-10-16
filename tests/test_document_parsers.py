@@ -4,7 +4,7 @@ import sqlite3
 
 from wr.importing.classification import classify
 from wr.storage.migrations import init_db
-from wr.importing.canonicalization import canonicalize_facts
+from wr.reconciliation.service import reconcile_facts
 from wr.models import AccountYearFact
 from wr.parsers.degiro import parse_degiro
 from wr.parsers.ing import parse_ing
@@ -110,14 +110,11 @@ def test_sns_product_label_enriches_same_account_nickname_across_years():
             "INSERT INTO account_year_facts (document_sha256, tax_year, issuer, account_key, account_label) VALUES (?, ?, 'sns', 'NL00SNSB0000000000', ?)",
             (sha, year, label),
         )
-    canonicalize_facts(conn)
+    reconcile_facts(conn)
 
-    labels = [
-        row[0]
-        for row in conn.execute(
-            "SELECT account_label FROM account_year_facts ORDER BY tax_year"
-        )
-    ]
+    from wr.storage.reconciliation import reconciled_facts
+    labels = [reconciled_facts(conn, year)[0].account_label for year in (2022, 2024)]
+    assert [row[0] for row in conn.execute("SELECT account_label FROM account_year_facts ORDER BY tax_year")] == ["Alex & Sam", "SNS Compleet"]
 
     assert labels == ["SNS Compleet", "SNS Compleet"]
 

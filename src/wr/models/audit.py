@@ -112,7 +112,7 @@ class TaxpayerTaxExportRow(Record):
 
 class AuditManifest(Record):
     format: str = "werkelijk-rendement-audit"
-    version: int = 2
+    version: int = 3
     pending_pdf_reprocessing: int
     document_processing_profiles: list[str]
     generated_at_utc: str

@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 
 
+from wr.reconciliation.service import reconcile_facts
 from wr.models.identities import ChildIdentity, HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
 from wr.workspace.settings import load_settings, save_settings
 from wr.storage.migrations import init_db
@@ -128,10 +129,11 @@ def identity_db(names, filers=()):
     init_db(conn)
     conn.execute("INSERT INTO documents (content_sha256, byte_size, imported_at, parse_status) VALUES ('doc', 1, 'now', 'parsed')")
     for index, name in enumerate(names):
-        conn.execute("INSERT INTO account_year_facts (document_sha256, tax_year, issuer, account_key, holder_names, capital_gain, gain_method, is_canonical) VALUES ('doc', 2023, 'bank', ?, ?, 50, 'explicit', 1)", (str(index), json.dumps([name])))
+        conn.execute("INSERT INTO account_year_facts (document_sha256, tax_year, issuer, account_key, holder_names, capital_gain, gain_method) VALUES ('doc', 2023, 'bank', ?, ?, 50, 'explicit')", (str(index), json.dumps([name])))
     for name in filers:
         conn.execute("INSERT OR IGNORE INTO tax_returns (document_sha256, tax_year, filer_name, voordeel_a, box3_tax_a) VALUES ('doc', 2023, ?, 100, 32)", (name,))
     conn.commit()
+    reconcile_facts(conn)
     return conn
 
 

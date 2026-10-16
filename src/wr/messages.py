@@ -31,6 +31,12 @@ class MessageTemplate:
 
 
 class Messages:
+    CONFLICTING_SOURCE_EVIDENCE: Final = Message(
+        "Conflicting source evidence", "Tegenstrijdige brongegevens"
+    )
+    RECONCILIATION_EVIDENCE: Final = Message(
+        "Reconciled facts and supporting evidence", "Afgestemde feiten en onderliggende bewijsstukken"
+    )
     ACCOUNT_CURRENCY_HELP: Final = Message(
         "Account amounts use the source currency. Unconverted foreign-currency accounts are excluded from EUR totals and keep the tax comparison incomplete.",
         "Rekeningbedragen staan in de bronvaluta. Niet-omgerekende vreemdevalutarekeningen tellen niet mee in EUR-totalen en houden de belastingvergelijking onvolledig.",
@@ -443,9 +449,9 @@ class Messages:
         "No actual-return fields",
         "Geen gegevens voor werkelijk rendement",
     )
-    NO_CANONICAL_BOX_3_STATEMENTS_FOR_THIS_YEAR: Final = Message(
-        "No canonical Box 3 statements for this year",
-        "Geen geselecteerde Box 3-bronoverzichten voor dit jaar",
+    NO_RECONCILED_BOX_3_STATEMENTS_FOR_THIS_YEAR: Final = Message(
+        "No reconciled Box 3 statements for this year",
+        "Geen afgestemde Box 3-bronoverzichten voor dit jaar",
     )
     NO_MATERIAL_DIFFERENCE: Final = Message(
         "No material difference",

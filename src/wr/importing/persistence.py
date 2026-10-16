@@ -19,6 +19,7 @@ def persist_parse(conn: sqlite3.Connection, sha: str, classification: Classifica
         tax_year=result.tax_year,
         raw_text_excerpt=excerpt,
         parse_status="parsed",
+        observations_version=1,
     )
 
     for fact in result.facts:

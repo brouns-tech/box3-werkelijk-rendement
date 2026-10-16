@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 
 from wr.models import AccountYearFact, Ownership, ParseResult
 from wr.models.metadata import FactMetadata
 from wr.models.settings import InstitutionSettings
+from wr.models.reconciliation import AttributeField, EvidenceStatus, FieldEvidence, ReconciledFact
+from wr.models.storage import FactRecord
+from wr.reconciliation.engine import account_key, reconcile_observations, set_field, source_evidence
 from wr.parsers._text import normalize_iban, parse_nl_amount
 from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, doc_type_parser
 from wr.parsers.common import resolve_tax_year
@@ -202,23 +204,19 @@ def _holders(text: str) -> list[str]:
     return []
 
 
-def _postprocess(conn: sqlite3.Connection, _options: InstitutionSettings) -> None:
-    rows = conn.execute(
-        "SELECT id, account_key, account_label FROM account_year_facts WHERE issuer = ?",
-        ("sns",),
-    ).fetchall()
-    product_labels: dict[str, str] = {}
-    for row in rows:
-        label = (row["account_label"] or "").strip()
-        if label.lower().startswith("sns "):
-            product_labels[row["account_key"].split(":", 1)[0]] = label
-    for row in rows:
-        product_label = product_labels.get(row["account_key"].split(":", 1)[0])
-        if product_label and not (row["account_label"] or "").lower().startswith("sns "):
-            conn.execute(
-                "UPDATE account_year_facts SET account_label = ? WHERE id = ?",
-                (product_label, row["id"]),
-            )
+def _reconcile(observations: list[FactRecord], _options: InstitutionSettings) -> list[ReconciledFact]:
+    results = reconcile_observations(observations)
+    for result in results:
+        labels = [row for row in observations if account_key(row.account_key) == account_key(result.account_key)
+                  and (row.account_label or "").lower().startswith("sns ")]
+        if labels:
+            selected = max(labels, key=lambda row: (row.tax_year, row.document_sha256))
+            set_field(result, FieldEvidence(
+                field=AttributeField.LABEL, status=EvidenceStatus.DERIVED, value=selected.account_label,
+                sources=[source_evidence(row, AttributeField.LABEL) for row in labels],
+                rule="sns_product_label_for_display_only",
+            ))
+    return results
 
 
 PLUGIN = InstitutionPlugin(
@@ -228,8 +226,8 @@ PLUGIN = InstitutionPlugin(
         ClassificationRule("sns", "jaaroverzicht", _is_annual_overview),
     ),
     parsers={
-        "jaaroverzicht": ParserRegistration(doc_type_parser(parse_sns), 90),
-        "totaaloverzicht": ParserRegistration(doc_type_parser(parse_sns), 50),
+        "jaaroverzicht": ParserRegistration(doc_type_parser(parse_sns)),
+        "totaaloverzicht": ParserRegistration(doc_type_parser(parse_sns)),
     },
-    postprocess=_postprocess,
+    reconcile=_reconcile,
 )

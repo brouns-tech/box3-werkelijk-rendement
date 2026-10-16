@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 import importlib
 import pkgutil
-import sqlite3
 
 from wr.models import ParseResult
 from wr.parsers._schemas import parse_institution_settings
@@ -70,18 +69,3 @@ def parse_document(
         )
     options = parse_institution_settings(issuer, (institution_options or {}).get(issuer, {}))
     return registration.parser(text, tax_year, ParserContext(issuer, doc_type, options))
-
-
-def canonical_priority(issuer: str, doc_type: str) -> int:
-    registration = PARSER_REGISTRY.get((issuer, doc_type))
-    return registration.canonical_priority if registration else 1
-
-
-def postprocess_facts(
-    conn: sqlite3.Connection,
-    institution_options: InstitutionOptions | None = None,
-) -> None:
-    options = institution_options or {}
-    for plugin in PLUGINS:
-        if plugin.postprocess:
-            plugin.postprocess(conn, parse_institution_settings(plugin.issuer, options.get(plugin.issuer, {})))

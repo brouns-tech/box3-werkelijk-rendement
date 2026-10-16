@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 import re
-import sqlite3
 
 from pydantic import Field, field_validator
 
@@ -10,6 +9,9 @@ from wr.models import AccountYearFact, GainMethod, ParseResult
 from wr.models.base import Record
 from wr.models.metadata import FactMetadata
 from wr.models.settings import InstitutionSettings
+from wr.models.reconciliation import AttributeField, EvidenceStatus, FieldEvidence, ReconciledFact
+from wr.models.storage import FactRecord, MoneyField
+from wr.reconciliation.engine import account_key, derive_field, group_observations, reconcile_field, reconcile_group, set_field
 from wr.money import add, subtract, total
 from wr.parsers._text import normalize_iban, parse_nl_amount
 from wr.parsers.base import (
@@ -366,162 +368,70 @@ def _closing_balance(text: str) -> float | None:
     return balance
 
 
-def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None:
-    linked_account = FlatexSettings.model_validate(options.model_dump()).linked_account
-    normalized_account = (
-        normalize_iban(linked_account)
-        if isinstance(linked_account, str) and linked_account.strip()
-        else None
-    )
-    conn.execute(
-        """
-        UPDATE account_year_facts
-        SET capital_gain = NULL, gain_method = ?
-        WHERE issuer = 'flatex'
-          AND id IN (
-              SELECT f.id
-              FROM account_year_facts f
-              JOIN documents d ON d.content_sha256 = f.document_sha256
-              WHERE d.doc_type = 'account_statement' AND f.gain_method = ?
-          )
-        """,
-        (GainMethod.UNKNOWN.value, GainMethod.BALANCE_FLOW.value),
-    )
-    _select_statement_canonicals(conn)
-    inventories = conn.execute(
-        """
-        SELECT f.*
-        FROM account_year_facts f
-        JOIN documents d ON d.content_sha256 = f.document_sha256
-        WHERE f.issuer = 'flatex'
-          AND f.is_canonical = 1
-          AND d.doc_type = 'financial_instruments_statement'
-        ORDER BY f.account_key, f.tax_year
-        """
-    ).fetchall()
-    inventory_by_year = {
-        (row["account_key"], row["tax_year"]): row for row in inventories
-    }
-
-    for inventory in inventories:
-        account_key = inventory["account_key"]
-        tax_year = inventory["tax_year"]
-        flows = conn.execute(
-            """
-            SELECT start_balance, deposits, withdrawals, extra
-            FROM account_year_facts f
-            JOIN documents d ON d.content_sha256 = f.document_sha256
-            WHERE f.issuer = 'flatex'
-              AND f.account_key = ?
-              AND f.tax_year = ?
-              AND d.doc_type = 'account_statement'
-            """,
-            (account_key, tax_year),
-        ).fetchall()
-        if not flows:
+def _reconcile(observations: list[FactRecord], options: InstitutionSettings) -> list[ReconciledFact]:
+    results: list[ReconciledFact] = []
+    inventories = [row for row in observations if row.doc_type == "financial_instruments_statement"]
+    for group in group_observations(observations):
+        inventory = [row for row in group if row.doc_type == "financial_instruments_statement"]
+        statements = [row for row in group if row.doc_type == "account_statement"]
+        if not inventory:
+            if statements:
+                latest = max(_metadata(row).statement_number for row in statements)
+                group = [row for row in statements if _metadata(row).statement_number == latest]
+            result = reconcile_group(group)
+            if statements and result.gain_method == GainMethod.BALANCE_FLOW:
+                set_field(result, FieldEvidence(field=MoneyField.CAPITAL_GAIN, status=EvidenceStatus.DERIVED,
+                                               rule="cash_statement_is_not_portfolio_return"))
+                set_field(result, FieldEvidence(field=AttributeField.GAIN_METHOD, status=EvidenceStatus.DERIVED,
+                                               value=GainMethod.UNKNOWN.value,
+                                               rule="cash_statement_is_not_portfolio_return"))
+            results.append(result)
             continue
-
-        deposits = total(row["deposits"] or 0.0 for row in flows)
-        withdrawals = total(row["withdrawals"] or 0.0 for row in flows)
-        previous = inventory_by_year.get((account_key, tax_year - 1))
-        start_balance = previous["end_balance"] if previous else _opening_balance(flows)
-        if start_balance is None:
-            continue
-
-        end_balance = inventory["end_balance"]
-        capital_gain = add(subtract(end_balance, start_balance, deposits), withdrawals)
-        extra = FlatexMetadata.model_validate_json(inventory["extra"] or "{}")
-        previous_extra = FlatexMetadata.model_validate_json(previous["extra"] or "{}") if previous else FlatexMetadata()
-        start_securities_value = previous_extra.securities_market_value
-        end_securities_value = extra.securities_market_value
-        extra.portfolio_return_basis = (
-            "year-end securities-and-cash valuation adjusted only for external transfers"
-        )
-        extra.securities_market_value_start = start_securities_value
-        extra.securities_market_value_end = end_securities_value
-        if start_securities_value is not None and end_securities_value is not None:
-            extra.securities_market_value_change = subtract(
-                end_securities_value, start_securities_value
-            )
+        result = reconcile_group(inventory)
+        for field in (AttributeField.HOLDERS, AttributeField.OWNERSHIP, AttributeField.BOX3, AttributeField.CURRENCY):
+            set_field(result, reconcile_field(group, field))
+        previous = [row for row in inventories if row.tax_year == result.tax_year - 1
+                    and account_key(row.account_key) == account_key(result.account_key)]
+        opening = reconcile_field(previous, MoneyField.END_BALANCE) if previous else reconcile_field(
+            [row for row in statements if _metadata(row).opening_statement], MoneyField.START_BALANCE)
+        opening_currency = reconcile_field(inventory + previous, AttributeField.CURRENCY)
+        derive_field(result, MoneyField.START_BALANCE, opening.value, [opening, opening_currency],
+                     "prior_year_inventory" if previous else "opening_account_statement")
+        flows: dict[int, list[FactRecord]] = defaultdict(list)
+        for row in statements:
+            flows[_metadata(row).statement_number].append(row)
+        for field in (MoneyField.DEPOSITS, MoneyField.WITHDRAWALS):
+            periods = [reconcile_field(rows, field) for rows in flows.values()]
+            value = total(item.value for item in periods if item.value is not None) if periods and all(
+                item.value is not None for item in periods) else None
+            numbered_periods = sorted(number for number in flows if number > 0)
+            gaps = numbered_periods and numbered_periods != list(range(1, numbered_periods[-1] + 1))
+            derive_field(result, field, None if gaps else value, periods,
+                         "missing_statement_periods" if gaps else "sum_distinct_statement_periods")
+        inputs = [item for item in result.evidence if item.field in {
+            MoneyField.START_BALANCE, MoneyField.END_BALANCE, MoneyField.DEPOSITS, MoneyField.WITHDRAWALS,
+        }]
+        complete = all(item.value is not None for item in inputs)
+        capital = add(subtract(result.end_balance, result.start_balance, result.deposits), result.withdrawals) if complete else None
+        derive_field(result, MoneyField.CAPITAL_GAIN, capital, inputs, "portfolio_valuation_minus_external_flows")
+        derive_field(result, AttributeField.GAIN_METHOD, GainMethod.BALANCE_FLOW.value if complete else GainMethod.UNKNOWN.value,
+                     inputs, "portfolio_valuation_minus_external_flows")
+        extra = _metadata(inventory[0]).model_copy(deep=True)
+        extra.portfolio_return_basis = "year-end securities-and-cash valuation adjusted only for external transfers"
         extra.return_derived_from = ReturnEvidence(
-            opening_balance=(
-                "prior_31_december_inventory" if previous else "opening_account_statement"
-            ),
-            external_flow_documents=len(flows),
-            linked_account=normalized_account,
+            opening_balance="prior_31_december_inventory" if previous else "opening_account_statement",
+            external_flow_documents=len(statements),
+            linked_account=FlatexSettings.model_validate(options.model_dump()).linked_account,
         )
-        conn.execute(
-            """
-            UPDATE account_year_facts
-            SET start_balance = ?, deposits = ?, withdrawals = ?,
-                capital_gain = ?, gain_method = ?, extra = ?
-            WHERE id = ?
-            """,
-            (
-                start_balance,
-                deposits,
-                withdrawals,
-                capital_gain,
-                GainMethod.BALANCE_FLOW.value,
-                extra.model_dump_json(exclude_unset=True),
-                inventory["id"],
-            ),
-        )
+        result.extra = extra
+        box3 = next(item for item in result.evidence if item.field == AttributeField.BOX3)
+        result.extra.box3 = box3.value if isinstance(box3.value, bool) else True
+        results.append(result)
+    return results
 
 
-def _select_statement_canonicals(conn: sqlite3.Connection) -> None:
-    rows = conn.execute(
-        """
-        SELECT f.id, f.tax_year, f.account_key, f.extra
-        FROM account_year_facts f
-        JOIN documents d ON d.content_sha256 = f.document_sha256
-        WHERE f.issuer = 'flatex' AND d.doc_type = 'account_statement'
-        ORDER BY f.tax_year, f.account_key
-        """
-    ).fetchall()
-    groups: dict[tuple[int, str], list] = defaultdict(list)
-    for row in rows:
-        groups[(row["tax_year"], row["account_key"])].append(row)
-
-    for (tax_year, account_key), statements in groups.items():
-        has_inventory = conn.execute(
-            """
-            SELECT 1
-            FROM account_year_facts f
-            JOIN documents d ON d.content_sha256 = f.document_sha256
-            WHERE f.issuer = 'flatex' AND f.tax_year = ? AND f.account_key = ?
-              AND d.doc_type = 'financial_instruments_statement'
-            """,
-            (tax_year, account_key),
-        ).fetchone()
-        if has_inventory:
-            continue
-        selected = max(statements, key=_statement_number)
-        conn.execute(
-            """
-            UPDATE account_year_facts SET is_canonical = 0
-            WHERE issuer = 'flatex' AND tax_year = ? AND account_key = ?
-            """,
-            (tax_year, account_key),
-        )
-        conn.execute(
-            "UPDATE account_year_facts SET is_canonical = 1 WHERE id = ?",
-            (selected["id"],),
-        )
-
-
-def _statement_number(row) -> int:
-    extra = FlatexMetadata.model_validate_json(row["extra"] or "{}")
-    return extra.statement_number
-
-
-def _opening_balance(flows) -> float | None:
-    opening_balances = []
-    for flow in flows:
-        extra = FlatexMetadata.model_validate_json(flow["extra"] or "{}")
-        if extra.opening_statement and flow["start_balance"] is not None:
-            opening_balances.append(flow["start_balance"])
-    return opening_balances[0] if len(opening_balances) == 1 else None
+def _metadata(row: FactRecord) -> FlatexMetadata:
+    return FlatexMetadata.model_validate(row.extra.model_dump())
 
 
 PLUGIN = InstitutionPlugin(
@@ -538,11 +448,11 @@ PLUGIN = InstitutionPlugin(
         ClassificationRule("flatex", "account_statement", _is_account_statement),
     ),
     parsers={
-        "financial_instruments_statement": ParserRegistration(_parse_with_context, 100),
-        "account_statement": ParserRegistration(_parse_with_context, 20),
-        "belastingcertificaat": ParserRegistration(_parse_with_context, 10),
+        "financial_instruments_statement": ParserRegistration(_parse_with_context),
+        "account_statement": ParserRegistration(_parse_with_context),
+        "belastingcertificaat": ParserRegistration(_parse_with_context),
     },
-    postprocess=_postprocess,
+    reconcile=_reconcile,
     settings_fields=(
         InstitutionSetting("linked_account", "Linked bank account (IBAN)", "Used to identify external transfers in flatex account statements."),
     ),

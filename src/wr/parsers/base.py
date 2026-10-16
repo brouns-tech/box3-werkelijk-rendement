@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Protocol
-import sqlite3
 
 from pydantic import JsonValue
 
 from wr.messages import Message
 from wr.models import ParseResult
 from wr.models.metadata import FactMetadata
+from wr.models.reconciliation import ReconciledFact
+from wr.models.storage import FactRecord
 from wr.models.settings import InstitutionSettings
 
 
@@ -36,16 +37,15 @@ class Parser(Protocol):
     ) -> ParseResult: ...
 
 
-class PostProcessor(Protocol):
+class Reconciler(Protocol):
     def __call__(
-            self, conn: sqlite3.Connection, options: InstitutionSettings
-    ) -> None: ...
+            self, observations: list[FactRecord], options: InstitutionSettings
+    ) -> list[ReconciledFact]: ...
 
 
 @dataclass(frozen=True)
 class ParserRegistration:
     parser: Parser
-    canonical_priority: int
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class InstitutionPlugin:
     issuer: str
     classification_rules: tuple[ClassificationRule, ...]
     parsers: Mapping[str, ParserRegistration]
-    postprocess: PostProcessor | None = None
+    reconcile: Reconciler | None = None
     classification_priority: int = 0
     settings_fields: tuple[InstitutionSetting, ...] = ()
     metadata_model: type[FactMetadata] = FactMetadata

@@ -112,6 +112,8 @@ def test_status_and_coverage_translate_known_messages_and_preserve_source_text()
     assert status_label("parsed", "nl") == "Verwerkt"
     assert status_label("Settings saved.", "nl") == "Settings saved."
     assert coverage_details("Settings saved.", "nl") == "Settings saved."
+    assert coverage_details("example (conflicting source evidence)", "nl") == "example (Tegenstrijdige brongegevens)"
+    assert coverage_details("no reconciled Box 3 statements for this year", "nl") == "Geen afgestemde Box 3-bronoverzichten voor dit jaar"
     assert coverage_details("example (no actual-return fields)", "nl") == "example (Geen gegevens voor werkelijk rendement)"
     assert coverage_details("example (requires EUR conversion and currency gain/loss)", "nl") == "example (Omrekening naar EUR en valutawinst/-verlies vereist)"
 

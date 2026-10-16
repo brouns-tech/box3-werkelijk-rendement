@@ -135,6 +135,6 @@ PLUGIN = InstitutionPlugin(
         ClassificationRule("degiro", "jaaroverzicht", _is_supported_document),
     ),
     parsers={
-        "jaaroverzicht": ParserRegistration(simple_parser(parse_degiro), 100),
+        "jaaroverzicht": ParserRegistration(simple_parser(parse_degiro)),
     },
 )

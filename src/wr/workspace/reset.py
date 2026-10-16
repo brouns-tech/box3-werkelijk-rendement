@@ -16,6 +16,7 @@ def reset_workspace(settings: Settings) -> None:
             for table in (
                 "taxpayer_tax_results",
                 "yearly_portfolio",
+                "reconciled_facts",
                 "account_year_facts",
                 "tax_returns",
                 "documents",

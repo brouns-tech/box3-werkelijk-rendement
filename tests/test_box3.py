@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 from pydantic import ValidationError
 
+from wr.reconciliation.service import reconcile_facts
 from wr.calculations.coverage import coverage_for_year
 from tests.support.pdf import SAMPLES
 from wr.export import _asset_and_fact_rows
@@ -77,11 +78,11 @@ def test_box3_treatment_survives_storage_and_controls_audit_inclusion(box3):
         interest_received=5, extra=FactMetadata(box3=box3),
     )
     insert_facts(conn, "synthetic", [fact])
-    conn.execute("UPDATE account_year_facts SET is_canonical=1")
+    reconcile_facts(conn)
     row = conn.execute("SELECT * FROM account_year_facts").fetchone()
     assert json.loads(row["extra"])["box3"] is box3
     assert fact_from_row(row).extra.box3 is box3
     assets, sources = _asset_and_fact_rows(conn, 2024)
     assert len(assets) == (1 if box3 else 0)
-    assert sources[0].included_in_year_total is box3
-    assert sources[0].exclusion_reason == (None if box3 else "excluded from Box 3")
+    assert sources[0].included_in_year_total is False
+    assert sources[0].exclusion_reason == ("source observation; totals use reconciled facts" if box3 else "excluded from Box 3")

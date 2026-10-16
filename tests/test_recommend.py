@@ -1,6 +1,7 @@
 import sqlite3
 
 
+from wr.reconciliation.service import reconcile_facts
 from wr.models.identities import HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
 from wr.storage.migrations import init_db
 from wr.calculations.service import results_for_year
@@ -37,12 +38,13 @@ def test_individual_return_uses_taxpayer_from_return_without_configuration():
         """
         INSERT INTO account_year_facts (
             document_sha256, tax_year, issuer, account_key, holder_names,
-            capital_gain, gain_method, is_canonical
+            capital_gain, gain_method
         ) VALUES ('return', 2023, 'bank', 'example', '["Alex Example"]',
-                  50, 'explicit', 1)
+                  50, 'explicit')
         """
     )
     conn.commit()
+    reconcile_facts(conn)
 
     result = results_for_year(conn, 2023, HouseholdSettings())
 
@@ -74,12 +76,13 @@ def test_single_configured_taxpayer_does_not_create_empty_partner_result():
         """
         INSERT INTO account_year_facts (
             document_sha256, tax_year, issuer, account_key, holder_names,
-            capital_gain, gain_method, is_canonical
+            capital_gain, gain_method
         ) VALUES ('return', 2023, 'bank', 'example', '["S. de Vries"]',
-                  50, 'explicit', 1)
+                  50, 'explicit')
         """
     )
     conn.commit()
+    reconcile_facts(conn)
 
     result = results_for_year(
         conn,
@@ -126,6 +129,7 @@ def test_prefers_sent_tax_return_over_unsent_draft():
         """
     )
     conn.commit()
+    reconcile_facts(conn)
 
     result = results_for_year(conn, 2025, HouseholdSettings())
 

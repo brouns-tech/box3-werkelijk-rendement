@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS partner_tax_results (
 );
 """
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def init_db(conn: sqlite3.Connection) -> None:
@@ -119,7 +119,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     applied = {
         row[0] for row in conn.execute("SELECT version FROM schema_migrations")
     }
-    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4), (5, _migration_5)):
+    for version, migration in ((1, _migration_1), (2, _migration_2), (3, _migration_3), (4, _migration_4), (5, _migration_5), (6, _migration_6)):
         if version in applied:
             continue
         with conn:
@@ -199,6 +199,26 @@ def _migration_5(conn: sqlite3.Connection) -> None:
             )
         elif not isinstance(metadata["box3"], bool):
             raise ValueError(f"Fact {identifier} box3 treatment must be a boolean")
+
+
+def _migration_6(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(conn, "documents", "observations_version", "INTEGER NOT NULL DEFAULT 1")
+    conn.execute("UPDATE documents SET observations_version = 0 WHERE parse_status = 'parsed'")
+    conn.execute("DELETE FROM yearly_portfolio")
+    conn.execute("DELETE FROM taxpayer_tax_results")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(account_year_facts)")}
+    if "is_canonical" in columns:
+        conn.execute("ALTER TABLE account_year_facts DROP COLUMN is_canonical")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS reconciled_facts (
+            id INTEGER PRIMARY KEY,
+            tax_year INTEGER NOT NULL,
+            issuer TEXT NOT NULL,
+            normalized_account_key TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            UNIQUE(tax_year, issuer, normalized_account_key)
+        )"""
+    )
 
 
 def _add_column_if_missing(

@@ -5,7 +5,7 @@ from wr.calculations.tax import BOX3_RATE_BY_YEAR, compare_partner
 from wr.identities.matching import resolve_identity, same_person
 from wr.models import CoverageStatus, TaxpayerTaxResult, Recommendation
 from wr.models.identities import HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
-from wr.models.storage import FactRecord, PortfolioRecord, TaxReturnRecord
+from wr.models.storage import FactValues, PortfolioRecord, TaxReturnRecord
 from wr.money import multiply, subtract
 
 
@@ -13,7 +13,7 @@ def recommendations_for_year(
     year: int,
     portfolio: PortfolioRecord | None,
     returns: list[TaxReturnRecord],
-    facts: list[FactRecord],
+    facts: list[FactValues],
     household: HouseholdSettings,
 ) -> list[TaxpayerTaxResult]:
     coverage = portfolio.coverage_status if portfolio else CoverageStatus.UNKNOWN.value
@@ -152,7 +152,7 @@ def _submission_rank(excerpt: str | None) -> int:
 
 
 def _individual_results(
-    year: int, returns: list[TaxReturnRecord], facts: list[FactRecord], household: HouseholdSettings
+    year: int, returns: list[TaxReturnRecord], facts: list[FactValues], household: HouseholdSettings
 ) -> list[TaxpayerTaxResult]:
     configured = [(identity.position, identity.name) for identity in household.taxpayers]
     if not configured:

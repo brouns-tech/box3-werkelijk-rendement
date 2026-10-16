@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("package", ["models", "calculations"])
+@pytest.mark.parametrize("package", ["models", "calculations", "reconciliation"])
 def test_core_modules_do_not_import_infrastructure(package):
     directory = ROOT / "src/wr" / package
     for path in directory.glob("*.py"):

@@ -153,8 +153,10 @@ def coverage_details(value: str, language: str) -> str:
     messages = []
     suffix = " (no actual-return fields)"
     for entry in value.split("; "):
-        if entry == "no canonical Box 3 statements for this year":
-            entry = translate(language, Messages.NO_CANONICAL_BOX_3_STATEMENTS_FOR_THIS_YEAR)
+        if entry == "no reconciled Box 3 statements for this year":
+            entry = translate(language, Messages.NO_RECONCILED_BOX_3_STATEMENTS_FOR_THIS_YEAR)
+        elif entry.endswith(" (conflicting source evidence)"):
+            entry = entry[:-len(" (conflicting source evidence)")] + " (" + translate(language, Messages.CONFLICTING_SOURCE_EVIDENCE) + ")"
         elif entry.endswith(suffix):
             entry = entry[:-len(suffix)] + " (" + translate(language, Messages.NO_ACTUAL_RETURN_FIELDS) + ")"
         elif entry.endswith(" (requires EUR conversion and currency gain/loss)"):

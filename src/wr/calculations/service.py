@@ -6,12 +6,12 @@ import sqlite3
 from wr.calculations.coverage import coverage_for_year
 from wr.calculations.recommendations import recommendations_for_year
 from wr.identities.service import effective_household
-from wr.importing.canonicalization import canonicalize_facts
+from wr.reconciliation.service import reconcile_facts
 from wr.models.settings import HouseholdSettings
 from wr.models.tax import TaxpayerTaxResult
 from wr.parsers.base import InstitutionOptions
 from wr.storage.connection import connect
-from wr.storage.facts import canonical_facts, canonical_years, clear_canonical_flags
+from wr.storage.reconciliation import reconciled_facts, reconciled_years
 from wr.storage.migrations import init_db
 from wr.storage.portfolio import portfolio_for_year, save_coverage
 from wr.storage.recommendations import clear_recommendations, comparison_years, save_recommendation
@@ -19,8 +19,9 @@ from wr.storage.tax_returns import returns_for_year
 
 
 def rebuild_portfolio(conn: sqlite3.Connection) -> None:
-    for year in sorted(canonical_years(conn)):
-        save_coverage(conn, coverage_for_year(year, canonical_facts(conn, year)))
+    conn.execute("DELETE FROM yearly_portfolio")
+    for year in sorted(reconciled_years(conn)):
+        save_coverage(conn, coverage_for_year(year, reconciled_facts(conn, year)))
     conn.commit()
 
 
@@ -43,8 +44,7 @@ def recompute(
     conn = connect(db_path)
     try:
         init_db(conn)
-        clear_canonical_flags(conn)
-        canonicalize_facts(conn, institution_options)
+        reconcile_facts(conn, institution_options)
         rebuild_portfolio(conn)
         rebuild_recommendations(conn, household_config)
     finally:
@@ -54,5 +54,5 @@ def recompute(
 def results_for_year(conn: sqlite3.Connection, year: int, household: HouseholdSettings) -> list[TaxpayerTaxResult]:
     return recommendations_for_year(
         year, portfolio_for_year(conn, year), returns_for_year(conn, year),
-        canonical_facts(conn, year), household,
+        reconciled_facts(conn, year), household,
     )

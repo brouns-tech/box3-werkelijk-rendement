@@ -84,6 +84,6 @@ PLUGIN = InstitutionPlugin(
         ClassificationRule("rabobank", "jaaroverzicht", _is_supported_document),
     ),
     parsers={
-        "jaaroverzicht": ParserRegistration(simple_parser(parse_rabobank), 90),
+        "jaaroverzicht": ParserRegistration(simple_parser(parse_rabobank)),
     },
 )

@@ -380,7 +380,7 @@ PLUGIN = InstitutionPlugin(
         ClassificationRule("belastingdienst", "aangifte_ib", _is_supported_document),
     ),
     parsers={
-        "aangifte_ib": ParserRegistration(simple_parser(parse_aangifte), 100),
+        "aangifte_ib": ParserRegistration(simple_parser(parse_aangifte)),
     },
     classification_priority=100,
 )
