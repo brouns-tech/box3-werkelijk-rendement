@@ -108,4 +108,4 @@ def _score(row: FactRecord) -> tuple[int, int, int]:
         )
         if v is not None
     )
-    return (prio, completeness, -row.id)
+    return prio, completeness, -row.id
