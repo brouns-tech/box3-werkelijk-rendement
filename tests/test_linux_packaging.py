@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from wr import desktop_platform
+from wr.desktop import platform as desktop_platform
 
 
 def packaging_module():

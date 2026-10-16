@@ -5,23 +5,28 @@ import urllib.request
 
 import pytest
 
-from wr.desktop_models import FolderResponse, StatusResponse
-from wr.desktop import InstanceLock, child_command, control_request, make_control_server
-from wr.desktop_smoke import smoke_test, synthetic_pdf
-from wr.desktop_storage import prepare_workspace, remember_folder, selected_folder
-from wr.import_pipeline import run_import
+from wr.models.identities import ChildIdentity, HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
+from wr.models.desktop import FolderResponse, StatusResponse
+from wr.desktop.lock import InstanceLock
+from wr.desktop.process import child_command
+from wr.desktop.control import control_request, make_control_server
+from tests.support.pdf import synthetic_pdf
+from wr.desktop.selfcheck import run_selfcheck
+from wr.desktop.storage import prepare_workspace, remember_folder, selected_folder
+from wr.importing.pipeline import run_import
 
 
 def test_desktop_workspace_persists_and_does_not_overwrite_configuration(tmp_path):
-    from wr.config import PartnerSettings, load_settings, save_settings
+
+    from wr.workspace.settings import load_settings, save_settings
     prepare_workspace(tmp_path)
-    save_settings(load_settings(tmp_path), PartnerSettings(partner_a="EXAMPLE"), db_path="custom.sqlite")
+    save_settings(load_settings(tmp_path), HouseholdSettings(identities=(TaxpayerIdentity(name="EXAMPLE", position=TaxpayerPosition.PRIMARY),)), db_path="custom.sqlite")
     documents = tmp_path / "space and unicode é"
     documents.mkdir()
     remember_folder(tmp_path, str(documents))
     assert selected_folder(tmp_path) == str(documents)
     assert prepare_workspace(tmp_path) == tmp_path
-    assert load_settings(tmp_path).partners.partner_a == "EXAMPLE"
+    assert load_settings(tmp_path).household.primary.name == "EXAMPLE"
     assert load_settings(tmp_path).resolved_db_path == tmp_path / "custom.sqlite"
     with pytest.raises(ValueError):
         remember_folder(tmp_path, str(tmp_path / ".wr-settings.json"))
@@ -37,39 +42,59 @@ def test_single_instance_lock_recovers_after_close(tmp_path):
 
 
 def test_legacy_desktop_storage_migrates_once_and_reset_stays_reset(tmp_path):
-    from wr.config import load_settings
-    from wr.workspace import reset_workspace
+    from wr.workspace.settings import load_settings
+    from wr.workspace.reset import reset_workspace
 
     documents = tmp_path / "statements"
     documents.mkdir()
-    legacy = 'db_path = "custom.sqlite"\n[partners]\npartner_a="EXAMPLE"\n'
-    (tmp_path / "config.toml").write_text(legacy)
-    (tmp_path / "preferences.json").write_text(json.dumps({"selected_folder": str(documents)}))
+    (tmp_path / ".wr-settings.json").write_text(json.dumps({
+        "version": 1, "db_path": "custom.sqlite", "import_root": str(documents),
+        "partners": {"partner_a": "EXAMPLE"},
+    }))
     assert prepare_workspace(tmp_path) == tmp_path
     cfg = load_settings(tmp_path)
     assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
-    assert cfg.partners.partner_a == "EXAMPLE"
+    assert cfg.household.primary.name == "EXAMPLE"
     assert selected_folder(tmp_path) == str(documents)
-    assert (tmp_path / "config.toml").read_text() == legacy
     reset_workspace(cfg)
     prepare_workspace(tmp_path)
     assert selected_folder(tmp_path) is None
-    assert load_settings(tmp_path).partners.partner_a is None
+    assert load_settings(tmp_path).household.primary is None
     assert documents.is_dir()
 
 
+def test_beta_folder_preferences_migrate_only_without_json_settings(tmp_path):
+    from wr.workspace.settings import load_settings
+    from wr.workspace.reset import reset_workspace
+
+    documents = tmp_path / "statements"
+    documents.mkdir()
+    preferences = tmp_path / "preferences.json"
+    content = json.dumps({"selected_folder": str(documents)})
+    preferences.write_text(content)
+    prepare_workspace(tmp_path)
+    settings = load_settings(tmp_path)
+    assert settings.resolved_db_path == tmp_path / "wr.sqlite"
+    assert selected_folder(tmp_path) == str(documents)
+    reset_workspace(settings)
+    prepare_workspace(tmp_path)
+    assert selected_folder(tmp_path) is None
+    assert preferences.read_text() == content
+
+
 def test_desktop_folder_selection_preserves_upstream_profiles_and_storage(tmp_path):
-    from wr.config import ChildSettings, PartnerSettings, load_settings, save_settings
+
+    from wr.workspace.settings import load_settings, save_settings
 
     prepare_workspace(tmp_path)
-    partners = PartnerSettings(partner_a="EXAMPLE", children=(ChildSettings("CHILD", ("C. EXAMPLE",)),))
+    partners = HouseholdSettings(identities=(TaxpayerIdentity(name="EXAMPLE", position=TaxpayerPosition.PRIMARY),) + (ChildIdentity(name="CHILD", aliases=("C. EXAMPLE",)),))
     options = {"flatex": {"beneficial_owner": "EXAMPLE"}}
     save_settings(load_settings(tmp_path), partners, db_path="custom.sqlite", institution_options=options)
     documents = tmp_path / "statements"
     documents.mkdir()
     remember_folder(tmp_path, str(documents))
     cfg = load_settings(tmp_path)
-    assert cfg.partners == partners
+    assert cfg.household == partners
     assert cfg.institution_options["flatex"].model_dump(exclude_unset=True) == options["flatex"]
     assert cfg.resolved_db_path == tmp_path / "custom.sqlite"
     assert cfg.import_root == documents
@@ -122,7 +147,7 @@ def test_control_api_validates_response_shape():
 
 
 def test_native_pdf_import_and_audit_smoke_without_poppler(tmp_path, monkeypatch):
-    smoke_test(tmp_path)
+    run_selfcheck(tmp_path)
     result = json.loads((tmp_path / "smoke-result.json").read_text())
     assert result["parsers"] == 8
     assert (tmp_path / "audit.zip").is_file()
@@ -152,7 +177,7 @@ def test_server_bootstrap_applies_security_options_before_run(monkeypatch, tmp_p
     prepare_workspace(tmp_path)
     from streamlit import config
     from streamlit.web import bootstrap
-    from wr.desktop import serve
+    from wr.desktop.server import serve
 
     def check_run(app, _, args, options):
         assert config.get_option("server.address") == "127.0.0.1"
@@ -241,8 +266,8 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
     from pathlib import Path
     from streamlit.testing.v1 import AppTest
     from dashboard.desktop_import import ImportJob
-    from wr.config import load_settings
-    from wr.desktop_storage import remember_language
+    from wr.workspace.settings import load_settings
+    from wr.desktop.storage import remember_language
 
     workspace = prepare_workspace(tmp_path)
     documents = tmp_path / "statements"
@@ -263,7 +288,7 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
 
     monkeypatch.setattr(ImportJob, "run", delayed_import)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
-    before = load_settings(tmp_path).partners
+    before = load_settings(tmp_path).household
     try:
         app.button(key="scan_documents").click().run()
         assert not app.exception
@@ -280,7 +305,7 @@ def test_scan_remembered_folder_in_english_refreshes_editor_without_saving_stale
     assert app.selectbox(key="ui_language").value == "en"
     expected = "1 duplicate" if already_imported else "1 processed"
     assert any(expected in result.value for result in app.success)
-    assert load_settings(tmp_path).partners == before
+    assert load_settings(tmp_path).household == before
     assignments = [widget for widget in app.selectbox if "_identity_" in (widget.key or "")]
     assert assignments and all(widget.value is not None for widget in assignments)
     assert not any(button.key == "refresh_dashboard" for button in app.button)
@@ -304,7 +329,7 @@ def test_completed_import_fragment_requests_one_full_dashboard_refresh(monkeypat
     app = AppTest.from_string(f'''
 import streamlit as st
 from dashboard.desktop_import import ImportJob, _render_job
-from wr.import_pipeline import ImportReport
+from wr.models.importing import ImportReport
 if "job" not in st.session_state:
     job = ImportJob(report=ImportReport(cancelled={cancelled}))
     job.done.set()
@@ -323,13 +348,13 @@ _render_job(st.session_state.job, "en")
 
 def test_windowed_smoke_failure_writes_traceback_instead_of_error_dialog(tmp_path, monkeypatch):
     import sys
-    from wr import desktop, desktop_smoke
+    from wr.desktop import launcher as desktop, selfcheck as desktop_selfcheck
 
     def fail(_directory):
         raise RuntimeError("synthetic extraction failure")
 
     monkeypatch.setattr(sys, "argv", ["desktop", "--smoke-test", str(tmp_path)])
-    monkeypatch.setattr(desktop_smoke, "smoke_test", fail)
+    monkeypatch.setattr(desktop_selfcheck, "run_selfcheck", fail)
     assert desktop.main() == 1
     assert "synthetic extraction failure" in (tmp_path / "smoke-error.log").read_text()
 
@@ -341,7 +366,7 @@ def test_desktop_sidebar_controls_open_storage_and_stop_without_launcher_window(
     prepare_workspace(tmp_path)
     actions = []
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
-    monkeypatch.setattr("wr.desktop.desktop_request", lambda action: actions.append(action) or {})
+    monkeypatch.setattr("wr.desktop.control.desktop_request", lambda action: actions.append(action) or {})
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py")).run()
     assert not app.exception
@@ -362,7 +387,7 @@ def test_instance_lock_contention_from_another_process_is_not_a_startup_error(tm
     script = """
 from pathlib import Path
 import sys
-from wr.desktop import InstanceLock
+from wr.desktop.lock import InstanceLock
 lock = InstanceLock(Path(sys.argv[1]))
 print(lock.acquire())
 lock.close()

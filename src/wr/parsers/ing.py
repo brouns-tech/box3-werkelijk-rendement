@@ -2,17 +2,11 @@ from __future__ import annotations
 
 import re
 
-from wr.records import FactMetadata
-
-from wr.models import AccountYearFact, ParseResult
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    simple_parser,
-)
+from wr.models import AccountYearFact, GainMethod, ParseResult
+from wr.models.metadata import FactMetadata
+from wr.parsers._text import normalize_iban, parse_nl_amount
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
 from wr.parsers.common import first_holder, resolve_tax_year
-from wr.pdf import normalize_iban, parse_nl_amount
 
 
 def _is_supported_document(text: str) -> bool:
@@ -82,15 +76,15 @@ def parse_ing(text: str, tax_year: int | None = None) -> ParseResult:
             interest_paid=paid,
             deposits=None,
             withdrawals=None,
-            extra=FactMetadata(interest_source=interest_source) if interest_source else FactMetadata(),
+            extra=FactMetadata(box3=True, interest_source=interest_source),
         )
         if any(
             product in label.casefold()
             for product in ("betaalrekening", "creditcardrekening")
         ):
             fact.capital_gain = 0.0
-            fact.gain_method = "explicit"
-            fact.extra = FactMetadata(return_assumption="zero_by_product")
+            fact.gain_method = GainMethod.EXPLICIT
+            fact.extra = FactMetadata(box3=True, return_assumption="zero_by_product")
         fact.compute_capital_gain()
         facts.append(fact)
 

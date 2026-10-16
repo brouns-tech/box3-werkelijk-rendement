@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import re
 
-from wr.models import AccountYearFact, ParseResult
+from wr.models import AccountYearFact, GainMethod, ParseResult
+from wr.models.metadata import FactMetadata
 from wr.money import Currency, add, subtract, total
-from wr.records import FactMetadata
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    doc_type_parser,
-)
+from wr.parsers._text import normalize_account_id, normalize_iban, parse_en_amount, parse_nl_amount
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, doc_type_parser
 from wr.parsers.common import resolve_tax_year
-from wr.pdf import normalize_account_id, normalize_iban, parse_en_amount, parse_nl_amount
+
 
 _CURRENCY_PATTERN = "|".join(currency.value for currency in Currency)
 
@@ -97,6 +93,7 @@ def _parse_annual(text: str, year: int) -> ParseResult:
             issuer="revolut",
             account_key=normalize_iban(m.group(1)),
             account_label="Revolut Current Account",
+            extra=RevolutMetadata(box3=True),
             holder_names=_holders(text),
             start_balance=parse_en_amount(m.group(2)),
             end_balance=parse_en_amount(m.group(3)),
@@ -115,6 +112,7 @@ def _parse_annual(text: str, year: int) -> ParseResult:
                 issuer="revolut",
                 account_key=normalize_iban(iban_m.group(1)),
                 account_label="Revolut Current Account",
+                extra=RevolutMetadata(box3=True),
                 holder_names=_holders(text),
                 start_balance=parse_en_amount(amts[0]),
                 end_balance=parse_en_amount(amts[1]),
@@ -164,8 +162,8 @@ def _parse_savings(text: str, year: int) -> ParseResult:
         deposits=purchased,
         withdrawals=sold,
         capital_gain=add(earned or 0.0, fees or 0.0) if earned is not None else None,
-        gain_method="earned_return" if earned is not None else "unknown",
-        extra=RevolutMetadata(fees=fees, earned_return=earned),
+        gain_method=GainMethod.EARNED_RETURN if earned is not None else GainMethod.UNKNOWN,
+        extra=RevolutMetadata(box3=True, fees=fees, earned_return=earned),
     )
     if fact.capital_gain is None:
         fact.compute_capital_gain()
@@ -216,9 +214,10 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
             deposits=subtract(incoming, interest or 0),
             withdrawals=parse_en_amount(row.group(3)),
             interest_received=interest,
-            gain_method="interest_only" if interest is not None else "unknown",
+            gain_method=GainMethod.INTEREST_ONLY if interest is not None else GainMethod.UNKNOWN,
             capital_gain=interest,
             extra=RevolutMetadata(
+                box3=True,
                 product=product,
                 money_in_includes_interest=incoming,
                 interest_source="net_interest_transactions" if credits else "no_interest_transactions",
@@ -247,6 +246,7 @@ def _parse_account_statement(text: str, year: int) -> ParseResult:
         issuer="revolut",
         account_key=account_key,
         account_label="Revolut account statement",
+        extra=RevolutMetadata(box3=True),
         currency=currency,
         start_balance=start,
         end_balance=end,

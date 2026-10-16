@@ -12,7 +12,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from wr.demo import create_demo_workspace
-from wr.desktop_storage import prepare_workspace, remember_folder, remember_language, remembered_language, selected_folder
+from wr.desktop.storage import prepare_workspace, remember_folder, remember_language, remembered_language, selected_folder
 from wr.i18n import STATUS_MESSAGES, Translator, coverage_details, currency, status_label, translate, translator
 from wr.messages import Message, Messages, MessageTemplate
 
@@ -44,7 +44,7 @@ def test_preference_survives_folder_changes_and_invalid_files(tmp_path):
 
 def test_catalog_covers_ui_and_preserves_format_fields():
     root = Path(__file__).resolve().parents[1]
-    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop.py", "dashboard/settings.py", "dashboard/workspace_settings.py", "dashboard/folder_picker.py", "dashboard/localization.py", "src/wr/desktop_smoke.py"]:
+    for filename in ["dashboard/app.py", "dashboard/desktop_import.py", "src/wr/desktop/launcher.py", "dashboard/settings.py", "dashboard/workspace_settings.py", "dashboard/folder_picker.py", "dashboard/localization.py"]:
         tree = ast.parse((root / filename).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "t":
@@ -147,7 +147,7 @@ def test_dashboard_switches_language_and_retains_year_and_evidence(tmp_path, mon
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(config)])
     monkeypatch.delenv("WR_CONTROL_URL", raising=False)
     # Find the demo's configured database without making assumptions about its name.
-    from wr.config import load_settings
+    from wr.workspace.settings import load_settings
     database = load_settings(config).resolved_db_path
 
     def exported_csvs():
@@ -188,7 +188,7 @@ def test_dashboard_switches_language_and_retains_year_and_evidence(tmp_path, mon
 def test_desktop_import_can_switch_language_during_job(tmp_path, monkeypatch):
     import sys
     from dashboard.desktop_import import ImportJob
-    from wr.import_pipeline import ImportReport
+    from wr.models.importing import ImportReport
     config = prepare_workspace(tmp_path)
     monkeypatch.setenv("WR_CONTROL_URL", "http://synthetic.invalid")
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(config)])
@@ -210,10 +210,10 @@ def test_desktop_import_can_switch_language_during_job(tmp_path, monkeypatch):
 
 def test_upstream_child_editor_survives_language_switch_and_reset(tmp_path, monkeypatch):
     import sys
-    from wr.config import load_settings
+    from wr.workspace.settings import load_settings
 
     def child_name(app):
-        return next(widget for widget in app.text_input if widget.key.endswith("_canonical_child_0"))
+        return [widget for widget in app.text_input if widget.key and "_canonical_" in widget.key][2]
 
     create_demo_workspace(tmp_path)
     monkeypatch.setattr(sys, "argv", ["app.py", "--workspace", str(tmp_path)])
@@ -226,13 +226,13 @@ def test_upstream_child_editor_survives_language_switch_and_reset(tmp_path, monk
     assert child_name(app).value == "Charlie Example"
     assert app.button(key="add_child").label == "Kind toevoegen"
     assert [tab.label for tab in app.tabs] == ["Overzicht", "Documenten", "Belastingplichtigen", "Instellingen"]
-    app.button(key="save_field_canonical_child_0").click().run()
-    assert load_settings(tmp_path).partners.children[0].canonical_name == "Charlie Example"
+    next(button for button in app.button if button.key.startswith("save_field_canonical_")).click().run()
+    assert load_settings(tmp_path).household.children[0].name == "Charlie Example"
     assert "Toerekening" in app.dataframe[1].value.columns
     app.button(key="reset_workspace").click().run()
     app.button(key="confirm_reset_workspace").click().run()
     assert not app.exception
-    assert load_settings(tmp_path).partners.children == ()
+    assert load_settings(tmp_path).household.children == ()
     assert app.selectbox(key="ui_language").value == "nl"
 
 
@@ -242,7 +242,7 @@ def test_hidden_supervisor_opens_browser_and_handles_native_actions(tmp_path, mo
     import time
     import tkinter as tk
     from tkinter import filedialog, messagebox
-    from wr import desktop
+    from wr.desktop import launcher as desktop
 
     opened = []
     failures = []

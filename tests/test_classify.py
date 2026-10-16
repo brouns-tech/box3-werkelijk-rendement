@@ -1,4 +1,4 @@
-from wr.classify import CLASSIFICATION_RULES, classify
+from wr.importing.classification import CLASSIFICATION_RULES, classify
 from wr.parsers import PARSER_REGISTRY
 
 

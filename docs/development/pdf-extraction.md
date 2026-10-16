@@ -61,8 +61,10 @@ all possible layouts work.
 Synthetic regression PDFs deliberately write labels and values in separate
 content-stream columns. Tests cover Revolut holder names and values, SNS joint and
 child accounts, obsolete record replacement, failure rollback, versioned
-migration, repeat scans, missing values, and page-footer contamination. Frozen
-smoke tests include column-first PDFs as well as all institution fixtures.
+migration, repeat scans, missing values, and page-footer contamination. These
+fixtures live under `tests/support` and are not shipped with the application.
+The frozen application's minimal self-check exercises one synthetic PDF through
+native extraction, import, portfolio calculation, and audit export.
 
 Tests run from temporary workspaces and restrict SQLite access to temporary files.
 This prevents a missing workspace argument from importing test fixtures into a

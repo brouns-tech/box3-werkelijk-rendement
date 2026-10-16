@@ -2,17 +2,11 @@ from __future__ import annotations
 
 import re
 
-from wr.records import FactMetadata
-
-from wr.models import AccountYearFact, ParseResult
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    simple_parser,
-)
+from wr.models import AccountYearFact, Ownership, ParseResult
+from wr.models.metadata import FactMetadata
+from wr.parsers._text import parse_nl_amount
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, simple_parser
 from wr.parsers.common import resolve_tax_year
-from wr.pdf import parse_nl_amount
 
 
 def _is_supported_document(text: str) -> bool:
@@ -80,7 +74,7 @@ def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
         account_key=account_key,
         account_label=f"DEGIRO {'Pensioen' if is_pensioen else 'Beleggingsrekening'} {account_key}",
         holder_names=holders,
-        ownership="unknown",
+        ownership=Ownership.UNKNOWN,
         start_balance=start,
         end_balance=end,
         deposits=deposits if deposits is not None else 0.0,
@@ -90,7 +84,7 @@ def parse_degiro(text: str, tax_year: int | None = None) -> ParseResult:
         dividends_gross=dividends_gross,
         withholding_tax=withholding,
         logical_group=None,
-        extra=FactMetadata(box3=False) if is_pensioen else FactMetadata(),
+        extra=FactMetadata(box3=not is_pensioen),
     )
     fact.compute_capital_gain()
     facts.append(fact)

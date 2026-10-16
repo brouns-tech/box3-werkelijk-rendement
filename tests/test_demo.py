@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from wr.config import load_settings, resolve_db_path
+from wr.workspace.settings import load_settings, resolve_db_path
 from wr.demo import create_demo_workspace
 
 
@@ -9,14 +9,14 @@ def test_demo_workspace_contains_complete_synthetic_analysis(tmp_path):
     workspace = create_demo_workspace(tmp_path)
     settings = load_settings(workspace)
 
-    assert settings.partners.partner_a == "Sophie de Vries"
-    assert settings.partners.partner_b == "Daan Jansen"
+    assert settings.household.primary.name == "Sophie de Vries"
+    assert settings.household.secondary.name == "Daan Jansen"
 
     conn = sqlite3.connect(resolve_db_path(settings))
     conn.row_factory = sqlite3.Row
     portfolio = conn.execute("SELECT * FROM yearly_portfolio").fetchone()
     results = conn.execute(
-        "SELECT * FROM partner_tax_results ORDER BY partner"
+        "SELECT * FROM taxpayer_tax_results ORDER BY taxpayer_position"
     ).fetchall()
     facts = conn.execute(
         "SELECT holder_names, extra FROM account_year_facts ORDER BY id"
@@ -25,7 +25,7 @@ def test_demo_workspace_contains_complete_synthetic_analysis(tmp_path):
     assert portfolio["tax_year"] == 2024
     assert portfolio["coverage_status"] == "COMPLETE"
     assert portfolio["source_fact_count"] == 6
-    assert [row["partner_name"] for row in results] == [
+    assert [row["taxpayer_name"] for row in results] == [
         "Sophie de Vries",
         "Daan Jansen",
     ]

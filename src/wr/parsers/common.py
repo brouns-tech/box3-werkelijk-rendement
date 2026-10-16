@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import re
 from typing import Callable
+import re
 
-from wr.pdf import parse_nl_amount
+from wr.parsers._text import parse_nl_amount
 
 
 def guess_tax_year(text: str, doc_type: str | None = None) -> int | None:

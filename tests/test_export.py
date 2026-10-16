@@ -1,9 +1,10 @@
 import csv
 import io
+import json
 import sqlite3
 import zipfile
 
-from wr.db import init_db
+from wr.storage.migrations import init_db
 from wr.export import create_audit_export
 
 
@@ -51,7 +52,7 @@ def test_audit_export_traces_asset_return_to_source_document():
             "yearly_summary.csv",
             "assets.csv",
             "source_facts.csv",
-            "partner_tax_results.csv",
+            "taxpayer_tax_results.csv",
         }
         asset = _csv_rows(bundle, "assets.csv")[0]
         fact = _csv_rows(bundle, "source_facts.csv")[0]
@@ -74,3 +75,19 @@ def test_audit_export_includes_only_statement_derived_assets():
         assets = _csv_rows(bundle, "assets.csv")
 
     assert assets == []
+
+
+def test_audit_export_uses_typed_taxpayer_schema(tmp_path):
+    from wr.demo import create_demo_workspace
+    from wr.storage.connection import connect
+    from wr.workspace.settings import load_settings
+
+    create_demo_workspace(tmp_path)
+    with connect(load_settings(tmp_path).resolved_db_path) as conn:
+        payload = create_audit_export(conn)
+    with zipfile.ZipFile(io.BytesIO(payload)) as bundle:
+        rows = _csv_rows(bundle, "taxpayer_tax_results.csv")
+        assert json.loads(bundle.read("manifest.json"))["version"] == 2
+        assert [row["taxpayer_position"] for row in rows] == ["primary", "secondary"]
+        assert [row["taxpayer_name"] for row in rows] == ["Sophie de Vries", "Daan Jansen"]
+        assert all("partner" not in row and "partner_name" not in row for row in rows)

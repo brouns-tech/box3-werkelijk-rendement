@@ -11,9 +11,10 @@ from dashboard.localization import ui_translator
 from wr.messages import Message, Messages
 
 from dashboard.ui_state import clear_workspace_ui_state
-from wr.workspace import reset_workspace
-from wr.config import save_settings
-from wr.db import connect, init_db
+from wr.workspace.reset import reset_workspace
+from wr.workspace.settings import save_settings
+from wr.storage.connection import connect
+from wr.storage.migrations import init_db
 from wr.parsers import PLUGINS
 
 

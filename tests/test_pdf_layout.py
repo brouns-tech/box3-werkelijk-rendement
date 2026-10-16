@@ -5,13 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from wr.classify import classify, guess_tax_year
-from wr.import_pipeline import run_import, pending_reprocessing
+from wr.importing.classification import classify, guess_tax_year
+from wr.importing.pipeline import run_import
+from wr.importing.reprocessing import pending_reprocessing
 from wr.parsers import parse_document
-from wr.pdf import extract_text, extraction_profile
+from wr.documents.extraction import extract_text, extraction_profile
 
 
-from wr.desktop_smoke import synthetic_column_pdf as column_pdf, REVOLUT, SNS
+from tests.support.pdf import synthetic_column_pdf as column_pdf, REVOLUT, SNS
 
 
 @pytest.mark.parametrize('fragments,issuer,count', [(REVOLUT, 'revolut', 1), (SNS, 'sns', 2)])
@@ -60,7 +61,7 @@ def test_reprocess_replaces_old_facts_and_becomes_a_duplicate_again(tmp_path):
 
 
 def test_failed_reprocess_removes_stale_data_and_rolls_back_partial_writes(tmp_path, monkeypatch):
-    from wr import import_pipeline
+    from wr.importing import pipeline as import_pipeline
     folder = tmp_path / 'documents'
     folder.mkdir()
     column_pdf(folder / 'statement.pdf', REVOLUT)
@@ -68,18 +69,18 @@ def test_failed_reprocess_removes_stale_data_and_rolls_back_partial_writes(tmp_p
     run_import(folder, database)
     with sqlite3.connect(database) as conn:
         conn.execute("UPDATE documents SET processing_profile = 'old'")
-    persist = import_pipeline._persist_parse
+    persist = import_pipeline.persist_parse
 
     def fail(conn, *args):
         persist(conn, *args)
         raise RuntimeError('synthetic persistence failure')
 
-    monkeypatch.setattr(import_pipeline, '_persist_parse', fail)
+    monkeypatch.setattr(import_pipeline, 'persist_parse', fail)
     assert run_import(folder, database).failed == 1
     with sqlite3.connect(database) as conn:
         assert conn.execute('SELECT COUNT(*) FROM account_year_facts').fetchone()[0] == 0
         assert conn.execute('SELECT parse_status FROM documents').fetchone()[0] == 'failed'
-    monkeypatch.setattr(import_pipeline, '_persist_parse', persist)
+    monkeypatch.setattr(import_pipeline, 'persist_parse', persist)
     assert run_import(folder, database).parsed == 1
 
 
@@ -106,8 +107,8 @@ def test_revolut_column_stream_cannot_be_misread_as_last_email():
 def test_overview_requires_reprocessing_legacy_records(tmp_path, monkeypatch):
     import sys
     from streamlit.testing.v1 import AppTest
-    from wr.desktop_storage import prepare_workspace, remember_folder, remember_language
-    from wr.config import load_settings
+    from wr.desktop.storage import prepare_workspace, remember_folder, remember_language
+    from wr.workspace.settings import load_settings
     workspace = prepare_workspace(tmp_path)
     remember_language(tmp_path, 'en')
     folder = tmp_path / 'documents'

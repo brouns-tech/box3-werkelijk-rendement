@@ -1,15 +1,67 @@
+
+from wr.storage.adapters import fact_from_row
 import json
 import sqlite3
 
 import pytest
 from pydantic import ValidationError
 
-from wr.config import load_settings, save_settings
-from wr.db import init_db, insert_facts, update_document, upsert_document
-from wr.models import AccountYearFact
+from wr.workspace.settings import load_settings, save_settings
+from wr.storage.migrations import init_db
+from wr.storage.facts import insert_facts
+from wr.storage.documents import update_document, upsert_document
+from wr.models import AccountYearFact, GainMethod, Ownership
 from wr.parsers.flatex import FlatexMetadata, ReturnEvidence, SecurityPosition
-from wr.portfolio import is_box3_fact
-from wr.records import FactRecord
+from wr.models.storage import FactRecord
+
+
+@pytest.mark.parametrize("field,member", [
+    *[("ownership", member) for member in Ownership],
+    *[("gain_method", member) for member in GainMethod],
+])
+def test_fact_enums_accept_stored_codes(field, member):
+    fact = AccountYearFact(2024, "bank", "account", "Account", **{field: member.value})
+    assert getattr(fact, field) is member
+    record = FactRecord.model_validate(fact.__dict__)
+    assert getattr(record, field) is member
+    assert record.model_dump(mode="json")[field] == member.value
+
+
+@pytest.mark.parametrize("field", ["ownership", "gain_method"])
+def test_fact_enums_reject_unknown_codes(field):
+    with pytest.raises(ValueError):
+        AccountYearFact(2024, "bank", "account", "Account", **{field: "invalid"})
+    fact = AccountYearFact(2024, "bank", "account", "Account")
+    record = FactRecord.model_validate(fact.__dict__)
+    with pytest.raises(ValidationError, match=field):
+        setattr(record, field, "invalid")
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    with pytest.raises(ValidationError, match=field):
+        insert_facts(conn, "synthetic", [{**fact.__dict__, field: "invalid"}])
+    assert conn.execute("SELECT COUNT(*) FROM account_year_facts").fetchone()[0] == 0
+
+
+def test_fact_enums_survive_database_round_trip_and_preserve_legacy_nulls():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    upsert_document(conn, content_sha256="synthetic", byte_size=1, imported_at="2026-01-01", parse_status="parsed")
+    fact = AccountYearFact(
+        2024, "bank", "account", "Account",
+        ownership=Ownership.JOINT, gain_method=GainMethod.EXPLICIT,
+    )
+    insert_facts(conn, "synthetic", [fact])
+    row = conn.execute("SELECT * FROM account_year_facts").fetchone()
+    assert row["ownership"] == "joint"
+    assert row["gain_method"] == "explicit"
+    restored = fact_from_row(row)
+    assert restored.ownership is Ownership.JOINT
+    assert restored.gain_method is GainMethod.EXPLICIT
+    conn.execute("UPDATE account_year_facts SET ownership=NULL, gain_method=NULL")
+    restored = fact_from_row(conn.execute("SELECT * FROM account_year_facts").fetchone())
+    assert restored.ownership is None
+    assert restored.gain_method is None
 
 
 def test_nested_metadata_survives_database_round_trip():
@@ -27,7 +79,7 @@ def test_nested_metadata_survives_database_round_trip():
     )
     insert_facts(conn, "synthetic", [fact])
     row = conn.execute("SELECT * FROM account_year_facts").fetchone()
-    restored = FactRecord.from_row(row)
+    restored = fact_from_row(row)
     assert isinstance(restored.extra, FlatexMetadata)
     assert restored.extra.positions[0].market_value == 125
     assert restored.extra.return_derived_from.external_flow_documents == 2
@@ -41,7 +93,7 @@ def test_nested_metadata_survives_database_round_trip():
 @pytest.mark.parametrize("metadata", ['{"box3": "false"}', '{"box_3": false}', '[]', '{invalid', [], False])
 def test_invalid_exclusion_metadata_fails_closed(metadata):
     with pytest.raises(ValidationError):
-        is_box3_fact({"extra": metadata})
+        fact_from_row({"extra": metadata})
 
 
 def test_fact_fields_are_validated_before_database_write():
@@ -81,4 +133,4 @@ def test_settings_validate_known_options_and_preserve_extension_namespaces(tmp_p
 @pytest.mark.parametrize("holders", ['{"name": "Alex Example"}', '[123]', '"Alex Example"'])
 def test_holder_json_must_be_a_list_of_strings(holders):
     with pytest.raises(ValidationError):
-        FactRecord.from_row({"holder_names": holders})
+        fact_from_row({"holder_names": holders})

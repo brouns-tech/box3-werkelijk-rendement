@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+import json
 
-from wr.config import PartnerSettings, Settings, save_settings
-from wr.db import connect, init_db
-from wr.portfolio import rebuild_portfolio
-from wr.recommend import rebuild_recommendations
+from wr.config import DEMO_DATABASE_FILENAME
+from wr.calculations.service import rebuild_portfolio
+from wr.calculations.service import rebuild_recommendations
+from wr.models.facts import GainMethod, Ownership
+from wr.models.settings import Settings
+from wr.models.identities import HouseholdSettings, TaxpayerIdentity, TaxpayerPosition
+from wr.storage.connection import connect
+from wr.storage.migrations import init_db
+from wr.workspace.settings import save_settings
+
 
 DEMO_YEAR = 2024
-PARTNERS = PartnerSettings(
-    partner_a="Sophie de Vries",
-    partner_b="Daan Jansen",
-    partner_a_aliases=("S. de Vries",),
-    partner_b_aliases=("D. Jansen",),
-)
+HOUSEHOLD = HouseholdSettings(identities=(
+    TaxpayerIdentity(name="Sophie de Vries", aliases=("S. de Vries",), position=TaxpayerPosition.PRIMARY),
+    TaxpayerIdentity(name="Daan Jansen", aliases=("D. Jansen",), position=TaxpayerPosition.SECONDARY),
+))
 
 _FACTS = (
     {
@@ -22,46 +26,46 @@ _FACTS = (
         "account_key": "NL11INGB0001234567",
         "account_label": "Oranje Spaarrekening",
         "holder_names": ["Sophie de Vries", "Daan Jansen"],
-        "ownership": "joint",
+        "ownership": Ownership.JOINT,
         "start_balance": 45000.0,
         "end_balance": 47750.0,
         "deposits": 2000.0,
         "withdrawals": 0.0,
         "interest_received": 750.0,
-        "gain_method": "interest_only",
+        "gain_method": GainMethod.INTEREST_ONLY,
     },
     {
         "issuer": "rabobank",
         "account_key": "NL22RABO0002345678",
         "account_label": "Rabo InternetSparen",
         "holder_names": ["Sophie de Vries"],
-        "ownership": "individual",
+        "ownership": Ownership.INDIVIDUAL,
         "start_balance": 18000.0,
         "end_balance": 18540.0,
         "deposits": 0.0,
         "withdrawals": 0.0,
         "interest_received": 540.0,
-        "gain_method": "interest_only",
+        "gain_method": GainMethod.INTEREST_ONLY,
     },
     {
         "issuer": "raisin",
         "account_key": "RAISIN-DEMO-01",
         "account_label": "Nordic Savings Account",
         "holder_names": ["Daan Jansen"],
-        "ownership": "individual",
+        "ownership": Ownership.INDIVIDUAL,
         "start_balance": 27000.0,
         "end_balance": 27945.0,
         "deposits": 0.0,
         "withdrawals": 0.0,
         "interest_received": 945.0,
-        "gain_method": "interest_only",
+        "gain_method": GainMethod.INTEREST_ONLY,
     },
     {
         "issuer": "degiro",
         "account_key": "DEGIRO-DEMO-01",
         "account_label": "Beleggingsrekening",
         "holder_names": ["Sophie de Vries"],
-        "ownership": "individual",
+        "ownership": Ownership.INDIVIDUAL,
         "start_balance": 65000.0,
         "end_balance": 71300.0,
         "deposits": 5000.0,
@@ -69,33 +73,33 @@ _FACTS = (
         "dividends_gross": 1400.0,
         "withholding_tax": 210.0,
         "capital_gain": 2300.0,
-        "gain_method": "explicit",
+        "gain_method": GainMethod.EXPLICIT,
     },
     {
         "issuer": "flatex",
         "account_key": "FLATEX-DEMO-01",
         "account_label": "Effectendepot",
         "holder_names": ["Daan Jansen"],
-        "ownership": "individual",
+        "ownership": Ownership.INDIVIDUAL,
         "start_balance": 42000.0,
         "end_balance": 45000.0,
         "deposits": 2000.0,
         "withdrawals": 0.0,
         "capital_gain": 1000.0,
-        "gain_method": "explicit",
+        "gain_method": GainMethod.EXPLICIT,
     },
     {
         "issuer": "revolut",
         "account_key": "REVOLUT-DEMO-01",
         "account_label": "Flexible Cash Funds",
         "holder_names": ["Sophie de Vries", "Daan Jansen"],
-        "ownership": "joint",
+        "ownership": Ownership.JOINT,
         "start_balance": 8000.0,
         "end_balance": 10080.0,
         "deposits": 2000.0,
         "withdrawals": 0.0,
         "capital_gain": 80.0,
-        "gain_method": "earned_return",
+        "gain_method": GainMethod.EARNED_RETURN,
     },
 )
 
@@ -103,17 +107,17 @@ _FACTS = (
 def create_demo_workspace(directory: str | Path) -> Path:
     workspace = Path(directory)
     workspace.mkdir(parents=True, exist_ok=True)
-    db_path = workspace / "wr-demo.sqlite"
+    db_path = workspace / DEMO_DATABASE_FILENAME
     db_path.unlink(missing_ok=True)
 
     conn = connect(db_path)
     init_db(conn)
     _insert_demo_data(conn)
     rebuild_portfolio(conn)
-    rebuild_recommendations(conn, PARTNERS)
+    rebuild_recommendations(conn, HOUSEHOLD)
     conn.close()
 
-    save_settings(Settings(project_root=workspace.resolve(), db_path=Path("wr-demo.sqlite"), partners=PARTNERS))
+    save_settings(Settings(project_root=workspace.resolve(), db_path=Path(DEMO_DATABASE_FILENAME), household=HOUSEHOLD))
     return workspace.resolve()
 
 
@@ -153,7 +157,7 @@ def _insert_demo_data(conn) -> None:
                 fact["account_key"],
                 fact["account_label"],
                 json.dumps(fact["holder_names"]),
-                fact["ownership"],
+                fact["ownership"].value,
                 fact.get("start_balance"),
                 fact.get("end_balance"),
                 fact.get("deposits"),
@@ -163,8 +167,8 @@ def _insert_demo_data(conn) -> None:
                 fact.get("dividends_gross"),
                 fact.get("withholding_tax"),
                 fact.get("capital_gain"),
-                fact["gain_method"],
-                json.dumps({"synthetic": True}),
+                fact["gain_method"].value,
+                json.dumps({"synthetic": True, "box3": True}),
             ),
         )
 

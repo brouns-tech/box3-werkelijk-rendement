@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from wr.desktop_storage import remember_language, remembered_language
+from wr.desktop.storage import remember_language, remembered_language
 from wr.i18n import LANGUAGES, Translator, translator
 from wr.messages import Messages
 

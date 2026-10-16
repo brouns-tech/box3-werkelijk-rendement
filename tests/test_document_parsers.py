@@ -1,14 +1,16 @@
+
+from wr.storage.adapters import fact_from_row
 import sqlite3
 
-from wr.classify import classify
-from wr.db import init_db
-from wr.dedupe import canonicalize_facts
+from wr.importing.classification import classify
+from wr.storage.migrations import init_db
+from wr.importing.canonicalization import canonicalize_facts
 from wr.models import AccountYearFact
 from wr.parsers.degiro import parse_degiro
 from wr.parsers.ing import parse_ing
 from wr.parsers.revolut import parse_revolut
 from wr.parsers.sns import parse_sns
-from wr.portfolio import _fact_return
+from wr.calculations.returns import fact_return
 
 
 def test_degiro_terms_are_not_a_year_statement():
@@ -60,7 +62,7 @@ def test_balance_flow_separates_gross_dividend_and_market_value_change():
 
     assert fact.capital_gain == 6.0
     assert fact.actual_return_component == 15.0
-    assert _fact_return(fact.__dict__) == 15.0
+    assert fact_return(fact_from_row(fact.__dict__)) == 15.0
 
 
 def test_sns_total_overview_parses_wrapped_holder_names():

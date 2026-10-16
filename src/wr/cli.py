@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
 import argparse
 import importlib
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
-from wr.config import load_settings, resolve_db_path
+from wr.config import DEFAULT_AUDIT_EXPORT, DEFAULT_DASHBOARD_PORT
+from wr.calculations.service import recompute
 from wr.export import write_audit_export
-from wr.import_pipeline import DocumentImportOutcome, ImportStatus, recompute, run_import
+from wr.importing.pipeline import run_import
+from wr.models.importing import DocumentImportOutcome, ImportStatus
+from wr.workspace.settings import load_settings, resolve_db_path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,14 +28,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("recompute", help="Re-run dedupe/coverage/recommendations on existing DB")
 
     p_dash = sub.add_parser("dashboard", help="Launch Streamlit dashboard")
-    p_dash.add_argument("--port", type=int, default=8501)
+    p_dash.add_argument("--port", type=int, default=DEFAULT_DASHBOARD_PORT)
 
     p_demo = sub.add_parser("demo", help="Launch a dashboard with synthetic example data")
-    p_demo.add_argument("--port", type=int, default=8501)
+    p_demo.add_argument("--port", type=int, default=DEFAULT_DASHBOARD_PORT)
 
     p_export = sub.add_parser("export", help="Export an auditable ZIP bundle")
     p_export.add_argument(
-        "--output", default="exports/wr-audit.zip", help="Destination ZIP path"
+        "--output", default=str(DEFAULT_AUDIT_EXPORT), help="Destination ZIP path"
     )
     p_export.add_argument(
         "--year", type=int, action="append", help="Tax year to include (repeatable)"
@@ -52,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
     db_path = resolve_db_path(cfg)
-    partner_config = cfg.partners
+    household_config = cfg.household
 
     if args.cmd == "import":
         root = Path(args.root).expanduser() if args.root else cfg.import_root
@@ -73,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
             root,
             db_path,
             limit=args.limit,
-            partner_config=partner_config,
+            household_config=household_config,
             institution_options=cfg.institution_options,
             progress=_print_import_outcome,
         )
@@ -87,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "recompute":
         recompute(
             db_path,
-            partner_config=partner_config,
+            household_config=household_config,
             institution_options=cfg.institution_options,
         )
         print("Recomputed canonical facts, coverage, and recommendations")

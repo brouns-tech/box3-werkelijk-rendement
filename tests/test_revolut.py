@@ -1,12 +1,19 @@
+
+from wr.storage.adapters import fact_from_row
+
+from wr.storage.facts import canonical_facts
 import sqlite3
 
 import pytest
 
-from wr.db import init_db, insert_facts
+from wr.storage.migrations import init_db
+from wr.storage.facts import insert_facts
 from wr.i18n import currency
 from wr.money import Currency
+from wr.models import GainMethod, Ownership
 from wr.parsers.revolut import parse_revolut
-from wr.portfolio import _coverage_for_year, _fact_has_actual_return, _fact_return, _native_fact_return
+from wr.calculations.coverage import coverage_for_year
+from wr.calculations.returns import has_actual_return, fact_return, native_fact_return
 
 
 @pytest.mark.parametrize("code,symbol", [("EUR", "€"), ("USD", "$"), ("GBP", "£")])
@@ -44,8 +51,8 @@ Jan 4, 2025 From Instant Access Savings {symbol}100.00 {symbol}905.00
     assert deposit.deposits == 1000
     assert deposit.withdrawals == 100
     assert deposit.end_balance == 905
-    assert _native_fact_return(deposit.__dict__) == 5
-    assert _fact_return(deposit.__dict__) == (5 if code == "EUR" else None)
+    assert native_fact_return(fact_from_row(deposit.__dict__)) == 5
+    assert fact_return(fact_from_row(deposit.__dict__)) == (5 if code == "EUR" else None)
     assert currency(deposit.interest_received, "en", code) == f"{symbol} 5.00"
     assert currency(1000, "nl", code) == f"{symbol} 1.000,00"
 
@@ -58,8 +65,8 @@ Account (Current Account) €0.00 €100.00 €100.00 €0.00
 Deposit €0.00 €0.00 €105.00 €105.00
 """, 2025, "account_statement")
     assert result.facts[1].interest_received is None
-    assert _fact_return(result.facts[1].__dict__) is None
-    assert not _fact_has_actual_return(result.facts[1].__dict__)
+    assert fact_return(fact_from_row(result.facts[1].__dict__)) is None
+    assert not has_actual_return(fact_from_row(result.facts[1].__dict__))
 
 
 def test_foreign_currency_never_enters_eur_rollup():
@@ -73,7 +80,7 @@ def test_foreign_currency_never_enters_eur_rollup():
         AccountYearFact(2025, 'bank', 'usd', 'USD', currency='USD', end_balance=1000, interest_received=20, gain_method='interest_only'),
     ]])
     conn.execute("UPDATE account_year_facts SET is_canonical=1")
-    result = _coverage_for_year(conn, 2025)
+    result = coverage_for_year(2025, canonical_facts(conn, 2025))
     assert result.known_combined_actual_return == result.interest_received == 10
     assert result.end_balance == 0
     assert result.coverage_status == 'PARTIAL'
@@ -81,6 +88,12 @@ def test_foreign_currency_never_enters_eur_rollup():
     from wr.export import _asset_and_fact_rows
     assets, sources = _asset_and_fact_rows(conn, 2025)
     usd = next(row for row in sources if row.currency == 'USD')
+    assert usd.currency is Currency.USD
+    assert usd.ownership is Ownership.UNKNOWN
+    assert usd.gain_method is GainMethod.INTEREST_ONLY
+    assert usd.model_dump(mode="json")["ownership"] == "unknown"
+    assert usd.model_dump(mode="json")["gain_method"] == "interest_only"
+    assert usd.model_dump(mode="json")["currency"] == "USD"
     assert usd.native_actual_return == 20
     assert usd.calculated_actual_return is None
     assert not usd.included_in_year_total
@@ -106,7 +119,7 @@ def test_currency_formatter_rejects_unsupported_currency():
 def test_decision_table_distinguishes_holder_return_from_zero_tax_allocation():
     from dashboard.app import _decision_rows
     rows = _decision_rows([{
-        'partner': 'a', 'partner_name': 'Alex Example', 'allocation_ratio': 0,
+        'taxpayer_position': 'a', 'taxpayer_name': 'Alex Example', 'allocation_ratio': 0,
         'allocated_actual_return': 0, 'fictitious_return': 0,
         'estimated_box3_tax_actual': 0, 'estimated_box3_tax_fictitious': 0,
         'recommendation': 'EQUAL',

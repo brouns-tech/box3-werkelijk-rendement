@@ -55,8 +55,9 @@ want to remove all derived financial data.
 
 Review taxpayer names, aliases, and minor-child profiles in **Taxpayers**.
 Manage the database and institution options in **Settings**. Workspace settings
-and the selected folder are stored in `.wr-settings.json`; beta `config.toml`
-and `preferences.json` values migrate once. The retired files are ignored afterward.
+and the selected folder are stored in `.wr-settings.json`. Earlier JSON settings
+versions upgrade automatically; beta `preferences.json` values migrate once when
+no settings file exists. TOML application settings are no longer loaded.
 **Settings → Reset workspace** removes imported data and profiles while retaining
 the database location, original PDFs, and separately downloaded audit exports.
 

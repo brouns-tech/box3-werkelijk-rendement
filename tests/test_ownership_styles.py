@@ -1,19 +1,19 @@
+from wr.models.identities import ChildIdentity, HouseholdSettings, TaxpayerIdentity, TaxpayerPosition, IdentityRole
 from dashboard.app import _canonical_name_map, _owner_colors, _owner_style, _styled_table
-from dashboard.ownership import BLUE, GREEN, PURPLE, editor_key, slot_color, table_style
-from wr.config import ChildSettings, PartnerSettings
+from dashboard.ownership import BLUE, GREEN, PURPLE, editor_key, identity_color, table_style
 
 
 def test_owner_colors_agree_with_editor_and_joint_rows():
-    partners = PartnerSettings(partner_a='Alex Example', partner_b='Sam Example', children=(ChildSettings('Robin Example'),))
+    partners = HouseholdSettings(identities=(TaxpayerIdentity(name='Alex Example', position=TaxpayerPosition.PRIMARY), TaxpayerIdentity(name='Sam Example', position=TaxpayerPosition.SECONDARY),) + (ChildIdentity(name='Robin Example'),))
     colors = _owner_colors(partners, _canonical_name_map(partners))
-    for slot, name in partners.identities():
-        assert _owner_style(name, colors) == table_style(slot_color(slot))
+    for identity in partners.identities:
+        assert _owner_style(identity.name, colors) == table_style(identity_color(identity))
     assert _owner_style('Alex Example, Sam Example', colors) == table_style(PURPLE)
     assert _owner_style('Alex Example', colors, joint=True) == table_style(PURPLE)
-    assert editor_key('a', 'profile') == 'owner_a_profile'
-    assert editor_key('b', 'name_2') == 'owner_b_name_2'
-    assert editor_key('child_12', 'name_3') == 'owner_child_name_3'
-    assert editor_key('unassigned', 'name_4') == 'owner_unassigned_name_4'
+    assert editor_key(TaxpayerPosition.PRIMARY, 'profile') == 'owner_primary_profile'
+    assert editor_key(TaxpayerPosition.SECONDARY, 'name_2') == 'owner_secondary_name_2'
+    assert editor_key(IdentityRole.CHILD, 'name_3') == 'owner_child_name_3'
+    assert editor_key(None, 'name_4') == 'owner_unassigned_name_4'
 
 
 def test_non_box3_rows_are_muted_without_changing_table_values():

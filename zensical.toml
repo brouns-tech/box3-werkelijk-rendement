@@ -24,6 +24,7 @@ nav = [
   ] },
   { "Development" = [
     { "Contribute" = "development/contributing.md" },
+    { "Package architecture" = "development/architecture.md" },
     { "Source installation and CLI" = "development/cli.md" },
     { "PDF extraction and migrations" = "development/pdf-extraction.md" },
     { "Windows builds" = "development/windows-builds.md" },

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Protocol
+import sqlite3
 
-from wr.models import ParseResult
-from wr.messages import Message
-from wr.records import FactMetadata, InstitutionSettings
 from pydantic import JsonValue
+
+from wr.messages import Message
+from wr.models import ParseResult
+from wr.models.metadata import FactMetadata
+from wr.models.settings import InstitutionSettings
+
 
 InstitutionOptions = Mapping[str, InstitutionSettings | Mapping[str, JsonValue]]
 

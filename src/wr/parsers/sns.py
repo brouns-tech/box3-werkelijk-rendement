@@ -3,17 +3,12 @@ from __future__ import annotations
 import re
 import sqlite3
 
-from wr.records import FactMetadata, InstitutionSettings
-
-from wr.models import AccountYearFact, ParseResult
-from wr.parsers.base import (
-    ClassificationRule,
-    InstitutionPlugin,
-    ParserRegistration,
-    doc_type_parser,
-)
+from wr.models import AccountYearFact, Ownership, ParseResult
+from wr.models.metadata import FactMetadata
+from wr.models.settings import InstitutionSettings
+from wr.parsers._text import normalize_iban, parse_nl_amount
+from wr.parsers.base import ClassificationRule, InstitutionPlugin, ParserRegistration, doc_type_parser
 from wr.parsers.common import resolve_tax_year
-from wr.pdf import normalize_iban, parse_nl_amount
 
 
 def _is_annual_overview(text: str) -> bool:
@@ -85,6 +80,7 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
             interest_received=received,
             interest_paid=paid,
             extra=FactMetadata(
+                box3=True,
                 account_type=_account_type(label),
                 interest_source="reported",
             ),
@@ -116,6 +112,7 @@ def _parse_jaaroverzicht(text: str, year: int) -> ParseResult:
                 interest_paid=parse_nl_amount(m.group(4)),
                 interest_received=parse_nl_amount(m.group(5)),
                 extra=FactMetadata(
+                    box3=True,
                     account_type="savings",
                     interest_source="reported",
                 ),
@@ -141,7 +138,7 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
             for part in (m.group("holders"), m.group("holder_tail") or "")
             if part.strip()
         )
-        ownership = "joint" if "e/o" in holders_raw.lower() else "unknown"
+        ownership = Ownership.JOINT if "e/o" in holders_raw.lower() else Ownership.UNKNOWN
         label = m.group("label").strip()
         account_type = _account_type(label)
         interest = None if account_type == "savings" else 0.0
@@ -156,6 +153,7 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
             end_balance=parse_nl_amount(m.group("end")),
             interest_received=interest,
             extra=FactMetadata(
+                box3=True,
                 account_type=account_type,
                 interest_source=(
                     "not_available_on_total_overview"
@@ -178,6 +176,7 @@ def _parse_totaaloverzicht(text: str, year: int) -> ParseResult:
                 issuer="sns",
                 account_key=normalize_iban(m.group(1)),
                 account_label="SNS rekening",
+                extra=FactMetadata(box3=True),
                 start_balance=parse_nl_amount(m.group(2)),
                 end_balance=parse_nl_amount(m.group(3)),
             )

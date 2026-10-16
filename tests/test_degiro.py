@@ -16,6 +16,7 @@ def test_parses_portfolio_totals_with_spaced_waarde_label():
     assert fact.account_key == "masked-mpl"
     assert fact.start_balance == 10000.0
     assert fact.end_balance == 12000.0
+    assert fact.extra.box3 is True
 
 
 def test_marks_pension_account_outside_box3():

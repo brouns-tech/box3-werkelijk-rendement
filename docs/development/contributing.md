@@ -1,5 +1,8 @@
 # Contributing
 
+See [package structure and dependency boundaries](architecture.md) before adding
+new modules or moving shared functionality.
+
 Contributions that add support for more bank and broker statement templates are welcome.
 
 ## Language
@@ -56,10 +59,26 @@ Institution options preserve unrecognized JSON extension fields for compatibilit
 Fact metadata rejects unknown fields and invalid types rather than silently
 ignoring evidence used in calculations.
 
+Every parser must explicitly set `extra.box3` to `True` or `False` on each
+account fact, including fallback parsing paths. `ParseResult` rejects facts
+without an explicit classification. The value is a strict boolean, not a string,
+integer, or nullable flag. Calculations and exports use this value alone; account
+identifiers and display labels must never determine inclusion. Interpret relevant
+document evidence inside the institution parser, as DEGIRO does for its pension
+statements. The metadata default remains `True` for general-purpose fact
+construction and partial storage reads, but does not satisfy the parser contract.
+
+SQLite migration 5 backfills missing legacy flags once, retaining historical
+pension exclusions and preserving existing explicit booleans. Legacy key/label
+inference is confined to that migration, not ongoing calculation rules.
+
 SQLite and JSON are validation boundaries. Use `FactRecord`, `PortfolioRecord`,
 and `TaxReturnRecord` for calculation inputs and typed export records for audit
 output. Convert to dictionaries only when binding SQL parameters or writing
 CSV/JSON. `insert_facts` accepts parsed `AccountYearFact` objects directly.
+Models live under `wr.models`; use `wr.storage.adapters.fact_from_row` to decode
+stored facts with their institution-specific metadata schema. Calculation
+functions under `wr.calculations` receive validated records directly.
 Document updates validate their column names and distinguish omitted fields from
 explicit null values. Keep ordinary lookup tables and translated display columns
 as dictionaries; they do not represent fixed record schemas.

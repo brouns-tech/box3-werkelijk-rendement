@@ -1,20 +1,31 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable
 import csv
 import io
 import json
 import sqlite3
 import zipfile
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Iterable
 
-from wr.records import FactRecord, MoneyField, PortfolioRecord, Record, TaxReturnRecord
-from wr.export_models import AssetExportRow, AuditManifest, PartnerTaxExportRow, SourceFactExportRow, YearSummary
-
-from wr.db import connect, init_db
-from wr.portfolio import _native_fact_return, _fact_has_actual_return, _fact_return, _is_excluded_box3_fact
-from wr.import_pipeline import pending_reprocessing
+from wr.calculations.returns import native_fact_return, has_actual_return, fact_return
+from wr.importing.reprocessing import pending_reprocessing
+from wr.models.audit import (
+    AssetExportRow,
+    AuditManifest,
+    TaxpayerTaxExportRow,
+    SourceFactExportRow,
+    YearSummary,
+)
+from wr.models.base import Record
+from wr.models.storage import FactRecord, MoneyField
+from wr.money import Currency
+from wr.storage.connection import connect
+from wr.storage.facts import canonical_facts_with_documents
+from wr.storage.migrations import init_db
+from wr.storage.portfolio import portfolio_for_year
+from wr.storage.tax_returns import primary_return
 
 
 def create_audit_export(
@@ -25,19 +36,19 @@ def create_audit_export(
     yearly_rows = [_year_summary(conn, year) for year in selected_years]
     asset_rows: list[AssetExportRow] = []
     fact_rows: list[SourceFactExportRow] = []
-    tax_rows: list[PartnerTaxExportRow] = []
+    tax_rows: list[TaxpayerTaxExportRow] = []
 
     for year in selected_years:
         assets, facts = _asset_and_fact_rows(conn, year)
         asset_rows.extend(assets)
         fact_rows.extend(facts)
         tax_rows.extend(
-            PartnerTaxExportRow.model_validate(dict(row))
+            TaxpayerTaxExportRow.model_validate(dict(row))
             for row in conn.execute(
                 """
                 SELECT tax_year,
-                       partner,
-                       partner_name,
+                       taxpayer_position,
+                       taxpayer_name,
                        allocation_ratio,
                        allocated_actual_return,
                        fictitious_return,
@@ -47,9 +58,9 @@ def create_audit_export(
                        recommendation,
                        coverage_status,
                        notes
-                FROM partner_tax_results
+                FROM taxpayer_tax_results
                 WHERE tax_year = ?
-                ORDER BY partner
+                ORDER BY taxpayer_position
                 """,
                 (year,),
             )
@@ -72,7 +83,7 @@ def create_audit_export(
             "source_facts.csv": (
                 "Canonical parsed account facts with source PDF identity and asset attribution."
             ),
-            "partner_tax_results.csv": "Per-partner tax estimates and recommendation.",
+            "taxpayer_tax_results.csv": "Per-taxpayer tax estimates and recommendation.",
         },
         calculation_notes= [
             "actual_return follows the same gain-method rules as the portfolio calculation.",
@@ -92,7 +103,7 @@ def create_audit_export(
         _write_csv(bundle, "yearly_summary.csv", yearly_rows)
         _write_csv(bundle, "assets.csv", asset_rows)
         _write_csv(bundle, "source_facts.csv", fact_rows)
-        _write_csv(bundle, "partner_tax_results.csv", tax_rows)
+        _write_csv(bundle, "taxpayer_tax_results.csv", tax_rows)
     return output.getvalue()
 
 
@@ -124,7 +135,7 @@ def _selected_years(
         FROM account_year_facts
         UNION
         SELECT tax_year
-        FROM partner_tax_results
+        FROM taxpayer_tax_results
         ORDER BY tax_year
         """
     ).fetchall()
@@ -132,29 +143,17 @@ def _selected_years(
 
 
 def _year_summary(conn: sqlite3.Connection, year: int) -> YearSummary:
-    portfolio = conn.execute(
-        "SELECT * FROM yearly_portfolio WHERE tax_year = ?", (year,)
-    ).fetchone()
-    tax_return = conn.execute(
-        """
-        SELECT *
-        FROM tax_returns
-        WHERE tax_year = ?
-        ORDER BY full_year_fiscal_partners DESC, grondslag DESC LIMIT 1
-        """,
-        (year,),
-    ).fetchone()
+    portfolio = portfolio_for_year(conn, year)
+    tax_return = primary_return(conn, year)
     savings = conn.execute(
         """
         SELECT SUM(estimated_tax_savings)
-        FROM partner_tax_results
+        FROM taxpayer_tax_results
         WHERE tax_year = ?
         """,
         (year,),
     ).fetchone()[0]
 
-    portfolio = PortfolioRecord.model_validate(dict(portfolio)) if portfolio is not None else None
-    tax_return = TaxReturnRecord.model_validate(dict(tax_return)) if tax_return is not None else None
     return YearSummary(
         tax_year=year,
         coverage_status=portfolio.coverage_status if portfolio is not None else None,
@@ -182,19 +181,8 @@ def _year_summary(conn: sqlite3.Connection, year: int) -> YearSummary:
 def _asset_and_fact_rows(
         conn: sqlite3.Connection, year: int
 ) -> tuple[list[AssetExportRow], list[SourceFactExportRow]]:
-    facts = conn.execute(
-        """
-        SELECT f.*, d.first_seen_path, d.doc_type, d.parse_status, d.processing_profile
-        FROM account_year_facts AS f
-                 JOIN documents AS d ON d.content_sha256 = f.document_sha256
-        WHERE f.tax_year = ?
-          AND f.is_canonical = 1
-        ORDER BY f.id
-        """,
-        (year,),
-    ).fetchall()
-    facts = [FactRecord.from_row(fact) for fact in facts]
-    included_fact_ids = {fact.id for fact in facts if not _is_excluded_box3_fact(fact)}
+    facts = canonical_facts_with_documents(conn, year)
+    included_fact_ids = {fact.id for fact in facts if fact.extra.box3}
     asset_rows: list[AssetExportRow] = []
 
     # Canonical statement facts are the authoritative Box 3 inventory.
@@ -202,7 +190,7 @@ def _asset_and_fact_rows(
         fact_id = int(fact.id)
         if fact_id not in included_fact_ids:
             continue
-        actual_return = _fact_return(fact)
+        actual_return = fact_return(fact)
         asset_rows.append(
             AssetExportRow(
                 tax_year=year,
@@ -211,7 +199,7 @@ def _asset_and_fact_rows(
                 institution=fact.issuer,
                 account_id=fact.account_key,
                 label=fact.account_label,
-                coverage_status="COMPLETE" if _fact_has_actual_return(fact) else "PARTIAL",
+                coverage_status="COMPLETE" if has_actual_return(fact) else "PARTIAL",
                 declared_start_capital=None,
                 declared_end_capital=None,
                 source_start_capital=fact.start_balance,
@@ -221,19 +209,19 @@ def _asset_and_fact_rows(
                 interest_received=fact.interest_received,
                 interest_paid=fact.interest_paid,
                 net_interest=_optional_net(
-                    [fact], "interest_received", "interest_paid"
+                    [fact], MoneyField.INTEREST_RECEIVED, MoneyField.INTEREST_PAID
                 ),
                 dividends_gross=fact.dividends_gross,
                 withholding_tax=fact.withholding_tax,
                 net_dividends=_optional_net(
-                    [fact], "dividends_gross", "withholding_tax"
+                    [fact], MoneyField.DIVIDENDS_GROSS, MoneyField.WITHHOLDING_TAX
                 ),
                 market_value_change=fact.capital_gain,
                 actual_return_from_sources=actual_return,
                 return_used=actual_return or 0.0,
                 currency=fact.currency,
-                native_actual_return=_native_fact_return(fact),
-                return_basis="canonical statement fact" if (fact.currency or "EUR") == "EUR" else "requires EUR conversion; native amounts retained",
+                native_actual_return=native_fact_return(fact),
+                return_basis="canonical statement fact" if (fact.currency or Currency.EUR) == Currency.EUR else "requires EUR conversion; native amounts retained",
                 matched_fact_ids=fact_id,
                 included_fact_ids=fact_id,
                 source_document_sha256s=fact.document_sha256,
@@ -244,8 +232,8 @@ def _asset_and_fact_rows(
     fact_rows = []
     for fact in facts:
         fact_id = int(fact.id)
-        excluded = _is_excluded_box3_fact(fact)
-        included = fact_id in included_fact_ids and (fact.currency or "EUR") == "EUR"
+        excluded = not fact.extra.box3
+        included = fact_id in included_fact_ids and (fact.currency or Currency.EUR) == Currency.EUR
         fact_rows.append(
             SourceFactExportRow(
                 tax_year=year,
@@ -266,14 +254,14 @@ def _asset_and_fact_rows(
                 withholding_tax=fact.withholding_tax,
                 capital_gain=fact.capital_gain,
                 gain_method=fact.gain_method,
-                calculated_actual_return=_fact_return(fact),
-                native_actual_return=_native_fact_return(fact),
-                has_usable_actual_return=_fact_has_actual_return(fact),
+                calculated_actual_return=fact_return(fact),
+                native_actual_return=native_fact_return(fact),
+                has_usable_actual_return=has_actual_return(fact),
                 matched_asset_ids="",
                 primary_asset_id=None,
                 included_in_year_total=included,
                 exclusion_reason=(
-                    "excluded from Box 3" if excluded else ("requires EUR conversion" if (fact.currency or "EUR") != "EUR" else "unmatched to declared inventory")
+                    "excluded from Box 3" if excluded else ("requires EUR conversion" if (fact.currency or Currency.EUR) != Currency.EUR else "unmatched to declared inventory")
                 )
                 if not included
                 else None,
@@ -301,7 +289,7 @@ def _write_csv(
 
 
 def _optional_sum(rows: Iterable[FactRecord], key: MoneyField) -> float | None:
-    values = [getattr(row, key) for row in rows if getattr(row, key) is not None]
+    values = [getattr(row, key.value) for row in rows if getattr(row, key.value) is not None]
     return float(sum(values)) if values else None
 
 

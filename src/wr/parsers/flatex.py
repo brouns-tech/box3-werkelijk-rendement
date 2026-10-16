@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from collections import defaultdict
 import re
 import sqlite3
-from collections import defaultdict
 
 from pydantic import Field, field_validator
 
-from wr.models import AccountYearFact, ParseResult
-from wr.records import FactMetadata, InstitutionSettings, Record
+from wr.models import AccountYearFact, GainMethod, ParseResult
+from wr.models.base import Record
+from wr.models.metadata import FactMetadata
+from wr.models.settings import InstitutionSettings
 from wr.money import add, subtract, total
+from wr.parsers._text import normalize_iban, parse_nl_amount
 from wr.parsers.base import (
     ClassificationRule,
     InstitutionPlugin,
@@ -17,7 +20,6 @@ from wr.parsers.base import (
     ParserRegistration,
 )
 from wr.parsers.common import resolve_tax_year
-from wr.pdf import normalize_iban, parse_nl_amount
 
 
 class FlatexSettings(InstitutionSettings):
@@ -139,9 +141,10 @@ def parse_flatex(
         issuer="flatex",
         account_key=account_key,
         account_label="flatex (legacy)",
+        extra=FlatexMetadata(box3=True),
         holder_names=_holder_names(text),
         interest_received=interest,
-        gain_method="interest_only" if interest is not None else "unknown",
+        gain_method=GainMethod.INTEREST_ONLY if interest is not None else GainMethod.UNKNOWN,
         capital_gain=interest,
     )
     return ParseResult(
@@ -189,6 +192,7 @@ def _parse_financial_instruments_statement(text: str) -> ParseResult:
         holder_names=_holder_names(text),
         end_balance=round(cash + securities_value, 2),
         extra=FlatexMetadata(
+            box3=True,
             inventory_date=snapshot.group(1),
             cash_balance=cash,
             securities_account=depot.group(1) if depot else None,
@@ -268,8 +272,9 @@ def _parse_account_statement(text: str, linked_account: str | None) -> ParseResu
         deposits=linked_deposits,
         withdrawals=linked_withdrawals,
         capital_gain=0.0,
-        gain_method="explicit",
+        gain_method=GainMethod.EXPLICIT,
         extra=FlatexMetadata(
+            box3=True,
             linked_account=linked_account,
             statement_number=statement_number,
             linked_transfer_count=linked_count,
@@ -371,15 +376,16 @@ def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None
     conn.execute(
         """
         UPDATE account_year_facts
-        SET capital_gain = NULL, gain_method = 'unknown'
+        SET capital_gain = NULL, gain_method = ?
         WHERE issuer = 'flatex'
           AND id IN (
               SELECT f.id
               FROM account_year_facts f
               JOIN documents d ON d.content_sha256 = f.document_sha256
-              WHERE d.doc_type = 'account_statement' AND f.gain_method = 'balance_flow'
+              WHERE d.doc_type = 'account_statement' AND f.gain_method = ?
           )
-        """
+        """,
+        (GainMethod.UNKNOWN.value, GainMethod.BALANCE_FLOW.value),
     )
     _select_statement_canonicals(conn)
     inventories = conn.execute(
@@ -448,7 +454,7 @@ def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None
             """
             UPDATE account_year_facts
             SET start_balance = ?, deposits = ?, withdrawals = ?,
-                capital_gain = ?, gain_method = 'balance_flow', extra = ?
+                capital_gain = ?, gain_method = ?, extra = ?
             WHERE id = ?
             """,
             (
@@ -456,6 +462,7 @@ def _postprocess(conn: sqlite3.Connection, options: InstitutionSettings) -> None
                 deposits,
                 withdrawals,
                 capital_gain,
+                GainMethod.BALANCE_FLOW.value,
                 extra.model_dump_json(exclude_unset=True),
                 inventory["id"],
             ),
